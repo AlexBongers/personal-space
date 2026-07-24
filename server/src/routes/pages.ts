@@ -42,12 +42,12 @@ export function createPageRouter(db: Database.Database): Router {
 
   // POST /api/pages — create
   router.post('/', (req: Request, res: Response) => {
-    const { title, icon, parent_id, type } = req.body;
+    const { title, icon, parent_id, type, content } = req.body;
     const id = uuidv4();
     const now = new Date().toISOString();
     db.prepare(
-      'INSERT INTO pages (id, parent_id, title, icon, type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(id, parent_id || null, title || 'Untitled', icon || '', type || 'page', now, now);
+      'INSERT INTO pages (id, parent_id, title, icon, type, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(id, parent_id || null, title || 'Untitled', icon || '', type || 'page', content ? JSON.stringify(content) : JSON.stringify({ type: 'doc', content: [{ type: 'paragraph' }] }), now, now);
     const page = db.prepare('SELECT * FROM pages WHERE id = ?').get(id) as PageRow;
     if (typeof page.content === 'string') {
       page.content = JSON.parse(page.content);
@@ -99,7 +99,11 @@ export function buildTree(rows: PageRow[]): PageTree[] {
   const roots: PageTree[] = [];
 
   for (const row of rows) {
-    map.set(row.id, { ...row, children: [] });
+    map.set(row.id, {
+      ...row,
+      content: typeof row.content === 'string' ? JSON.parse(row.content) : row.content,
+      children: [],
+    });
   }
 
   for (const row of rows) {

@@ -3,6 +3,7 @@ import cors from 'cors';
 import { getDb } from './db';
 import { seedDb } from './seed';
 import { createPageRouter } from './routes/pages';
+import { createDatabaseRouter } from './routes/databases';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -14,6 +15,7 @@ const db = getDb();
 seedDb(db);
 
 app.use('/api/pages', createPageRouter(db));
+app.use('/api', createDatabaseRouter(db));
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });

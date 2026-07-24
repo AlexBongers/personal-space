@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import type { DatabaseProperty, DatabaseRow } from '../api';
 import PropertyEditor from './PropertyEditor';
 
@@ -9,6 +10,7 @@ interface TableViewProps {
   onDeleteRow: (rowId: string) => void;
   onAddRow: () => void;
   onRenameRow: (rowId: string, title: string) => void;
+  onRenameProperty: (propertyId: string, name: string) => void;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -21,7 +23,7 @@ const TYPE_LABELS: Record<string, string> = {
   url: 'U',
 };
 
-export default function TableView({ properties, rows, cells, onUpdateCell, onDeleteRow, onAddRow, onRenameRow }: TableViewProps) {
+export default function TableView({ properties, rows, cells, onUpdateCell, onDeleteRow, onAddRow, onRenameRow, onRenameProperty }: TableViewProps) {
   const rowTitleHeader = 'Title';
 
   return (
@@ -34,20 +36,11 @@ export default function TableView({ properties, rows, cells, onUpdateCell, onDel
             </th>
             {properties.map(prop => (
               <th key={prop.id} style={headerCellStyle}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: 'var(--text-muted)',
-                    background: 'var(--bg-hover)',
-                    borderRadius: 3,
-                    padding: '0 4px',
-                    lineHeight: '18px',
-                  }}>
-                    {TYPE_LABELS[prop.type] || '?'}
-                  </span>
-                  <span>{prop.name}</span>
-                </div>
+                <PropertyHeaderEditor
+                  name={prop.name}
+                  type={prop.type}
+                  onSave={(name) => onRenameProperty(prop.id, name)}
+                />
               </th>
             ))}
             <th style={{ ...headerCellStyle, width: 40 }}></th>
@@ -188,7 +181,75 @@ function RowTitleEditor({ title, onSave }: { title: string; onSave: (title: stri
   );
 }
 
-import { useState, useRef, useEffect } from 'react';
+function PropertyHeaderEditor({ name, type, onSave }: { name: string; type: string; onSave: (name: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(name);
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setValue(name);
+  }, [name]);
+
+  useEffect(() => {
+    if (editing && ref.current) {
+      ref.current.focus();
+      ref.current.select();
+    }
+  }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    if (value.trim() && value !== name) {
+      onSave(value.trim());
+    } else {
+      setValue(name);
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={ref}
+        type="text"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') { commit(); } if (e.key === 'Escape') { setValue(name); setEditing(false); } }}
+        style={{
+          width: '100%',
+          border: 'none',
+          outline: 'none',
+          background: 'transparent',
+          padding: 0,
+          fontSize: 13,
+          fontWeight: 600,
+          color: 'inherit',
+          fontFamily: 'inherit',
+        }}
+      />
+    );
+  }
+
+  return (
+    <div
+      onDoubleClick={() => setEditing(true)}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+    >
+      <span style={{
+        fontSize: 11,
+        fontWeight: 600,
+        color: 'var(--text-muted)',
+        background: 'var(--bg-hover)',
+        borderRadius: 3,
+        padding: '0 4px',
+        lineHeight: '18px',
+      }}>
+        {TYPE_LABELS[type] || '?'}
+      </span>
+      <span>{name}</span>
+    </div>
+  );
+}
 
 const headerCellStyle: React.CSSProperties = {
   padding: '8px 12px',

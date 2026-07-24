@@ -96,8 +96,6 @@ function NumberEditor({ value, onChange }: { value: any; onChange: (v: number | 
 }
 
 function SelectEditor({ property, value, onChange }: { property: DatabaseProperty; value: any; onChange: (v: string | null) => void }) {
-  const selected = property.options.find(o => o.id === value);
-
   return (
     <select
       value={value || ''}

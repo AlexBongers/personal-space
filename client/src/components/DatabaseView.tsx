@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchDatabase, addProperty, deleteProperty, addRow, deleteRow, updateRow, batchUpdateCells, fetchPage } from '../api';
-import type { DatabaseProperty, DatabaseRow, DatabaseData } from '../api';
+import { fetchDatabase, addProperty, deleteProperty, updateProperty, addRow, deleteRow, updateRow, batchUpdateCells, fetchPage } from '../api';
+import type { DatabaseProperty, DatabaseRow, DatabaseData, Page } from '../api';
 import TableView from './TableView';
 
 interface DatabaseViewProps {
@@ -14,7 +14,7 @@ export default function DatabaseView({ pageId }: DatabaseViewProps) {
   const [showAddProp, setShowAddProp] = useState(false);
   const [newPropName, setNewPropName] = useState('');
   const [newPropType, setNewPropType] = useState<string>('text');
-  const [page, setPage] = useState<any>(null);
+  const [page, setPage] = useState<Page | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -131,6 +131,19 @@ export default function DatabaseView({ pageId }: DatabaseViewProps) {
       setData({
         ...data,
         rows: data.rows.map(r => r.id === rowId ? { ...r, title } : r),
+      });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }, [data]);
+
+  const handleRenameProperty = useCallback(async (propertyId: string, name: string) => {
+    if (!data) return;
+    try {
+      await updateProperty(propertyId, { name });
+      setData({
+        ...data,
+        properties: data.properties.map(p => p.id === propertyId ? { ...p, name } : p),
       });
     } catch (e) {
       setError((e as Error).message);
@@ -299,6 +312,7 @@ export default function DatabaseView({ pageId }: DatabaseViewProps) {
         onDeleteRow={handleDeleteRow}
         onAddRow={handleAddRow}
         onRenameRow={handleRenameRow}
+        onRenameProperty={handleRenameProperty}
       />
     </div>
   );

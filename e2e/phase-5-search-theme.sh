@@ -4,7 +4,7 @@ set -e
 echo "=== Phase 5 E2E: Search and Dark Mode ==="
 
 # 1. Open the app
-agent-browser open http://localhost:5173
+agent-browser open http://localhost:7001
 agent-browser wait --load networkidle
 agent-browser wait 1000
 

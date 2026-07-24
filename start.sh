@@ -13,8 +13,8 @@ CLIENT_PID=$!
 # Trap to kill both on exit
 trap "kill $SERVER_PID $CLIENT_PID 2>/dev/null" EXIT
 
-echo "Server starting on http://localhost:3001"
-echo "Client starting on http://localhost:5173"
-echo "Open http://localhost:5173 in your browser"
+echo "Server starting on http://localhost:7002"
+echo "Client starting on http://localhost:7001"
+echo "Open http://localhost:7001 in your browser"
 
 wait

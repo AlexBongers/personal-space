@@ -3,9 +3,9 @@ set -e
 
 echo "=== Personal Space E2E Tests ==="
 
-# Kill any existing processes on ports 3001 and 5173
-kill $(lsof -ti:3001) 2>/dev/null || true
-kill $(lsof -ti:5173) 2>/dev/null || true
+# Kill any existing processes on ports 7002 and 7001
+kill $(lsof -ti:7002) 2>/dev/null || true
+kill $(lsof -ti:7001) 2>/dev/null || true
 sleep 1
 
 # Start the app in background
@@ -15,16 +15,7 @@ APP_PID=$!
 # Wait for app to be ready
 echo "Waiting for app to start..."
 for i in $(seq 1 30); do
-  if curl -s http://localhost:3001/api/health > /dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
-
-# Wait for app to be ready
-echo "Waiting for app to start..."
-for i in $(seq 1 30); do
-  if curl -s http://localhost:3001/api/health > /dev/null 2>&1; then
+  if curl -s http://localhost:7002/api/health > /dev/null 2>&1; then
     break
   fi
   sleep 1

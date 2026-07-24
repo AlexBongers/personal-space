@@ -7,7 +7,7 @@ import { createDatabaseRouter } from './routes/databases';
 import { createSearchRouter } from './routes/search';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 7002;
 
 app.use(cors());
 app.use(express.json());

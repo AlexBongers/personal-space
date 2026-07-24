@@ -4,7 +4,7 @@ set -e
 echo "=== Phase 4 E2E: Views, Filters, and Sort ==="
 
 # 1. Open the app
-agent-browser open http://localhost:5173
+agent-browser open http://localhost:7001
 agent-browser wait --load networkidle
 agent-browser wait 1000
 

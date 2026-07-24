@@ -3,7 +3,7 @@ set -e
 
 echo "=== Phase 2 E2E: Editor ==="
 
-agent-browser open http://localhost:5173
+agent-browser open http://localhost:7001
 agent-browser wait --load networkidle
 agent-browser wait 1000
 
@@ -26,7 +26,7 @@ agent-browser wait 500
 agent-browser screenshot screenshots/phase-2-typing.png
 
 # Refresh and verify content persisted
-agent-browser open http://localhost:5173
+agent-browser open http://localhost:7001
 agent-browser wait --load networkidle
 agent-browser wait 1000
 agent-browser find text "Welcome to Personal Space" click

@@ -4,7 +4,7 @@ set -e
 echo "=== Phase 3 E2E: Databases ==="
 
 # 1. Open the app
-agent-browser open http://localhost:5173
+agent-browser open http://localhost:7001
 agent-browser wait --load networkidle
 agent-browser wait 1000
 
@@ -21,7 +21,7 @@ agent-browser wait 500
 echo "=== Adding new property ==="
 agent-browser find text "+ Add property" click
 agent-browser wait 500
-agent-browser type "Notes"
+agent-browser keyboard type "Notes"
 agent-browser wait 300
 agent-browser press "Enter"
 agent-browser wait 1000
@@ -35,7 +35,7 @@ agent-browser wait 1000
 echo "=== Editing a cell ==="
 agent-browser find text "Japan Trip" click
 agent-browser wait 500
-agent-browser type "Japan Trip 2026"
+agent-browser keyboard type "Japan Trip 2026"
 agent-browser wait 500
 agent-browser press "Escape"
 agent-browser wait 500
@@ -51,7 +51,7 @@ agent-browser screenshot screenshots/phase-3-row-page.png
 
 # 8. Go back and verify persistence by refreshing
 echo "=== Verifying persistence ==="
-agent-browser open http://localhost:5173
+agent-browser open http://localhost:7001
 agent-browser wait --load networkidle
 agent-browser wait 1000
 agent-browser find text "Travel Plans" click

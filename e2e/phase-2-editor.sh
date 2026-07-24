@@ -1,0 +1,33 @@
+#!/bin/bash
+set -e
+
+echo "=== Phase 2 E2E: Editor ==="
+
+agent-browser open http://localhost:5173
+agent-browser wait --load networkidle
+agent-browser wait 1000
+
+# Navigate to the Editor Demo page
+agent-browser find text "Editor Demo" click
+agent-browser wait 1000
+agent-browser screenshot screenshots/phase-2-editor-demo.png
+
+# Click into the editor and type
+agent-browser click ".ProseMirror"
+agent-browser wait 500
+
+# Type text in the editor
+agent-browser type "Hello from E2E test"
+agent-browser wait 500
+agent-browser screenshot screenshots/phase-2-typing.png
+
+# Refresh and verify content persisted
+agent-browser open http://localhost:5173
+agent-browser wait --load networkidle
+agent-browser wait 1000
+agent-browser find text "Editor Demo" click
+agent-browser wait 1000
+agent-browser screenshot screenshots/phase-2-after-refresh.png
+
+agent-browser close
+echo "=== Phase 2 E2E PASSED ==="

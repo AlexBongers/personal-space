@@ -21,6 +21,10 @@ echo "App is ready. Running E2E tests..."
 # Run Phase 1
 bash e2e/phase-1-pages.sh
 
+# Run Phase 2
+echo "Running Phase 2..."
+bash e2e/phase-2-editor.sh
+
 # Kill the app
 kill $APP_PID 2>/dev/null || true
 wait $APP_PID 2>/dev/null || true

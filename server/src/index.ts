@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { getDb } from './db';
+import { seedDb } from './seed';
 import { createPageRouter } from './routes/pages';
 
 const app = express();
@@ -10,6 +11,7 @@ app.use(cors());
 app.use(express.json());
 
 const db = getDb();
+seedDb(db);
 
 app.use('/api/pages', createPageRouter(db));
 

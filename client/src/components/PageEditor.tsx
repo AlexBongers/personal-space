@@ -8,6 +8,7 @@ import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 import Placeholder from '@tiptap/extension-placeholder';
 import { common, createLowlight } from 'lowlight';
 import { CalloutExtension } from './CalloutExtension';
+import { DragHandleExtension } from './DragHandleExtension';
 import { fetchPage, updatePage } from '../api';
 import SlashMenu, { ITEMS } from './SlashMenu';
 
@@ -71,6 +72,7 @@ export default function PageEditor({ pageId }: PageEditorProps) {
       TaskList,
       TaskItem.configure({ nested: true }),
       CodeBlockLowlight.configure({ lowlight }),
+      DragHandleExtension,
       Placeholder.configure({ placeholder: 'Type / for commands, or start typing...' }),
       CalloutExtension,
     ],

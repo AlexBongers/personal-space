@@ -128,3 +128,33 @@ input, textarea {
 .ProseMirror ul[data-type="taskList"] li div {
   flex: 1;
 }
+
+/* Drag handle styles */
+.drag-handle {
+  cursor: grab;
+  opacity: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  user-select: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: opacity 0.12s ease;
+  vertical-align: middle;
+  position: relative;
+  z-index: 1;
+}
+
+.drag-handle-visible,
+.drag-handle:hover {
+  opacity: 1 !important;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.drag-handle.dragging {
+  opacity: 0.5 !important;
+}

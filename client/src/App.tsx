@@ -1,13 +1,43 @@
-import { useEffect } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Routes, Route, useParams } from 'react-router-dom';
 import { usePagesStore } from './store/pages';
 import { useThemeStore } from './store/theme';
 import Sidebar from './components/Sidebar';
 import PageEditor from './components/PageEditor';
+import DatabaseView from './components/DatabaseView';
+import { fetchPage } from './api';
+import type { Page } from './api';
 import './styles/light.css';
 import './styles/dark.css';
 
 function PageView({ pageId }: { pageId: string }) {
+  const [page, setPage] = useState<Page | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchPage(pageId).then(p => {
+      setPage(p);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [pageId]);
+
+  if (loading) {
+    return <div style={{ padding: 32, color: 'var(--text-secondary)' }}>Loading...</div>;
+  }
+
+  if (!page) {
+    return <div style={{ padding: 32, color: 'var(--text-secondary)' }}>Page not found</div>;
+  }
+
+  if (page.type === 'database') {
+    return <DatabaseView pageId={pageId} />;
+  }
+
+  if (page.type === 'row') {
+    return <div style={{ padding: 32, color: 'var(--text-secondary)' }}>Row page view coming soon</div>;
+  }
+
   return <PageEditor pageId={pageId} />;
 }
 
@@ -41,6 +71,7 @@ export default function App() {
 }
 
 function PageViewWrapper() {
-  const params = { id: window.location.pathname.split('/page/')[1] };
-  return <PageView pageId={params.id} />;
+  const { id } = useParams<{ id: string }>();
+  if (!id) return null;
+  return <PageView pageId={id} />;
 }

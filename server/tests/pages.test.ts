@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import express from 'express';
+import request from 'supertest';
 import Database from 'better-sqlite3';
 import { initDb } from '../src/db';
 import { createPageRouter, buildTree } from '../src/routes/pages';
@@ -42,43 +43,70 @@ describe('Pages API', () => {
     db.close();
   });
 
-  it('creates a page', () => {
-    const id = 'new-page';
-    const now = new Date().toISOString();
-    db.prepare('INSERT INTO pages (id, parent_id, title, icon, type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(id, null, 'Test Page', '📄', 'page', now, now);
-    const page = db.prepare('SELECT * FROM pages WHERE id = ?').get(id) as { title: string; icon: string };
-    expect(page.title).toBe('Test Page');
-    expect(page.icon).toBe('📄');
+  it('creates a page', async () => {
+    const res = await request(app)
+      .post('/api/pages')
+      .send({ title: 'Test Page', icon: '📄' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.title).toBe('Test Page');
+    expect(res.body.icon).toBe('📄');
+    expect(res.body.id).toBeDefined();
   });
 
-  it('returns all pages', () => {
-    db.prepare('INSERT INTO pages (id, title, icon, type, created_at, updated_at) VALUES (?, ?, ?, ?, datetime(), datetime())').run('root-1', 'Root', '', 'page');
-    db.prepare('INSERT INTO pages (id, parent_id, title, icon, type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime(), datetime())').run('child-1', 'root-1', 'Child', '', 'page');
-    const pages = db.prepare('SELECT * FROM pages ORDER BY created_at').all();
-    expect(pages.length).toBe(2);
+  it('returns all pages as a tree', async () => {
+    const rootRes = await request(app)
+      .post('/api/pages')
+      .send({ title: 'Root' });
+    const rootId = rootRes.body.id;
+
+    await request(app)
+      .post('/api/pages')
+      .send({ title: 'Child', parent_id: rootId });
+
+    const treeRes = await request(app).get('/api/pages');
+
+    expect(treeRes.status).toBe(200);
+    expect(treeRes.body.length).toBe(1);
+    expect(treeRes.body[0].title).toBe('Root');
+    expect(treeRes.body[0].children.length).toBe(1);
+    expect(treeRes.body[0].children[0].title).toBe('Child');
   });
 
-  it('renames a page', () => {
-    const id = 'page-rename';
-    db.prepare('INSERT INTO pages (id, title, icon, type, created_at, updated_at) VALUES (?, ?, ?, ?, datetime(), datetime())').run(id, 'Old Name', '', 'page');
-    db.prepare('UPDATE pages SET title = ?, updated_at = datetime() WHERE id = ?').run('New Name', id);
-    const page = db.prepare('SELECT * FROM pages WHERE id = ?').get(id) as { title: string };
-    expect(page.title).toBe('New Name');
+  it('renames a page', async () => {
+    const createRes = await request(app)
+      .post('/api/pages')
+      .send({ title: 'Old Name' });
+    const id = createRes.body.id;
+
+    const putRes = await request(app)
+      .put(`/api/pages/${id}`)
+      .send({ title: 'New Name' });
+
+    expect(putRes.status).toBe(200);
+    expect(putRes.body.title).toBe('New Name');
   });
 
-  it('deletes a page and cascades to children', () => {
-    const parentId = 'parent-delete';
-    const childId = 'child-delete';
-    db.prepare('INSERT INTO pages (id, title, icon, type, created_at, updated_at) VALUES (?, ?, ?, ?, datetime(), datetime())').run(parentId, 'Parent', '', 'page');
-    db.prepare('INSERT INTO pages (id, parent_id, title, icon, type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime(), datetime())').run(childId, parentId, 'Child', '', 'page');
-    db.prepare('DELETE FROM pages WHERE id = ?').run(parentId);
-    const child = db.prepare('SELECT * FROM pages WHERE id = ?').get(childId);
-    expect(child).toBeUndefined();
+  it('deletes a page and cascades to children', async () => {
+    const parentRes = await request(app)
+      .post('/api/pages')
+      .send({ title: 'Parent' });
+    const parentId = parentRes.body.id;
+
+    await request(app)
+      .post('/api/pages')
+      .send({ title: 'Child', parent_id: parentId });
+
+    const delRes = await request(app).delete(`/api/pages/${parentId}`);
+    expect(delRes.status).toBe(204);
+
+    const getChildRes = await request(app).get('/api/pages');
+    expect(getChildRes.body.length).toBe(0);
   });
 
-  it('returns 404 for unknown page', () => {
-    const page = db.prepare('SELECT * FROM pages WHERE id = ?').get('nonexistent');
-    expect(page).toBeUndefined();
+  it('returns 404 for unknown page', async () => {
+    const res = await request(app).get('/api/pages/nonexistent');
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('Page not found');
   });
 });

@@ -78,6 +78,13 @@ export function initDb(db: Database.Database): void {
       value TEXT NOT NULL
     );
   `);
+
+  // Add content column to pages if not present (migration)
+  try {
+    db.exec('ALTER TABLE pages ADD COLUMN content TEXT NOT NULL DEFAULT \'{"type":"doc","content":[{"type":"paragraph"}]}\'');
+  } catch {
+    // Column already exists — ignore
+  }
 }
 
 export function closeDb(): void {

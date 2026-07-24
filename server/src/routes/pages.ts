@@ -8,6 +8,7 @@ interface PageRow {
   title: string;
   icon: string;
   type: string;
+  content: string;
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +34,9 @@ export function createPageRouter(db: Database.Database): Router {
       res.status(404).json({ error: 'Page not found' });
       return;
     }
+    if (typeof page.content === 'string') {
+      page.content = JSON.parse(page.content);
+    }
     res.json(page);
   });
 
@@ -44,13 +48,16 @@ export function createPageRouter(db: Database.Database): Router {
     db.prepare(
       'INSERT INTO pages (id, parent_id, title, icon, type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).run(id, parent_id || null, title || 'Untitled', icon || '', type || 'page', now, now);
-    const page = db.prepare('SELECT * FROM pages WHERE id = ?').get(id);
+    const page = db.prepare('SELECT * FROM pages WHERE id = ?').get(id) as PageRow;
+    if (typeof page.content === 'string') {
+      page.content = JSON.parse(page.content);
+    }
     res.status(201).json(page);
   });
 
   // PUT /api/pages/:id — update
   router.put('/:id', (req: Request, res: Response) => {
-    const { title, icon } = req.body;
+    const { title, icon, content } = req.body;
     const existing = db.prepare('SELECT * FROM pages WHERE id = ?').get(req.params.id) as PageRow | undefined;
     if (!existing) {
       res.status(404).json({ error: 'Page not found' });
@@ -58,14 +65,18 @@ export function createPageRouter(db: Database.Database): Router {
     }
     const now = new Date().toISOString();
     db.prepare(
-      'UPDATE pages SET title = ?, icon = ?, updated_at = ? WHERE id = ?'
+      'UPDATE pages SET title = ?, icon = ?, content = ?, updated_at = ? WHERE id = ?'
     ).run(
       title !== undefined ? title : existing.title,
       icon !== undefined ? icon : existing.icon,
+      content !== undefined ? JSON.stringify(content) : existing.content,
       now,
       req.params.id
     );
-    const page = db.prepare('SELECT * FROM pages WHERE id = ?').get(req.params.id);
+    const page = db.prepare('SELECT * FROM pages WHERE id = ?').get(req.params.id) as PageRow;
+    if (typeof page.content === 'string') {
+      page.content = JSON.parse(page.content);
+    }
     res.json(page);
   });
 

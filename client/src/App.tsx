@@ -3,15 +3,12 @@ import { Routes, Route } from 'react-router-dom';
 import { usePagesStore } from './store/pages';
 import { useThemeStore } from './store/theme';
 import Sidebar from './components/Sidebar';
+import PageEditor from './components/PageEditor';
 import './styles/light.css';
 import './styles/dark.css';
 
 function PageView({ pageId }: { pageId: string }) {
-  return (
-    <div style={{ padding: '32px 48px', maxWidth: 800, margin: '0 auto' }}>
-      <h1>Page: {pageId}</h1>
-    </div>
-  );
+  return <PageEditor pageId={pageId} />;
 }
 
 function EmptyState() {

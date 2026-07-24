@@ -6,6 +6,7 @@ export interface Page {
   title: string;
   icon: string;
   type: 'page' | 'database' | 'row';
+  content: any;
   created_at: string;
   updated_at: string;
   children: Page[];
@@ -33,7 +34,7 @@ export async function createPage(data: { title?: string; icon?: string; parent_i
   return res.json();
 }
 
-export async function updatePage(id: string, data: { title?: string; icon?: string }): Promise<Page> {
+export async function updatePage(id: string, data: { title?: string; icon?: string; content?: any }): Promise<Page> {
   const res = await fetch(`${API_BASE}/pages/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

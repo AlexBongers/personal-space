@@ -24,6 +24,7 @@ export const DragHandleExtension = Extension.create({
               const handle = document.createElement('span')
               handle.className = 'drag-handle'
               handle.contentEditable = 'false'
+              handle.draggable = true
               handle.setAttribute('aria-hidden', 'true')
               handle.innerHTML = '&#x2807;'
 

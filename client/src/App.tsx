@@ -5,6 +5,7 @@ import { useThemeStore } from './store/theme';
 import Sidebar from './components/Sidebar';
 import PageEditor from './components/PageEditor';
 import DatabaseView from './components/DatabaseView';
+import RowPage from './components/RowPage';
 import { fetchPage } from './api';
 import type { Page } from './api';
 import './styles/light.css';
@@ -35,7 +36,7 @@ function PageView({ pageId }: { pageId: string }) {
   }
 
   if (page.type === 'row') {
-    return <div style={{ padding: 32, color: 'var(--text-secondary)' }}>Row page view coming soon</div>;
+    return <RowPage pageId={pageId} />;
   }
 
   return <PageEditor pageId={pageId} />;

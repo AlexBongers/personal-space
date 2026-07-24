@@ -182,7 +182,9 @@ export default function PageEditor({ pageId }: PageEditorProps) {
     };
   }, []);
 
-  if (!editor) return null;
+  if (!editor) {
+    return <div style={{ padding: 32, color: 'var(--text-secondary)' }}>Loading editor...</div>;
+  }
 
   return (
     <div style={{ padding: '32px 48px', maxWidth: 800, margin: '0 auto', position: 'relative' }}>

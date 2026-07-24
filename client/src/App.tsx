@@ -33,14 +33,14 @@ function PageView({ pageId }: { pageId: string }) {
   }
 
   if (page.type === 'database') {
-    return <DatabaseView pageId={pageId} />;
+    return <DatabaseView key={pageId} pageId={pageId} />;
   }
 
   if (page.type === 'row') {
-    return <RowPage pageId={pageId} />;
+    return <RowPage key={pageId} pageId={pageId} />;
   }
 
-  return <PageEditor pageId={pageId} />;
+  return <PageEditor key={pageId} pageId={pageId} />;
 }
 
 function EmptyState() {

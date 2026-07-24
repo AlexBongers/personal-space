@@ -1,0 +1,19 @@
+.light {
+  --bg: #ffffff;
+  --bg-secondary: #f7f8fa;
+  --bg-hover: #eef0f4;
+  --bg-active: #e4e7ed;
+  --text: #1a1d23;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --border: #e5e7eb;
+  --border-hover: #d1d5db;
+  --scrollbar: #d1d5db;
+  --sidebar-bg: #f7f8fa;
+  --sidebar-active: #e4e7ed;
+  --accent: var(--amber);
+  --accent-blue: var(--blue);
+  --accent-purple: var(--purple);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.12);
+}

@@ -1,0 +1,19 @@
+.dark {
+  --bg: #1a1d23;
+  --bg-secondary: #22252d;
+  --bg-hover: #2d313a;
+  --bg-active: #383c47;
+  --text: #e5e7eb;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --border: #2d313a;
+  --border-hover: #383c47;
+  --scrollbar: #383c47;
+  --sidebar-bg: #22252d;
+  --sidebar-active: #383c47;
+  --accent: var(--amber);
+  --accent-blue: var(--blue);
+  --accent-purple: var(--purple);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.3);
+}

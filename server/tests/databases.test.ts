@@ -500,4 +500,78 @@ describe('Databases API', () => {
       expect(dbRes.body.cells[row2.body.id][p2.body.id]).toBe(true);
     });
   });
+
+  describe('View settings API', () => {
+    describe('GET /api/databases/:id/views', () => {
+      it('returns empty object when no settings exist', async () => {
+        const database = await createDatabase(app);
+        const res = await request(app).get(`/api/databases/${database.id}/views`);
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({});
+      });
+
+      it('returns 404 for nonexistent database', async () => {
+        const res = await request(app).get('/api/databases/nonexistent/views');
+        expect(res.status).toBe(404);
+      });
+    });
+
+    describe('PUT /api/databases/:id/views/:viewType', () => {
+      it('saves and retrieves view settings', async () => {
+        const database = await createDatabase(app);
+        const settings = { filters: [], sort: null, groupBy: null };
+
+        const putRes = await request(app)
+          .put(`/api/databases/${database.id}/views/table`)
+          .send(settings);
+        expect(putRes.status).toBe(200);
+        expect(putRes.body.settings).toEqual(settings);
+
+        const getRes = await request(app).get(`/api/databases/${database.id}/views`);
+        expect(getRes.status).toBe(200);
+        expect(getRes.body.table).toEqual(settings);
+      });
+
+      it('saves board view settings with groupBy', async () => {
+        const database = await createDatabase(app);
+        const settings = { filters: [], sort: null, groupBy: 'some-prop-id' };
+
+        const putRes = await request(app)
+          .put(`/api/databases/${database.id}/views/board`)
+          .send(settings);
+        expect(putRes.status).toBe(200);
+        expect(putRes.body.settings.groupBy).toBe('some-prop-id');
+      });
+
+      it('updates existing settings', async () => {
+        const database = await createDatabase(app);
+
+        await request(app)
+          .put(`/api/databases/${database.id}/views/table`)
+          .send({ filters: [], sort: null, groupBy: null });
+
+        const updated = { filters: [], sort: { propertyId: 'p1', direction: 'asc' as const }, groupBy: null };
+        const putRes = await request(app)
+          .put(`/api/databases/${database.id}/views/table`)
+          .send(updated);
+        expect(putRes.status).toBe(200);
+        expect(putRes.body.settings.sort).toEqual({ propertyId: 'p1', direction: 'asc' });
+      });
+
+      it('returns 404 for nonexistent database', async () => {
+        const res = await request(app)
+          .put('/api/databases/nonexistent/views/table')
+          .send({ filters: [], sort: null, groupBy: null });
+        expect(res.status).toBe(404);
+      });
+
+      it('rejects invalid view type', async () => {
+        const database = await createDatabase(app);
+        const res = await request(app)
+          .put(`/api/databases/${database.id}/views/invalid`)
+          .send({ filters: [], sort: null, groupBy: null });
+        expect(res.status).toBe(400);
+      });
+    });
+  });
 });

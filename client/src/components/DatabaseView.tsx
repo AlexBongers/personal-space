@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchDatabase, addProperty, deleteProperty, updateProperty, addRow, deleteRow, updateRow, batchUpdateCells, fetchPage } from '../api';
-import type { DatabaseProperty, DatabaseRow, DatabaseData, Page } from '../api';
+import { fetchDatabase, addProperty, deleteProperty, updateProperty, addRow, deleteRow, updateRow, batchUpdateCells, fetchPage, fetchViewSettings, saveViewSettings } from '../api';
+import type { DatabaseProperty, DatabaseRow, DatabaseData, Page, ViewSettings } from '../api';
 import TableView from './TableView';
+import ViewSwitcher from './ViewSwitcher';
+import BoardView from './BoardView';
+import ListView from './ListView';
+
+export type ViewType = 'table' | 'board' | 'list';
 
 interface DatabaseViewProps {
   pageId: string;
@@ -15,16 +20,20 @@ export default function DatabaseView({ pageId }: DatabaseViewProps) {
   const [newPropName, setNewPropName] = useState('');
   const [newPropType, setNewPropType] = useState<string>('text');
   const [page, setPage] = useState<Page | null>(null);
+  const [activeView, setActiveView] = useState<ViewType>('table');
+  const [viewSettings, setViewSettings] = useState<{ [viewType: string]: ViewSettings }>({});
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [dbData, pg] = await Promise.all([
+      const [dbData, pg, vs] = await Promise.all([
         fetchDatabase(pageId),
         fetchPage(pageId),
+        fetchViewSettings(pageId),
       ]);
       setData(dbData);
       setPage(pg);
+      setViewSettings(vs);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
@@ -36,6 +45,21 @@ export default function DatabaseView({ pageId }: DatabaseViewProps) {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const currentSettings = viewSettings[activeView] || { filters: [], sort: null, groupBy: null };
+
+  const handleViewChange = useCallback((view: ViewType) => {
+    setActiveView(view);
+  }, []);
+
+  const handleSaveViewSettings = useCallback(async (settings: ViewSettings) => {
+    setViewSettings(prev => ({ ...prev, [activeView]: settings }));
+    try {
+      await saveViewSettings(pageId, activeView, settings);
+    } catch (e) {
+      console.error('Failed to save view settings:', e);
+    }
+  }, [pageId, activeView]);
 
   const handleAddProperty = useCallback(async () => {
     if (!newPropName.trim() || !data) return;
@@ -304,16 +328,41 @@ export default function DatabaseView({ pageId }: DatabaseViewProps) {
         </div>
       )}
 
-      <TableView
-        properties={data.properties}
-        rows={data.rows}
-        cells={data.cells}
-        onUpdateCell={handleUpdateCell}
-        onDeleteRow={handleDeleteRow}
-        onAddRow={handleAddRow}
-        onRenameRow={handleRenameRow}
-        onRenameProperty={handleRenameProperty}
-      />
+      <ViewSwitcher activeView={activeView} onViewChange={handleViewChange} />
+
+      {activeView === 'table' && (
+        <TableView
+          properties={data.properties}
+          rows={data.rows}
+          cells={data.cells}
+          onUpdateCell={handleUpdateCell}
+          onDeleteRow={handleDeleteRow}
+          onAddRow={handleAddRow}
+          onRenameRow={handleRenameRow}
+          onRenameProperty={handleRenameProperty}
+        />
+      )}
+
+      {activeView === 'board' && (
+        <BoardView
+          properties={data.properties}
+          rows={data.rows}
+          cells={data.cells}
+          groupBy={currentSettings.groupBy}
+          onGroupByChange={(propertyId) => {
+            handleSaveViewSettings({ ...currentSettings, groupBy: propertyId });
+          }}
+          onUpdateCell={handleUpdateCell}
+        />
+      )}
+
+      {activeView === 'list' && (
+        <ListView
+          properties={data.properties}
+          rows={data.rows}
+          cells={data.cells}
+        />
+      )}
     </div>
   );
 }

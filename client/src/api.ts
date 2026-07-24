@@ -154,3 +154,30 @@ export async function batchUpdateCells(rowId: string, cells: { [propertyId: stri
   });
   if (!res.ok) throw new Error('Failed to batch update cells');
 }
+
+export interface Filter {
+  propertyId: string;
+  operator: string;
+  value: any;
+}
+
+export interface ViewSettings {
+  filters: Filter[];
+  sort: { propertyId: string; direction: 'asc' | 'desc' } | null;
+  groupBy: string | null;
+}
+
+export async function fetchViewSettings(databaseId: string): Promise<{ [viewType: string]: ViewSettings }> {
+  const res = await fetch(`${API_BASE}/databases/${databaseId}/views`);
+  if (!res.ok) throw new Error('Failed to fetch view settings');
+  return res.json();
+}
+
+export async function saveViewSettings(databaseId: string, viewType: string, settings: ViewSettings): Promise<void> {
+  const res = await fetch(`${API_BASE}/databases/${databaseId}/views/${viewType}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error('Failed to save view settings');
+}

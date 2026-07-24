@@ -348,5 +348,60 @@ export function createDatabaseRouter(db: Database.Database): Router {
     res.json(result);
   });
 
+  // GET /api/databases/:id/views — get all view settings for a database
+  router.get('/databases/:id/views', (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const page = db.prepare('SELECT * FROM pages WHERE id = ? AND type = ?').get(id, 'database') as any;
+    if (!page) {
+      res.status(404).json({ error: 'Database not found' });
+      return;
+    }
+
+    const rows = db.prepare('SELECT * FROM view_settings WHERE database_id = ?').all(id) as { view_type: string; settings: string }[];
+    const result: Record<string, any> = {};
+    for (const row of rows) {
+      try {
+        result[row.view_type] = JSON.parse(row.settings);
+      } catch {
+        result[row.view_type] = {};
+      }
+    }
+    res.json(result);
+  });
+
+  // PUT /api/databases/:id/views/:viewType — save view settings
+  router.put('/databases/:id/views/:viewType', (req: Request, res: Response) => {
+    const { id, viewType } = req.params;
+    const { filters, sort, groupBy } = req.body;
+
+    const page = db.prepare('SELECT * FROM pages WHERE id = ? AND type = ?').get(id, 'database') as any;
+    if (!page) {
+      res.status(404).json({ error: 'Database not found' });
+      return;
+    }
+
+    const validViewTypes = ['table', 'board', 'list'];
+    if (!validViewTypes.includes(viewType)) {
+      res.status(400).json({ error: `Invalid view type. Must be one of: ${validViewTypes.join(', ')}` });
+      return;
+    }
+
+    const settings = JSON.stringify({ filters: filters || [], sort: sort || null, groupBy: groupBy || null });
+    const existing = db.prepare('SELECT * FROM view_settings WHERE database_id = ? AND view_type = ?').get(id, viewType) as any;
+
+    if (existing) {
+      db.prepare('UPDATE view_settings SET settings = ? WHERE database_id = ? AND view_type = ?').run(settings, id, viewType);
+    } else {
+      const viewId = uuidv4();
+      db.prepare(
+        'INSERT INTO view_settings (id, database_id, view_type, settings) VALUES (?, ?, ?, ?)'
+      ).run(viewId, id, viewType, settings);
+    }
+
+    const updated = db.prepare('SELECT * FROM view_settings WHERE database_id = ? AND view_type = ?').get(id, viewType) as any;
+    res.json({ ...updated, settings: JSON.parse(updated.settings) });
+  });
+
   return router;
 }

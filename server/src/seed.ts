@@ -15,6 +15,13 @@ interface SeedRow {
 interface SeedDatabase {
   properties: SeedProperty[];
   rows: SeedRow[];
+  viewSettings?: {
+    [viewType: string]: {
+      filters: { propertyName: string; operator: string; value: any }[];
+      sort: { propertyName: string; direction: 'asc' | 'desc' } | null;
+      groupBy: string | null;
+    };
+  };
 }
 
 interface SeedPage {
@@ -79,6 +86,13 @@ const travelPlansDb: SeedDatabase = {
     { title: 'Barcelona Trip', cells: { Destination: 'Barcelona, Spain', Budget: 2800, Status: 'tp-status-completed', Dates: '2026-05-01' } },
     { title: 'Sydney Explorer', cells: { Destination: 'Sydney, Australia', Budget: 5500, Status: 'tp-status-planning', Dates: '2027-06-20' } },
   ],
+  viewSettings: {
+    table: {
+      filters: [],
+      sort: { propertyName: 'Status', direction: 'asc' },
+      groupBy: null,
+    },
+  },
 };
 
 const readingListDb: SeedDatabase = {
@@ -104,6 +118,13 @@ const readingListDb: SeedDatabase = {
     { title: 'Clean Code', cells: { Author: 'Robert C. Martin', Status: 'rl-status-to-read', Rating: 0, URL: 'https://example.com/clean-code' } },
     { title: 'Sapiens', cells: { Author: 'Yuval Noah Harari', Status: 'rl-status-reading', Rating: 4, URL: 'https://example.com/sapiens' } },
   ],
+  viewSettings: {
+    board: {
+      filters: [],
+      sort: null,
+      groupBy: 'Status',
+    },
+  },
 };
 
 const SEED_PAGES: SeedPage[] = [
@@ -200,6 +221,27 @@ function createDatabase(
       db.prepare(
         'INSERT INTO cell_values (id, row_id, property_id, value) VALUES (?, ?, ?, ?)'
       ).run(cellId, rowId, propId, serialized);
+    }
+  }
+
+  if (database.viewSettings) {
+    for (const [viewType, settings] of Object.entries(database.viewSettings)) {
+      const viewId = uuidv4();
+      const resolved = {
+        filters: (settings.filters || []).map((f: any) => ({
+          propertyId: propIdMap[f.propertyName] || '',
+          operator: f.operator,
+          value: f.value,
+        })),
+        sort: settings.sort
+          ? { propertyId: propIdMap[settings.sort.propertyName] || '', direction: settings.sort.direction }
+          : null,
+        groupBy: settings.groupBy ? (propIdMap[settings.groupBy] || null) : null,
+      };
+      const settingsStr = JSON.stringify(resolved);
+      db.prepare(
+        'INSERT INTO view_settings (id, database_id, view_type, settings) VALUES (?, ?, ?, ?)'
+      ).run(viewId, pageId, viewType, settingsStr);
     }
   }
 }

@@ -1,10 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { fetchDatabase, addProperty, deleteProperty, updateProperty, addRow, deleteRow, updateRow, batchUpdateCells, fetchPage, fetchViewSettings, saveViewSettings } from '../api';
-import type { DatabaseProperty, DatabaseRow, DatabaseData, Page, ViewSettings } from '../api';
+import type { DatabaseProperty, DatabaseRow, DatabaseData, Page, ViewSettings, Filter, Sort } from '../api';
 import TableView from './TableView';
 import ViewSwitcher from './ViewSwitcher';
 import BoardView from './BoardView';
 import ListView from './ListView';
+import FilterBar from './FilterBar';
+import SortControl from './SortControl';
+import { filterRows, sortRows } from '../utils/filterRows';
 
 export type ViewType = 'table' | 'board' | 'list';
 
@@ -22,6 +25,7 @@ export default function DatabaseView({ pageId }: DatabaseViewProps) {
   const [page, setPage] = useState<Page | null>(null);
   const [activeView, setActiveView] = useState<ViewType>('table');
   const [viewSettings, setViewSettings] = useState<{ [viewType: string]: ViewSettings }>({});
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -46,11 +50,60 @@ export default function DatabaseView({ pageId }: DatabaseViewProps) {
     loadData();
   }, [loadData]);
 
+  // Debounced save of view settings
+  useEffect(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = setTimeout(() => {
+      const settings = viewSettings[activeView];
+      if (settings) {
+        saveViewSettings(pageId, activeView, settings).catch(e => {
+          console.error('Failed to save view settings:', e);
+        });
+      }
+    }, 500);
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, [viewSettings, activeView, pageId]);
+
   const currentSettings = viewSettings[activeView] || { filters: [], sort: null, groupBy: null };
+
+  // Compute filtered and sorted rows
+  const processedRows = useMemo(() => {
+    if (!data) return [];
+    let result = filterRows(data.rows, data.cells, data.properties, currentSettings.filters);
+    result = sortRows(result, data.cells, data.properties, currentSettings.sort);
+    return result;
+  }, [data, currentSettings.filters, currentSettings.sort]);
 
   const handleViewChange = useCallback((view: ViewType) => {
     setActiveView(view);
   }, []);
+
+  const handleFiltersChange = useCallback((filters: Filter[]) => {
+    setViewSettings(prev => ({
+      ...prev,
+      [activeView]: { ...(prev[activeView] || { filters: [], sort: null, groupBy: null }), filters },
+    }));
+  }, [activeView]);
+
+  const handleSortChange = useCallback((sort: Sort | null) => {
+    setViewSettings(prev => ({
+      ...prev,
+      [activeView]: { ...(prev[activeView] || { filters: [], sort: null, groupBy: null }), sort },
+    }));
+  }, [activeView]);
+
+  const handleGroupByChange = useCallback((groupBy: string | null) => {
+    setViewSettings(prev => ({
+      ...prev,
+      [activeView]: { ...(prev[activeView] || { filters: [], sort: null, groupBy: null }), groupBy },
+    }));
+  }, [activeView]);
 
   const handleSaveViewSettings = useCallback(async (settings: ViewSettings) => {
     setViewSettings(prev => ({ ...prev, [activeView]: settings }));
@@ -330,10 +383,22 @@ export default function DatabaseView({ pageId }: DatabaseViewProps) {
 
       <ViewSwitcher activeView={activeView} onViewChange={handleViewChange} />
 
+      <FilterBar
+        properties={data.properties}
+        filters={currentSettings.filters}
+        onChange={handleFiltersChange}
+      />
+
+      <SortControl
+        properties={data.properties}
+        sort={currentSettings.sort}
+        onChange={handleSortChange}
+      />
+
       {activeView === 'table' && (
         <TableView
           properties={data.properties}
-          rows={data.rows}
+          rows={processedRows}
           cells={data.cells}
           onUpdateCell={handleUpdateCell}
           onDeleteRow={handleDeleteRow}
@@ -346,12 +411,10 @@ export default function DatabaseView({ pageId }: DatabaseViewProps) {
       {activeView === 'board' && (
         <BoardView
           properties={data.properties}
-          rows={data.rows}
+          rows={processedRows}
           cells={data.cells}
           groupBy={currentSettings.groupBy}
-          onGroupByChange={(propertyId) => {
-            handleSaveViewSettings({ ...currentSettings, groupBy: propertyId });
-          }}
+          onGroupByChange={handleGroupByChange}
           onUpdateCell={handleUpdateCell}
         />
       )}
@@ -359,7 +422,7 @@ export default function DatabaseView({ pageId }: DatabaseViewProps) {
       {activeView === 'list' && (
         <ListView
           properties={data.properties}
-          rows={data.rows}
+          rows={processedRows}
           cells={data.cells}
         />
       )}

@@ -29,6 +29,10 @@ bash e2e/phase-2-editor.sh
 echo "Running Phase 3..."
 bash e2e/phase-3-databases.sh
 
+# Run Phase 4
+echo "Running Phase 4..."
+bash e2e/phase-4-views.sh
+
 # Kill the app
 kill $APP_PID 2>/dev/null || true
 wait $APP_PID 2>/dev/null || true

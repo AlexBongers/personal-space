@@ -161,9 +161,14 @@ export interface Filter {
   value: any;
 }
 
+export interface Sort {
+  propertyId: string;
+  direction: 'asc' | 'desc';
+}
+
 export interface ViewSettings {
   filters: Filter[];
-  sort: { propertyId: string; direction: 'asc' | 'desc' } | null;
+  sort: Sort | null;
   groupBy: string | null;
 }
 

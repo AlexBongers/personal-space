@@ -6,7 +6,8 @@ import Sidebar from './components/Sidebar';
 import PageEditor from './components/PageEditor';
 import DatabaseView from './components/DatabaseView';
 import RowPage from './components/RowPage';
-import { fetchPage } from './api';
+import QuickFind from './components/QuickFind';
+import { fetchPage, fetchTheme } from './api';
 import type { Page } from './api';
 import './styles/light.css';
 import './styles/dark.css';
@@ -52,21 +53,45 @@ function EmptyState() {
 
 export default function App() {
   const { pages, loading, loadPages } = usePagesStore();
-  const { theme } = useThemeStore();
+  const { theme, setTheme } = useThemeStore();
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     loadPages();
   }, [loadPages]);
 
+  useEffect(() => {
+    fetchTheme().then(serverTheme => {
+      if (serverTheme && serverTheme !== theme) {
+        setTheme(serverTheme as 'light' | 'dark');
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+      if (e.key === 'Escape' && searchOpen) {
+        setSearchOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [searchOpen]);
+
   return (
     <div className={theme} style={{ display: 'flex', height: '100%' }}>
-      <Sidebar pages={pages} loading={loading} />
+      <Sidebar pages={pages} loading={loading} onSearchOpen={() => setSearchOpen(true)} />
       <main style={{ flex: 1, overflow: 'auto' }}>
         <Routes>
           <Route path="/" element={<EmptyState />} />
           <Route path="/page/:id" element={<PageViewWrapper />} />
         </Routes>
       </main>
+      <QuickFind open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   );
 }

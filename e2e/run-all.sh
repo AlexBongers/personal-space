@@ -33,6 +33,10 @@ bash e2e/phase-3-databases.sh
 echo "Running Phase 4..."
 bash e2e/phase-4-views.sh
 
+# Run Phase 5
+echo "Running Phase 5..."
+bash e2e/phase-5-search-theme.sh
+
 # Kill the app
 kill $APP_PID 2>/dev/null || true
 wait $APP_PID 2>/dev/null || true

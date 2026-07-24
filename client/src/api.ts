@@ -186,3 +186,32 @@ export async function saveViewSettings(databaseId: string, viewType: string, set
   });
   if (!res.ok) throw new Error('Failed to save view settings');
 }
+
+export interface SearchResult {
+  id: string;
+  title: string;
+  icon: string;
+  type: 'page' | 'database' | 'row';
+}
+
+export async function search(q: string): Promise<SearchResult[]> {
+  const res = await fetch(`${API_BASE}/search?q=${encodeURIComponent(q)}`);
+  if (!res.ok) throw new Error('Failed to search');
+  return res.json();
+}
+
+export async function fetchTheme(): Promise<string> {
+  const res = await fetch(`${API_BASE}/theme`);
+  if (!res.ok) throw new Error('Failed to fetch theme');
+  const data = await res.json();
+  return data.theme;
+}
+
+export async function saveTheme(theme: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/theme`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ theme }),
+  });
+  if (!res.ok) throw new Error('Failed to save theme');
+}

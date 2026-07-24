@@ -2,3 +2,6 @@
 CLAUDE.md
 skills-lock.json
 .agents
+node_modules/
+dist/
+*.db

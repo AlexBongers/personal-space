@@ -18,10 +18,4 @@ echo "Verifying the installs..."
 opencode --version
 agent-browser doctor
 
-echo "Installing the superpowers plugin..."
-# Declared in opencode.json; OpenCode's plugin manager fetches it on first
-# start. This headless run triggers that now, at build time, and the grep
-# proves the plugin loaded. Needs OPENROUTER_API_KEY from .env.
-opencode run --print-logs "Reply with the single word: ready" 2>&1 | grep -i superpowers
-
 echo "Setup complete."

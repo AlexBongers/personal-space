@@ -1,0 +1,17 @@
+{
+  "name": "personal-space",
+  "private": true,
+  "workspaces": ["server", "client"],
+  "scripts": {
+    "start": "bash start.sh",
+    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
+    "test": "npm run test -w server && npm run test -w client",
+    "test:server": "npm run test -w server",
+    "test:client": "npm run test -w client",
+    "test:e2e": "bash e2e/run-all.sh"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -4,9 +4,8 @@ These rules apply to all work on this project.
 
 ## The job
 
-Build Personal Space exactly as specified in [REQUIREMENTS.md](./REQUIREMENTS.md). That document
-is the contract: its phases, success criteria and final criteria decide when work is done. When in
-doubt, REQUIREMENTS.md wins.
+Use your using-superpowers skills to build Personal Space exactly as specified in [REQUIREMENTS.md](./REQUIREMENTS.md). That document
+is the contract: its phases, success criteria and final criteria decide when work is done. When in doubt, REQUIREMENTS.md wins.
 
 ## Method
 
@@ -22,14 +21,3 @@ from it, then execute phase by phase.
   data and UI are a feature, not a violation.)
 - Keep it simple: small modules, clear names, no defensive programming, no overengineering.
   Prefer popular, well-supported libraries over custom code.
-
-## Defects and the adversarial review
-
-- Defects found in testing live in `DEFECTS.md` at the repo root: one numbered entry per defect
-  (DEF-NNN) with severity, steps to reproduce from app launch, expected vs actual, a screenshot
-  where it helps, and status. A defect is closed only after the fix is retested against the
-  original steps — never on the strength of the fix alone.
-- Phase 6's adversarial findings live in `ADVERSARIAL_REVIEW.md` at the repo root: one numbered
-  entry per finding (ADV-NNN) with what was done, expected, actual, and a disposition — either
-  fixed (pointing at its DEFECTS.md entry) or rejected with a written reason. No finding may be
-  left without a disposition when the project completes.

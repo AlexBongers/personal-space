@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
@@ -9,6 +9,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { common, createLowlight } from 'lowlight';
 import { CalloutExtension } from './CalloutExtension';
 import { fetchPage, updatePage } from '../api';
+import SlashMenu, { ITEMS } from './SlashMenu';
 
 const lowlight = createLowlight(common);
 
@@ -19,6 +20,31 @@ interface PageEditorProps {
 export default function PageEditor({ pageId }: PageEditorProps) {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedContentRef = useRef<string>('');
+
+  const [slashMenuOpen, setSlashMenuOpen] = useState(false);
+  const [slashQuery, setSlashQuery] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
+
+  const slashMenuOpenRef = useRef(false);
+  const slashQueryRef = useRef('');
+  const selectedIndexRef = useRef(0);
+
+  const closeSlashMenu = useCallback(() => {
+    setSlashMenuOpen(false);
+    setSlashQuery('');
+    setSelectedIndex(0);
+    slashMenuOpenRef.current = false;
+    slashQueryRef.current = '';
+    selectedIndexRef.current = 0;
+  }, []);
+
+  const filteredItems = useMemo(() => {
+    if (!slashMenuOpen) return [];
+    return ITEMS.filter(item =>
+      item.title.toLowerCase().includes(slashQuery.toLowerCase())
+    );
+  }, [slashMenuOpen, slashQuery]);
 
   const saveContent = useCallback(async (json: any) => {
     const contentStr = JSON.stringify(json);
@@ -57,6 +83,79 @@ export default function PageEditor({ pageId }: PageEditorProps) {
         class: 'prose-editor',
         style: 'min-height: 200px; outline: none; line-height: 1.7; font-size: 15px;',
       },
+      handleKeyDown: (view, event) => {
+        if (slashMenuOpenRef.current) {
+          if (event.key === 'Escape') {
+            closeSlashMenu();
+            return true;
+          }
+          if (event.key === 'Enter') {
+            const items = ITEMS.filter(item =>
+              item.title.toLowerCase().includes(slashQueryRef.current.toLowerCase())
+            );
+            if (items[selectedIndexRef.current]) {
+              items[selectedIndexRef.current].command(editor);
+              closeSlashMenu();
+            }
+            return true;
+          }
+          if (event.key === 'ArrowDown') {
+            const items = ITEMS.filter(item =>
+              item.title.toLowerCase().includes(slashQueryRef.current.toLowerCase())
+            );
+            setSelectedIndex(i => {
+              const next = Math.min(i + 1, items.length - 1);
+              selectedIndexRef.current = next;
+              return next;
+            });
+            return true;
+          }
+          if (event.key === 'ArrowUp') {
+            setSelectedIndex(i => {
+              const next = Math.max(i - 1, 0);
+              selectedIndexRef.current = next;
+              return next;
+            });
+            return true;
+          }
+          if (event.key === 'Backspace') {
+            if (slashQueryRef.current.length === 0) {
+              closeSlashMenu();
+            } else {
+              const newQuery = slashQueryRef.current.slice(0, -1);
+              slashQueryRef.current = newQuery;
+              setSlashQuery(newQuery);
+            }
+            return true;
+          }
+          if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            const newQuery = slashQueryRef.current + event.key;
+            slashQueryRef.current = newQuery;
+            setSlashQuery(newQuery);
+            setSelectedIndex(0);
+            selectedIndexRef.current = 0;
+            return true;
+          }
+          return true;
+        }
+
+        if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          const { $from } = view.state.selection;
+          if ($from.parent.type.name === 'paragraph' && $from.parentOffset === 0) {
+            const coords = view.coordsAtPos($from.pos);
+            setMenuPosition({ x: coords.left, y: coords.top });
+            setSlashMenuOpen(true);
+            setSlashQuery('');
+            setSelectedIndex(0);
+            slashMenuOpenRef.current = true;
+            slashQueryRef.current = '';
+            selectedIndexRef.current = 0;
+            return true;
+          }
+        }
+
+        return false;
+      },
     },
   });
 
@@ -84,7 +183,19 @@ export default function PageEditor({ pageId }: PageEditorProps) {
   if (!editor) return null;
 
   return (
-    <div style={{ padding: '32px 48px', maxWidth: 800, margin: '0 auto' }}>
+    <div style={{ padding: '32px 48px', maxWidth: 800, margin: '0 auto', position: 'relative' }}>
+      {slashMenuOpen && (
+        <SlashMenu
+          items={filteredItems}
+          selectedIndex={selectedIndex}
+          onSelect={(index) => {
+            filteredItems[index].command(editor);
+            closeSlashMenu();
+          }}
+          onClose={closeSlashMenu}
+          position={menuPosition}
+        />
+      )}
       <EditorContent editor={editor} />
     </div>
   );

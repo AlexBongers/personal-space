@@ -1,1 +1,8 @@
 .env
+node_modules/
+dist/
+coverage/
+data/
+e2e/.tmp/
+test-results/
+playwright-report/

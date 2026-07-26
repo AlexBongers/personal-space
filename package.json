@@ -1,0 +1,19 @@
+{
+  "name": "personal-space",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "start": "node start.mjs",
+    "dev": "node start.mjs --dev",
+    "build": "npm run build -w web",
+    "test": "npm run coverage -w server && npm run coverage -w web",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.1"
+  }
+}

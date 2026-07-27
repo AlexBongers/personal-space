@@ -1,1 +1,9 @@
 .env
+node_modules/
+dist/
+coverage/
+data/
+test-results/
+playwright-report/
+*.sqlite
+*.sqlite-journal

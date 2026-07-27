@@ -1,45 +1,43 @@
 # Personal Space
 
-A personal knowledge manager inspired by Notion — pages, blocks, databases with table / board /
-list views — built autonomously by a team of OpenCode agents running on open-source models.
+A personal knowledge manager you run on your own computer — a private, single-user take on Notion.
+Notes, plans and lists as free-form pages, plus databases you can view as tables, boards and lists.
+One user, no login, everything stays on your machine.
+
+## Start it
+
+You need [Node.js](https://nodejs.org) 20 or newer. Then, in this folder:
+
+```
+npm install && npm start
+```
+
+Open **http://localhost:8200**. That's it — no accounts, no cloud, no internet needed.
+
+The workspace comes pre-loaded, so there is something to look at from the first screen. Your data
+lives in the `data/` folder, as a SQLite database; delete that folder to start over from the seeded
+workspace.
+
+## Other commands
+
+| Command | What it does |
+| --- | --- |
+| `npm start` | Build everything and serve the app on port 8200 |
+| `npm run dev` | Backend plus Vite dev server with hot reload (http://localhost:8201) |
+| `npm test` | Unit tests, frontend and backend |
+| `npm run test:coverage` | Unit tests with statement coverage |
+| `npm run test:e2e` | End-to-end tests driving the real app in a real browser |
+
+## How it is put together
+
+- `server/` — Node, Express and SQLite (`better-sqlite3`). Owns the data and the JSON API, and
+  serves the built frontend.
+- `client/` — React and TypeScript, built with Vite. Drag and drop via `dnd-kit`.
+- `e2e/` — Playwright tests against the real production build.
+
+Domain types are declared once, in `server/src/types.ts`, and aliased into the client as `@shared`.
+
+## Documents
 
 - [REQUIREMENTS.md](./REQUIREMENTS.md) — what gets built, phase by phase, with success criteria.
-- [AGENTS.md](./AGENTS.md) — the build rules: team roles, defect workflow, file formats.
-- `.opencode/agents/` — the five agent definitions (orchestrator, two devs, qa, adversary).
-
-## Running the build
-
-Prerequisites: Docker, and VS Code with the Dev Containers extension.
-
-1. Put an OpenRouter API key in `.env` at the repo root (gitignored):
-
-       OPENROUTER_API_KEY=sk-or-...
-
-   Use a dedicated key with a spend cap — the agents run unattended against paid models.
-
-2. Open this folder in VS Code and reopen it in the container: click **Reopen in Container** on
-   the notification VS Code shows when it detects `.devcontainer`, or open the Command Palette
-   (Cmd+Shift+P) and run **Dev Containers: Reopen in Container**. The same menu sits behind the
-   `><` indicator in the bottom-left corner of the window. First build takes a few minutes:
-   setup installs OpenCode and agent-browser, downloads the browser, and adds the agent-browser
-   skill for OpenCode. The key is injected when the container is created, so after changing
-   `.env`, run **Dev Containers: Rebuild Container** to pick it up.
-
-   If the skill install ever needs re-running by hand:
-
-       npx skills add vercel-labs/agent-browser -a opencode -y
-
-3. In the container terminal, start OpenCode and switch to the **orchestrator** agent (press
-   Tab to cycle primary agents). Its model, Kimi K3, comes from the agent definition — check the
-   status line shows it.
-
-       opencode
-
-4. Kick it off with:
-
-   > Complete the entire project as specified and don't stop until all success criteria are met
-   > and the product is running
-
-While it runs: defects appear in `DEFECTS.md`, adversarial findings in `ADVERSARIAL_REVIEW.md`,
-evidence in `screenshots/`, end-to-end tests in `e2e/`. When the app starts, VS Code forwards its
-port — open it in your own browser to watch and use the product.
+- [ADVERSARIAL_REVIEW.md](./ADVERSARIAL_REVIEW.md) — findings from trying to break the product.

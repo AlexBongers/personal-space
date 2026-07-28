@@ -1,0 +1,114 @@
+.item {
+  user-select: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding-right: 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.row:hover {
+  background: var(--bg-hover);
+}
+
+.row:hover .actions {
+  opacity: 1;
+}
+
+.selected {
+  background: var(--bg-active);
+}
+
+.selected .titleText {
+  color: var(--amber);
+}
+
+.chevron {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.15s;
+  font-size: 10px;
+}
+
+.chevronExpanded {
+  transform: rotate(90deg);
+}
+
+.icon {
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.titleText {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.renameInput {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  font-size: 13px;
+  background: var(--bg-primary);
+  border: 1px solid var(--amber);
+  border-radius: 3px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.1s;
+  flex-shrink: 0;
+}
+
+.actionBtn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: 12px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.actionBtn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.deleteBtn:hover {
+  color: #e5484d;
+}
+
+.children {
+  /* children are indented via paddingLeft on the row */
+}
+
+.emptyChevron {
+  width: 20px;
+  flex-shrink: 0;
+}

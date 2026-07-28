@@ -1,0 +1,28 @@
+{
+  "name": "space-dsp",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "build": "npm run build -w client",
+    "start": "npm run build && npm run start -w server",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "npm run test -w server --if-present && npm run test:unit -w client",
+    "test:e2e": "npm run test:e2e -w client",
+    "lint": "npm run lint -w server --if-present && npm run lint -w client --if-present"
+  },
+  "workspaces": [
+    "server",
+    "client",
+    "shared"
+  ],
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true,
+    "esbuild@0.28.1": true,
+    "esbuild@0.25.12": true
+  }
+}

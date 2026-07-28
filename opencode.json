@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "openrouter/moonshotai/kimi-k3",
+  "model": "openrouter/deepseek/deepseek-v4-pro",
   "permission": {
     "edit": "allow",
     "bash": "allow",

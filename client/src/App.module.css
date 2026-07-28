@@ -1,0 +1,73 @@
+.layout {
+  display: flex;
+  height: 100%;
+}
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.searchBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 13px;
+  border: 1px solid var(--border);
+  transition: background 0.15s, color 0.15s;
+}
+
+.searchBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.searchBtnIcon {
+  font-size: 14px;
+}
+
+.searchBtnLabel {
+  font-weight: 500;
+}
+
+.searchBtnShortcut {
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  border: 1px solid var(--border);
+}
+
+.themeBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  font-size: 16px;
+  transition: background 0.15s;
+}
+
+.themeBtn:hover {
+  background: var(--bg-hover);
+}

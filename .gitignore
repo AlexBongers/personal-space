@@ -1,4 +1,9 @@
+node_modules/
+dist/
+.next/
+.wrangler/
 .env
-CLAUDE.md
-skills-lock.json
-.agents
+.env.*
+!.env.example
+*.log
+.DS_Store

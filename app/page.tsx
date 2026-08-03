@@ -210,6 +210,11 @@ const normalizeItems = (rawItems: Item[]): Item[] => rawItems.map((item) => {
   };
   return { ...item, view: active, views };
 });
+const mergeSeedAdditions = (existing: Item[]): Item[] => {
+  const existingIds = new Set(existing.map((item) => item.id));
+  const seedItems = normalizeItems(makeSeed());
+  return [...existing, ...seedItems.filter((item) => !existingIds.has(item.id))];
+};
 
 function BlockEditor({ item, onChange }: { item: Page | Row; onChange: (blocks: Block[]) => void }) {
   const [slashBlockId, setSlashBlockId] = useState<string | null>(null);
@@ -452,7 +457,15 @@ export default function Home() {
     try {
       const stored = window.localStorage.getItem("personal-space-items");
       const storedTheme = window.localStorage.getItem("personal-space-theme") as Theme | null;
-      if (stored) setItems(normalizeItems(JSON.parse(stored) as Item[]));
+      if (stored) {
+        const parsedItems = normalizeItems(JSON.parse(stored) as Item[]);
+        const seedVersion = window.localStorage.getItem("personal-space-seed-version");
+        const nextItems = seedVersion === "2" ? parsedItems : mergeSeedAdditions(parsedItems);
+        setItems(nextItems);
+        window.localStorage.setItem("personal-space-seed-version", "2");
+      } else {
+        window.localStorage.setItem("personal-space-seed-version", "2");
+      }
       if (storedTheme === "dark" || storedTheme === "light") setTheme(storedTheme);
     } catch { /* use the seed when browser storage is unavailable */ }
     setHydrated(true);

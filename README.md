@@ -39,5 +39,10 @@ The project uses the Sites-compatible Vinext/Cloudflare worker build. `.openai/h
 contains the Sites project binding so the same source can be published as a private self-hosted
 workspace.
 
+The client is split into focused editor, navigation, search, database, dashboard and domain-model
+modules under `app/personal-space/`. The test command builds the production worker, smoke-tests its
+rendered HTML, and enforces at least 80% line coverage for the domain model.
+
 See [REQUIREMENTS.md](./REQUIREMENTS.md) for the complete product contract and [AGENTS.md](./AGENTS.md)
-for repository conventions.
+for repository conventions. The final hostile-use findings and accepted storage limitation are
+recorded in [docs/ADVERSARIAL_REVIEW.md](./docs/ADVERSARIAL_REVIEW.md).

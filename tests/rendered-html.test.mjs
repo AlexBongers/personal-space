@@ -21,5 +21,7 @@ test("renders the Personal Space workspace shell", async () => {
   assert.match(html, /Personal Space/);
   assert.match(html, /A calm place for busy minds/);
   assert.match(html, /Search your space/);
+  assert.match(html, /og\.png/);
+  assert.match(html, /Make room for/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });

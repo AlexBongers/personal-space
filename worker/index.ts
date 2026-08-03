@@ -1,10 +1,12 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { isWorkspaceItems, loadWorkspace, MAX_WORKSPACE_BYTES, saveWorkspace } from "./workspace-store";
+import type { WorkspaceDatabase } from "./workspace-store";
 
 interface Env {
   ASSETS: Fetcher;
-  DB: D1Database;
+  DB?: D1Database;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -13,6 +15,51 @@ interface Env {
     };
   };
 }
+
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: {
+    "Cache-Control": "no-store",
+    "Content-Type": "application/json; charset=utf-8",
+    "X-Content-Type-Options": "nosniff",
+  },
+});
+
+const handleWorkspaceApi = async (request: Request, env: Env, url: URL) => {
+  if (!env.DB) return json({ error: "D1 database is not configured" }, 503);
+  const database = env.DB as unknown as WorkspaceDatabase;
+
+  if (request.method === "GET") {
+    return json(await loadWorkspace(database));
+  }
+
+  if (request.method !== "PUT") {
+    return new Response(null, { status: 405, headers: { Allow: "GET, PUT" } });
+  }
+
+  const origin = request.headers.get("Origin");
+  if (origin && origin !== url.origin) return json({ error: "Cross-origin writes are not allowed" }, 403);
+  if (!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) {
+    return json({ error: "Expected an application/json request" }, 415);
+  }
+
+  const declaredLength = Number(request.headers.get("Content-Length") || 0);
+  if (declaredLength > MAX_WORKSPACE_BYTES) return json({ error: "Workspace exceeds the storage limit" }, 413);
+
+  const body = await request.json().catch(() => null) as { items?: unknown; baseRevision?: unknown } | null;
+  if (!body || !isWorkspaceItems(body.items) || !Number.isInteger(body.baseRevision) || Number(body.baseRevision) < 1) {
+    return json({ error: "Invalid workspace payload" }, 400);
+  }
+
+  try {
+    const result = await saveWorkspace(database, body.items, Number(body.baseRevision));
+    if (!result.ok) return json({ error: "Workspace changed in another tab", ...result.current }, 409);
+    return json(result.workspace);
+  } catch (error) {
+    if (error instanceof RangeError) return json({ error: error.message }, 413);
+    throw error;
+  }
+};
 
 interface ExecutionContext {
   waitUntil(promise: Promise<unknown>): void;
@@ -38,6 +85,15 @@ const worker = {
           return result.response();
         },
       }, allowedWidths);
+    }
+
+    if (url.pathname === "/api/workspace") {
+      try {
+        return await handleWorkspaceApi(request, env, url);
+      } catch (error) {
+        console.error("Workspace API failed", error);
+        return json({ error: "Workspace storage is temporarily unavailable" }, 500);
+      }
     }
 
     return handler.fetch(request, env, ctx);

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Item } from "./types";
+import { syncLabel, type SyncState } from "./useWorkspacePersistence";
 
 type SidebarProps = {
   items: Item[];
@@ -15,6 +16,7 @@ type SidebarProps = {
   onCreateDatabase: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
+  syncState: SyncState;
 };
 
 export function Sidebar({
@@ -29,6 +31,7 @@ export function Sidebar({
   onCreateDatabase,
   onRename,
   onDelete,
+  syncState,
 }: SidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
@@ -149,7 +152,7 @@ export function Sidebar({
         <div className="sidebar-footer">
           <button className="new-button" onClick={() => onCreatePage(null)}><span>＋</span> New page</button>
           <button className="new-button secondary" onClick={onCreateDatabase}><span>▦</span> New database</button>
-          <div className="storage-note"><span className="local-dot" /> Changes stored in this browser</div>
+          <div className={`storage-note sync-${syncState}`}><span className="local-dot" /> {syncLabel(syncState)}</div>
         </div>
       </aside>
     </>

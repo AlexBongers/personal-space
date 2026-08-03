@@ -75,6 +75,13 @@ kbd { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; color
 .breadcrumbs { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
 .breadcrumbs strong { max-width: 280px; overflow: hidden; color: var(--ink); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
+.sync-indicator { display: flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--surface); font-size: 9px; font-weight: 700; white-space: nowrap; }
+.sync-indicator i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(53, 167, 124, .12); }
+.sync-indicator.sync-loading i, .sync-indicator.sync-saving i { background: var(--amber); box-shadow: 0 0 0 3px rgba(236, 173, 10, .14); animation: sync-pulse 1.2s ease-in-out infinite; }
+.sync-indicator.sync-offline i, .sync-indicator.sync-error i { background: var(--red); box-shadow: 0 0 0 3px rgba(214, 87, 75, .12); }
+.storage-note.sync-loading .local-dot, .storage-note.sync-saving .local-dot { background: var(--amber); box-shadow: 0 0 0 3px rgba(236, 173, 10, .13); }
+.storage-note.sync-offline .local-dot, .storage-note.sync-error .local-dot { background: var(--red); box-shadow: 0 0 0 3px rgba(214, 87, 75, .13); }
+@keyframes sync-pulse { 50% { opacity: .38; transform: scale(.76); } }
 .search-trigger { display: flex; align-items: center; gap: 9px; min-width: 207px; padding: 8px 9px 8px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--surface); font-size: 11px; text-align: left; }
 .search-trigger > span:first-child { color: var(--blue); font-size: 18px; }
 .search-trigger kbd { margin-left: auto; }
@@ -271,6 +278,8 @@ tbody tr:hover td { background: color-mix(in srgb, var(--surface-soft) 60%, tran
   .page-view, .database-page { padding: 44px 28px 80px; }
   .search-trigger { min-width: 38px; width: 38px; overflow: hidden; padding: 8px; }
   .search-trigger > span:nth-child(2), .search-trigger kbd { display: none; }
+  .sync-indicator { width: 33px; padding: 0; justify-content: center; }
+  .sync-indicator span { display: none; }
   .home-hero { grid-template-columns: 1fr 190px; padding-right: 30px; }
   .hero-orbit { width: 205px; height: 205px; }
 }

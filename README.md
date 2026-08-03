@@ -25,8 +25,10 @@ with nested pages, a reading list, a project tracker, a travel plan and every ed
 - Per-view filters, sorting and board grouping, with rows that open as editable pages.
 - Quick find for pages, databases and rows, plus persistent light and dark themes.
 
-All workspace data stays in the browser that runs the app. There are no accounts, trackers or
-external data services required for the core experience.
+Workspace content is stored in the private Cloudflare D1 database provisioned by Sites. Changes
+therefore survive browser-storage clearing and are available anywhere the owner opens the private
+site. Browser storage is used only for the theme preference and as a temporary recovery backup if
+the database cannot be reached.
 
 ## Build and test
 
@@ -36,8 +38,9 @@ npm run lint
 ```
 
 The project uses the Sites-compatible Vinext/Cloudflare worker build. `.openai/hosting.json`
-contains the Sites project binding so the same source can be published as a private self-hosted
-workspace.
+contains the Sites project and logical D1 bindings so the same source can be published as a private
+self-hosted workspace. Sites provisions the physical database and applies the migration in
+`drizzle/` during deployment.
 
 The client is split into focused editor, navigation, search, database, dashboard and domain-model
 modules under `app/personal-space/`. The test command builds the production worker, smoke-tests its

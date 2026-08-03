@@ -10,15 +10,12 @@ import {
   descendantIds,
   isDatabase,
   isPage,
-  makeSeed,
-  mergeSeedAdditions,
-  normalizeItems,
-  SEED_VERSION,
   STORAGE_KEYS,
 } from "./personal-space/model";
 import { SearchDialog } from "./personal-space/SearchDialog";
 import { Sidebar } from "./personal-space/Sidebar";
 import type { Block, Item, SearchResult, Theme } from "./personal-space/types";
+import { syncLabel, useWorkspacePersistence } from "./personal-space/useWorkspacePersistence";
 
 const isTypingTarget = (target: EventTarget | null) => {
   const element = target as HTMLElement | null;
@@ -26,12 +23,11 @@ const isTypingTarget = (target: EventTarget | null) => {
 };
 
 export default function Home() {
-  const [items, setItems] = useState<Item[]>(() => normalizeItems(makeSeed()));
+  const { items, setItems, hydrated, syncState } = useWorkspacePersistence();
   const [selectedId, setSelectedId] = useState("home");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["home", "work", "personal"]));
   const [theme, setTheme] = useState<Theme>("light");
-  const [hydrated, setHydrated] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -39,26 +35,14 @@ export default function Home() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
-        const stored = window.localStorage.getItem(STORAGE_KEYS.items);
         const storedTheme = window.localStorage.getItem(STORAGE_KEYS.theme) as Theme | null;
-        if (stored) {
-          const parsedItems = normalizeItems(JSON.parse(stored) as Item[]);
-          const seedVersion = window.localStorage.getItem(STORAGE_KEYS.seedVersion);
-          setItems(seedVersion === SEED_VERSION ? parsedItems : mergeSeedAdditions(parsedItems));
-        }
-        window.localStorage.setItem(STORAGE_KEYS.seedVersion, SEED_VERSION);
         if (storedTheme === "dark" || storedTheme === "light") setTheme(storedTheme);
       } catch {
-        // The seeded workspace remains usable if browser storage is unavailable.
+        // Keep the light theme if browser preferences are unavailable.
       }
-      setHydrated(true);
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
-
-  useEffect(() => {
-    if (hydrated) window.localStorage.setItem(STORAGE_KEYS.items, JSON.stringify(items));
-  }, [items, hydrated]);
 
   useEffect(() => {
     if (hydrated) window.localStorage.setItem(STORAGE_KEYS.theme, theme);
@@ -189,6 +173,7 @@ export default function Home() {
         onCreateDatabase={createDatabase}
         onRename={renameItem}
         onDelete={deleteItem}
+        syncState={syncState}
       />
       <section className="main-area">
         <header className="topbar">
@@ -197,6 +182,9 @@ export default function Home() {
             <div className="breadcrumbs"><span>Workspace</span><span>›</span><strong>{selected?.title || "Home"}</strong></div>
           </div>
           <div className="topbar-actions">
+            <div className={`sync-indicator sync-${syncState}`} title={syncLabel(syncState)}>
+              <i /><span>{syncLabel(syncState)}</span>
+            </div>
             <button className="search-trigger" onClick={() => setSearchOpen(true)}>
               <span>⌕</span><span>Search your space</span><kbd>⌘ K</kbd>
             </button>
@@ -216,6 +204,7 @@ export default function Home() {
               database={selected}
               onUpdate={updateItem}
               initialRowId={selectedRowId}
+              saveLabel={syncLabel(syncState)}
             />
           ) : (
             <div className="page-view">
@@ -233,7 +222,7 @@ export default function Home() {
               </div>
               <div className="page-caption">Personal Space <span>·</span> edited just now</div>
               {selected?.id === "home" && <HomeOverview items={items} onOpen={selectItem} />}
-              {selected && isPage(selected) && <BlockEditor item={selected} onChange={updateSelectedBlocks} />}
+              {selected && isPage(selected) && <BlockEditor item={selected} onChange={updateSelectedBlocks} saveLabel={syncLabel(syncState)} />}
             </div>
           )}
         </div>

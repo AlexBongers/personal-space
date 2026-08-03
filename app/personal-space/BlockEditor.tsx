@@ -7,6 +7,7 @@ import type { Block, BlockType, Page, Row } from "./types";
 type BlockEditorProps = {
   item: Page | Row;
   onChange: (blocks: Block[]) => void;
+  saveLabel?: string;
 };
 
 const blockGlyph: Record<BlockType, string> = {
@@ -23,7 +24,7 @@ const blockGlyph: Record<BlockType, string> = {
   callout: "✦",
 };
 
-export function BlockEditor({ item, onChange }: BlockEditorProps) {
+export function BlockEditor({ item, onChange, saveLabel = "Saved to D1" }: BlockEditorProps) {
   const [slashBlockId, setSlashBlockId] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
@@ -151,7 +152,7 @@ export function BlockEditor({ item, onChange }: BlockEditorProps) {
           <button className="text-button" onClick={() => insertBlock("paragraph")}>
             <span>＋</span> Add block
           </button>
-          <span className="autosave"><i /> Saved locally</span>
+          <span className="autosave"><i /> {saveLabel}</span>
         </div>
       </div>
       <div className="block-list">

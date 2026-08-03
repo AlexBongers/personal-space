@@ -111,9 +111,13 @@ export const matchesFilter = (row: Row, property: Property, filter: Filter) => {
   return text.includes(query);
 };
 
+const migrateBlockCopy = (entry: Block): Block => entry.text === "Personal Space keeps projects, plans and ideas close at hand. Everything is stored in this browser, ready when you are."
+  ? { ...entry, text: "Personal Space keeps projects, plans and ideas close at hand. Everything is synced to your private D1 database, ready wherever you open this space." }
+  : entry;
+
 export const normalizeItems = (rawItems: Item[]): Item[] =>
   rawItems.map((item) => {
-    if (item.kind !== "database") return item;
+    if (item.kind !== "database") return { ...item, blocks: item.blocks.map(migrateBlockCopy) };
     const normalizeView = (rawView: ViewSettings | undefined, mode: ViewMode): ViewSettings => {
       const source = rawView || emptyView(mode);
       return {
@@ -134,14 +138,19 @@ export const normalizeItems = (rawItems: Item[]): Item[] =>
       board: normalizeView(item.views?.board || (active.mode === "board" ? active : undefined), "board"),
       list: normalizeView(item.views?.list || (active.mode === "list" ? active : undefined), "list"),
     };
-    return { ...item, view: active, views };
+    return {
+      ...item,
+      rows: item.rows.map((row) => ({ ...row, blocks: row.blocks.map(migrateBlockCopy) })),
+      view: active,
+      views,
+    };
   });
 
 const seedBlocks = (): Block[] => [
   createBlock("heading1", "A calm place for busy minds"),
   createBlock(
     "paragraph",
-    "Personal Space keeps projects, plans and ideas close at hand. Everything is stored in this browser, ready when you are.",
+    "Personal Space keeps projects, plans and ideas close at hand. Everything is synced to your private D1 database, ready wherever you open this space.",
   ),
   createBlock(
     "callout",

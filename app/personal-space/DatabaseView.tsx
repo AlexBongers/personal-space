@@ -32,6 +32,7 @@ type DatabaseViewProps = {
   database: Database;
   onUpdate: (database: Database) => void;
   initialRowId?: string | null;
+  saveLabel?: string;
 };
 
 function PropertyCell({ property, value, onChange }: { property: Property; value: CellValue; onChange: (value: CellValue) => void }) {
@@ -192,7 +193,7 @@ function PropertyManager({ database, onUpdate }: { database: Database; onUpdate:
   );
 }
 
-function RowPage({ database, row, onUpdate, onBack }: { database: Database; row: Row; onUpdate: (database: Database) => void; onBack: () => void }) {
+function RowPage({ database, row, onUpdate, onBack, saveLabel }: { database: Database; row: Row; onUpdate: (database: Database) => void; onBack: () => void; saveLabel?: string }) {
   const updateValue = (propertyId: string, value: CellValue) => onUpdate({
     ...database,
     rows: database.rows.map((entry) => entry.id === row.id ? { ...entry, values: { ...entry.values, [propertyId]: value } } : entry),
@@ -221,12 +222,12 @@ function RowPage({ database, row, onUpdate, onBack }: { database: Database; row:
           </label>
         ))}
       </div>
-      <BlockEditor item={row} onChange={updateBlocks} />
+      <BlockEditor item={row} onChange={updateBlocks} saveLabel={saveLabel} />
     </div>
   );
 }
 
-export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewProps) {
+export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: DatabaseViewProps) {
   const [openRowId, setOpenRowId] = useState<string | null>(initialRowId || null);
   const activeView = database.views?.[database.view.mode] || database.view;
   const openRowPage = (rowId: string) => {
@@ -317,7 +318,7 @@ export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewP
 
   const openRow = openRowId ? database.rows.find((row) => row.id === openRowId) : undefined;
   if (openRow) {
-    return <RowPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} />;
+    return <RowPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} saveLabel={saveLabel} />;
   }
 
   const selectProperty =

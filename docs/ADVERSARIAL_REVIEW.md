@@ -22,9 +22,9 @@ viewport rather than checking only the seeded happy path.
 - Responsive home and navigation at 390 × 844, including the nested page tree.
 - Persistence behavior through browser storage and the seeded-workspace migration path.
 
-## Accepted limitation
+## Storage follow-up
 
-The hosted Sites version stores workspace data in browser `localStorage`. It does not currently
-provide the Node + SQLite backend described in the original local-desktop guidance. That tradeoff
-keeps the app private, offline-capable after load, and deployable as a standalone Sites project,
-but data does not synchronize between browsers and is removed if site storage is cleared.
+The original browser-storage limitation was resolved in the next release. Workspace content is now
+authoritative in a private D1 database behind the same-origin Worker API. Existing browser data is
+migrated once when the first D1-backed version opens; only theme preference and an emergency
+unsynced backup remain device-local.

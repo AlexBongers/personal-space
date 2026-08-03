@@ -460,11 +460,11 @@ export default function Home() {
       if (stored) {
         const parsedItems = normalizeItems(JSON.parse(stored) as Item[]);
         const seedVersion = window.localStorage.getItem("personal-space-seed-version");
-        const nextItems = seedVersion === "2" ? parsedItems : mergeSeedAdditions(parsedItems);
+        const nextItems = seedVersion === "3" ? parsedItems : mergeSeedAdditions(parsedItems);
         setItems(nextItems);
-        window.localStorage.setItem("personal-space-seed-version", "2");
+        window.localStorage.setItem("personal-space-seed-version", "3");
       } else {
-        window.localStorage.setItem("personal-space-seed-version", "2");
+        window.localStorage.setItem("personal-space-seed-version", "3");
       }
       if (storedTheme === "dark" || storedTheme === "light") setTheme(storedTheme);
     } catch { /* use the seed when browser storage is unavailable */ }

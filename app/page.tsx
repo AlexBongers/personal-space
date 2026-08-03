@@ -17,12 +17,13 @@ type BlockType =
   | "callout";
 type PropertyType = "text" | "number" | "select" | "multi-select" | "date" | "checkbox" | "url";
 type ViewMode = "table" | "board" | "list";
+type FilterOperator = "contains" | "is" | "is-not" | "before" | "after" | "checked" | "unchecked";
 
 type Block = { id: string; type: BlockType; text: string; checked?: boolean };
 type SelectOption = { id: string; label: string; color: string };
 type Property = { id: string; name: string; type: PropertyType; options?: SelectOption[] };
 type CellValue = string | number | boolean | string[] | null;
-type Filter = { propertyId: string; query: string };
+type Filter = { propertyId: string; query: string; operator: FilterOperator };
 type ViewSettings = { mode: ViewMode; groupBy: string; filters: Filter[]; sortBy: string; sortDir: "asc" | "desc" };
 type Page = { id: string; kind: "page"; title: string; icon: string; parentId: string | null; blocks: Block[] };
 type Row = { id: string; title: string; values: Record<string, CellValue>; blocks: Block[] };
@@ -35,6 +36,7 @@ type Database = {
   properties: Property[];
   rows: Row[];
   view: ViewSettings;
+  views?: Partial<Record<ViewMode, ViewSettings>>;
 };
 type Item = Page | Database;
 type SearchResult = { id: string; label: string; kind: string; parentId: string | null; rowId?: string };
@@ -62,10 +64,22 @@ const propertyLabels: Record<PropertyType, string> = {
   checkbox: "Checkbox",
   url: "URL",
 };
+const filterOperatorLabels: Record<FilterOperator, string> = {
+  contains: "contains",
+  is: "is",
+  "is-not": "is not",
+  before: "before",
+  after: "after",
+  checked: "is checked",
+  unchecked: "is not checked",
+};
 
 const uid = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 9)}-${Date.now().toString(36)}`;
 const block = (type: BlockType, text = "", checked = false): Block => ({ id: uid("block"), type, text, checked });
 const option = (label: string, color: string): SelectOption => ({ id: uid("option"), label, color });
+const compactText = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+const defaultFilterOperator = (property: Property | undefined): FilterOperator => property?.type === "checkbox" ? "checked" : property?.type === "date" ? "after" : property?.type === "select" ? "is" : "contains";
+const emptyView = (mode: ViewMode): ViewSettings => ({ mode, groupBy: "", filters: [], sortBy: "", sortDir: "asc" });
 
 const seedBlocks = (): Block[] => [
   block("heading1", "A calm place for busy minds"),
@@ -110,6 +124,14 @@ const makeSeed = (): Item[] => {
     parentId: "work",
     blocks: [block("heading1", "Launch notes"), block("paragraph", "A simple launch can still feel intentional. Tell one clear story, then make the next step effortless."), block("todo", "Write the first release note", true), block("todo", "Invite three thoughtful testers", false)],
   };
+  const travel: Page = {
+    id: "travel",
+    kind: "page",
+    title: "Spring route",
+    icon: "✈",
+    parentId: "personal",
+    blocks: [block("heading1", "Spring route"), block("paragraph", "A slower week between old streets, long lunches and the kind of museums that make time disappear."), block("heading2", "Loose plan"), block("bulleted", "Utrecht → Antwerp → Ghent"), block("bulleted", "Keep one afternoon completely unscheduled"), block("todo", "Book the first train", false), block("todo", "Save a short list of places to eat", false)],
+  };
   const reading: Database = {
     id: "reading",
     kind: "database",
@@ -129,7 +151,7 @@ const makeSeed = (): Item[] => {
       { id: "book-2", title: "The Dispossessed", values: { status: "Finished", author: "Ursula K. Le Guin", rating: 5, started: "2024-11-04", favorite: true, link: "https://www.ursulakleguin.com" }, blocks: [block("quote", "You cannot buy the revolution. You cannot make the revolution. You can only be the revolution.")] },
       { id: "book-3", title: "Thinking in Systems", values: { status: "To read", author: "Donella Meadows", rating: 0, started: "", favorite: false, link: "" }, blocks: [block("paragraph", "A note to return to when the map feels too simple.")] },
     ],
-    view: { mode: "table", groupBy: "status", filters: [], sortBy: "", sortDir: "asc" },
+    view: { mode: "table", groupBy: "status", filters: [{ propertyId: "status", query: "Reading", operator: "is" }], sortBy: "rating", sortDir: "desc" },
   };
   const projects: Database = {
     id: "projects",
@@ -153,7 +175,7 @@ const makeSeed = (): Item[] => {
     ],
     view: { mode: "board", groupBy: "stage", filters: [], sortBy: "priority", sortDir: "asc" },
   };
-  return [home, work, launch, personal, reading, projects];
+  return [home, work, launch, personal, travel, reading, projects];
 };
 
 const isDatabase = (item: Item | undefined): item is Database => item?.kind === "database";
@@ -163,17 +185,39 @@ const valueText = (value: CellValue): string => Array.isArray(value) ? value.joi
 const matchesFilter = (row: Row, property: Property, filter: Filter) => {
   const value = getValue(row, property.id);
   const query = filter.query.trim().toLowerCase();
+  if (filter.operator === "checked") return Boolean(value);
+  if (filter.operator === "unchecked") return !value;
   if (!query) return true;
-  if (property.type === "checkbox") return (value ? "checked" : "unchecked").includes(query);
-  return valueText(value).toLowerCase().includes(query);
+  const text = valueText(value).toLowerCase();
+  if (filter.operator === "is") return text === query;
+  if (filter.operator === "is-not") return text !== query;
+  if (filter.operator === "before") return text !== "" && text < query;
+  if (filter.operator === "after") return text !== "" && text > query;
+  return text.includes(query);
 };
+
+const normalizeItems = (rawItems: Item[]): Item[] => rawItems.map((item) => {
+  if (item.kind !== "database") return item;
+  const normalizeView = (rawView: ViewSettings | undefined, mode: ViewMode): ViewSettings => {
+    const source = rawView || emptyView(mode);
+    return { ...emptyView(mode), ...source, mode, filters: (source.filters || []).map((filter) => ({ ...filter, operator: filter.operator || defaultFilterOperator(item.properties.find((property) => property.id === filter.propertyId)) })) };
+  };
+  const active = normalizeView(item.view, item.view?.mode || "table");
+  const views = {
+    table: normalizeView(item.views?.table || (active.mode === "table" ? active : undefined), "table"),
+    board: normalizeView(item.views?.board || (active.mode === "board" ? active : undefined), "board"),
+    list: normalizeView(item.views?.list || (active.mode === "list" ? active : undefined), "list"),
+  };
+  return { ...item, view: active, views };
+});
 
 function BlockEditor({ item, onChange }: { item: Page | Row; onChange: (blocks: Block[]) => void }) {
   const [slashBlockId, setSlashBlockId] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState("");
+  const [slashIndex, setSlashIndex] = useState(0);
   const [dragId, setDragId] = useState<string | null>(null);
   const blocks = item.blocks.length ? item.blocks : [block("paragraph")];
-  const filteredTypes = (Object.keys(blockLabels) as BlockType[]).filter((type) => blockLabels[type].toLowerCase().includes(slashQuery.toLowerCase()));
+  const filteredTypes = (Object.keys(blockLabels) as BlockType[]).filter((type) => compactText(blockLabels[type]).includes(compactText(slashQuery)));
 
   const updateBlock = (id: string, patch: Partial<Block>) => onChange(blocks.map((entry) => entry.id === id ? { ...entry, ...patch } : entry));
   const insertBlock = (type: BlockType, afterId?: string) => {
@@ -182,11 +226,35 @@ function BlockEditor({ item, onChange }: { item: Page | Row; onChange: (blocks: 
     onChange(next);
     setSlashBlockId(null);
     setSlashQuery("");
+    setSlashIndex(0);
   };
   const handleKey = (event: React.KeyboardEvent<HTMLTextAreaElement>, current: Block) => {
-    if (slashBlockId === current.id && event.key === "ArrowDown") {
-      event.preventDefault();
-      return;
+    if (event.key === "/") {
+      setSlashBlockId(current.id);
+      setSlashQuery("");
+      setSlashIndex(0);
+    }
+    if (slashBlockId === current.id) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSlashIndex((index) => Math.min(index + 1, Math.max(filteredTypes.length - 1, 0)));
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSlashIndex((index) => Math.max(index - 1, 0));
+        return;
+      }
+      if (event.key === "Enter" && filteredTypes.length > 0) {
+        event.preventDefault();
+        chooseSlash(filteredTypes[slashIndex] || filteredTypes[0]);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSlashBlockId(null);
+        return;
+      }
     }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -204,6 +272,7 @@ function BlockEditor({ item, onChange }: { item: Page | Row; onChange: (blocks: 
     if (slash) {
       setSlashBlockId(current.id);
       setSlashQuery(slash[1]);
+      setSlashIndex(0);
     } else {
       setSlashBlockId(null);
     }
@@ -245,7 +314,7 @@ function BlockEditor({ item, onChange }: { item: Page | Row; onChange: (blocks: 
           </div>}
           {slashBlockId === current.id && filteredTypes.length > 0 && <div className="slash-menu">
             <div className="slash-heading">Insert block <span>↑↓ Enter</span></div>
-            {filteredTypes.slice(0, 7).map((type) => <button key={type} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseSlash(type)}><span className={`slash-icon icon-${type}`}>{type === "divider" ? "—" : type === "todo" ? "☑" : type === "code" ? "‹›" : "T"}</span>{blockLabels[type]}</button>)}
+            {filteredTypes.slice(0, 7).map((type, typeIndex) => <button className={slashIndex === typeIndex ? "highlighted" : ""} key={type} onMouseEnter={() => setSlashIndex(typeIndex)} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseSlash(type)}><span className={`slash-icon icon-${type}`}>{type === "divider" ? "—" : type === "todo" ? "☑" : type === "code" ? "‹›" : "T"}</span>{blockLabels[type]}<span className="slash-shortcut">{typeIndex === 0 ? "↵" : ""}</span></button>)}
           </div>}
         </div>
       </div>)}
@@ -269,7 +338,7 @@ function Sidebar({ items, selectedId, expanded, onSelect, onToggle, onCreatePage
       <div className={`tree-row ${selectedId === item.id ? "active" : ""}`} style={{ paddingLeft: `${12 + depth * 18}px` }}>
         <button className="chevron" aria-label={expanded.has(item.id) ? "Collapse" : "Expand"} onClick={() => hasChildren && onToggle(item.id)}>{hasChildren ? (expanded.has(item.id) ? "⌄" : "›") : "·"}</button>
         <button className="tree-label" onClick={() => onSelect(item.id)}><span className={`tree-icon ${item.kind === "database" ? "database-icon" : ""}`}>{item.icon}</span>{editingId === item.id ? <input autoFocus value={editingValue} onChange={(event) => setEditingValue(event.target.value)} onBlur={finishRename} onKeyDown={(event) => { if (event.key === "Enter") finishRename(); if (event.key === "Escape") setEditingId(null); }} onClick={(event) => event.stopPropagation()} /> : <span>{item.title}</span>}</button>
-        <div className="tree-actions"><button aria-label="Rename" onClick={() => beginRename(item)}>•••</button><button aria-label={`Delete ${item.title}`} onClick={() => onDelete(item.id)}>×</button></div>
+        <div className="tree-actions">{item.kind === "page" && <button aria-label={`New page inside ${item.title}`} onClick={(event) => { event.stopPropagation(); onCreatePage(item.id); }}>＋</button>}<button aria-label={`Rename ${item.title}`} onClick={(event) => { event.stopPropagation(); beginRename(item); }}>•••</button><button aria-label={`Delete ${item.title}`} onClick={(event) => { event.stopPropagation(); onDelete(item.id); }}>×</button></div>
       </div>
       {expanded.has(item.id) && children.map((child) => renderNode(child, depth + 1))}
     </div>;
@@ -307,7 +376,9 @@ function PropertyManager({ database, onUpdate }: { database: Database; onUpdate:
   const remove = (property: Property) => {
     if (!window.confirm(`Remove ${property.name}? Values in this column will be deleted.`)) return;
     const nextRows = database.rows.map((row) => { const values = { ...row.values }; delete values[property.id]; return { ...row, values }; });
-    onUpdate({ ...database, properties: database.properties.filter((entry) => entry.id !== property.id), rows: nextRows, view: { ...database.view, groupBy: database.view.groupBy === property.id ? "" : database.view.groupBy, sortBy: database.view.sortBy === property.id ? "" : database.view.sortBy } });
+    const cleanView = (view: ViewSettings): ViewSettings => ({ ...view, groupBy: view.groupBy === property.id ? "" : view.groupBy, sortBy: view.sortBy === property.id ? "" : view.sortBy, filters: view.filters.filter((filter) => filter.propertyId !== property.id) });
+    const nextViews = database.views ? Object.fromEntries(Object.entries(database.views).map(([mode, view]) => [mode, view ? cleanView(view) : view])) as Partial<Record<ViewMode, ViewSettings>> : undefined;
+    onUpdate({ ...database, properties: database.properties.filter((entry) => entry.id !== property.id), rows: nextRows, view: cleanView(database.view), views: nextViews });
   };
   const addOption = (property: Property) => {
     const label = window.prompt("Option label", "New option");
@@ -327,34 +398,50 @@ function RowPage({ database, row, onUpdate, onBack }: { database: Database; row:
 
 function DatabaseView({ database, onUpdate, initialRowId }: { database: Database; onUpdate: (database: Database) => void; initialRowId?: string | null }) {
   const [openRowId, setOpenRowId] = useState<string | null>(initialRowId || null);
-  const updateView = (patch: Partial<ViewSettings>) => onUpdate({ ...database, view: { ...database.view, ...patch } });
+  const activeView = database.views?.[database.view.mode] || database.view;
+  const updateView = (patch: Partial<ViewSettings>) => {
+    const nextView = { ...activeView, ...patch, mode: activeView.mode };
+    onUpdate({ ...database, view: nextView, views: { ...database.views, [activeView.mode]: nextView } });
+  };
+  const switchMode = (mode: ViewMode) => {
+    const nextView = database.views?.[mode] || { ...emptyView(mode), groupBy: database.properties.find((entry) => entry.type === "select")?.id || "" };
+    onUpdate({ ...database, view: nextView, views: { ...database.views, [mode]: nextView } });
+  };
   const updateCell = (rowId: string, propertyId: string, value: CellValue) => onUpdate({ ...database, rows: database.rows.map((row) => row.id === rowId ? { ...row, values: { ...row.values, [propertyId]: value } } : row) });
   const visibleRows = useMemo(() => {
-    let rows = database.rows.filter((row) => database.view.filters.every((filter) => { const prop = database.properties.find((entry) => entry.id === filter.propertyId); return prop ? matchesFilter(row, prop, filter) : true; }));
-    if (database.view.sortBy) {
-      const sortProperty = database.properties.find((entry) => entry.id === database.view.sortBy);
-      if (sortProperty) rows = [...rows].sort((a, b) => { const av = valueText(a.values[sortProperty.id]).toLowerCase(); const bv = valueText(b.values[sortProperty.id]).toLowerCase(); return database.view.sortDir === "asc" ? av.localeCompare(bv, undefined, { numeric: true }) : bv.localeCompare(av, undefined, { numeric: true }); });
+    let rows = database.rows.filter((row) => activeView.filters.every((filter) => { const prop = database.properties.find((entry) => entry.id === filter.propertyId); return prop ? matchesFilter(row, prop, filter) : true; }));
+    if (activeView.sortBy) {
+      const sortProperty = database.properties.find((entry) => entry.id === activeView.sortBy);
+      if (sortProperty) rows = [...rows].sort((a, b) => { const av = valueText(a.values[sortProperty.id]).toLowerCase(); const bv = valueText(b.values[sortProperty.id]).toLowerCase(); return activeView.sortDir === "asc" ? av.localeCompare(bv, undefined, { numeric: true }) : bv.localeCompare(av, undefined, { numeric: true }); });
     }
     return rows;
-  }, [database]);
+  }, [activeView, database.properties, database.rows]);
   const addRow = () => onUpdate({ ...database, rows: [...database.rows, { id: uid("row"), title: "Untitled row", values: Object.fromEntries(database.properties.map((entry) => [entry.id, entry.type === "checkbox" ? false : entry.type === "multi-select" ? [] : ""])), blocks: [block("paragraph")] }] });
   const deleteRow = (rowId: string) => { if (window.confirm("Delete this row permanently?")) onUpdate({ ...database, rows: database.rows.filter((row) => row.id !== rowId) }); };
-  const addFilter = () => { const first = database.properties[0]; if (!first) return; updateView({ filters: [...database.view.filters, { propertyId: first.id, query: "" }] }); };
-  const changeFilter = (index: number, patch: Partial<Filter>) => updateView({ filters: database.view.filters.map((filter, filterIndex) => filterIndex === index ? { ...filter, ...patch } : filter) });
-  const removeFilter = (index: number) => updateView({ filters: database.view.filters.filter((_, filterIndex) => filterIndex !== index) });
+  const addFilter = () => { const first = database.properties[0]; if (!first) return; updateView({ filters: [...activeView.filters, { propertyId: first.id, query: "", operator: defaultFilterOperator(first) }] }); };
+  const changeFilter = (index: number, patch: Partial<Filter>) => {
+    const nextFilters = activeView.filters.map((filter, filterIndex) => {
+      if (filterIndex !== index) return filter;
+      if (patch.propertyId && patch.propertyId !== filter.propertyId) return { ...filter, ...patch, query: "", operator: defaultFilterOperator(database.properties.find((entry) => entry.id === patch.propertyId)) };
+      return { ...filter, ...patch };
+    });
+    updateView({ filters: nextFilters });
+  };
+  const removeFilter = (index: number) => updateView({ filters: activeView.filters.filter((_, filterIndex) => filterIndex !== index) });
   const openRow = openRowId ? database.rows.find((row) => row.id === openRowId) : undefined;
   if (openRow) return <RowPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} />;
-  const selectProperty = database.properties.find((entry) => entry.id === database.view.groupBy && entry.type === "select") || database.properties.find((entry) => entry.type === "select");
+  const selectProperty = database.properties.find((entry) => entry.id === activeView.groupBy && entry.type === "select") || database.properties.find((entry) => entry.type === "select");
   const columns = selectProperty?.options || [];
   const moveCard = (rowId: string, label: string) => { if (!selectProperty) return; updateCell(rowId, selectProperty.id, label); };
-  return <div className="database-page"><div className="database-heading"><div><div className="page-kicker">Database</div><h1><span className="database-title-icon">{database.icon}</span>{database.title}</h1><p>{database.rows.length} records · {database.properties.length} properties</p></div><button className="primary-button" onClick={addRow}>＋ New row</button></div><div className="database-toolbar"><div className="view-switcher">{(["table", "board", "list"] as ViewMode[]).map((mode) => <button className={database.view.mode === mode ? "active" : ""} key={mode} onClick={() => updateView({ mode })}><span>{mode === "table" ? "▤" : mode === "board" ? "▥" : "☷"}</span>{mode[0].toUpperCase() + mode.slice(1)}</button>)}</div><div className="view-settings"><label>Sort <select value={database.view.sortBy} onChange={(event) => updateView({ sortBy: event.target.value })}><option value="">None</option>{database.properties.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>{database.view.sortBy && <button className="icon-button" onClick={() => updateView({ sortDir: database.view.sortDir === "asc" ? "desc" : "asc" })}>{database.view.sortDir === "asc" ? "↑" : "↓"}</button>}<button className="small-button" onClick={addFilter}>＋ Filter</button></div></div>{database.view.filters.length > 0 && <div className="filter-bar">{database.view.filters.map((filter, index) => <div className="filter-pill" key={`${filter.propertyId}-${index}`}><span>Filter</span><select value={filter.propertyId} onChange={(event) => changeFilter(index, { propertyId: event.target.value })}>{database.properties.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select><input placeholder="contains…" value={filter.query} onChange={(event) => changeFilter(index, { query: event.target.value })} /><button onClick={() => removeFilter(index)}>×</button></div>)}</div>}{database.view.mode === "table" && <div className="table-wrap"><table><thead><tr><th className="row-title-col">Name</th>{database.properties.map((entry) => <th key={entry.id}>{entry.name}<small>{propertyLabels[entry.type]}</small></th>)}<th /></tr></thead><tbody>{visibleRows.map((row) => <tr key={row.id}><td className="row-name"><button onClick={() => setOpenRowId(row.id)}><span className="row-bullet">↗</span><span>{row.title}</span></button></td>{database.properties.map((entry) => <td key={entry.id}><PropertyCell property={entry} value={getValue(row, entry.id)} onChange={(value) => updateCell(row.id, entry.id, value)} /></td>)}<td><button className="delete-row" onClick={() => deleteRow(row.id)} aria-label={`Delete ${row.title}`}>×</button></td></tr>)}</tbody></table>{visibleRows.length === 0 && <div className="empty-state">No rows match these filters.</div>}<button className="add-row-link" onClick={addRow}>＋ Add a row</button></div>}{database.view.mode === "board" && <div className="board-wrap"><div className="board-toolbar"><label>Group by <select value={selectProperty?.id || ""} onChange={(event) => updateView({ groupBy: event.target.value })}>{database.properties.filter((entry) => entry.type === "select").map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label><span>Drag cards between columns to update the select value.</span></div><div className="board-columns">{columns.length ? columns.map((column) => <div className="board-column" key={column.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { const rowId = event.dataTransfer.getData("row-id"); if (rowId) moveCard(rowId, column.label); }}><div className="column-heading"><span className="color-dot" style={{ background: column.color }} />{column.label}<small>{visibleRows.filter((row) => getValue(row, selectProperty?.id || "") === column.label).length}</small></div>{visibleRows.filter((row) => getValue(row, selectProperty?.id || "") === column.label).map((row) => <article className="board-card" key={row.id} draggable onDragStart={(event) => event.dataTransfer.setData("row-id", row.id)} onClick={() => setOpenRowId(row.id)}><div className="card-title">{row.title}</div><div className="card-meta">{database.properties.slice(0, 2).map((entry) => <span key={entry.id}>{entry.name}: {valueText(getValue(row, entry.id))}</span>)}</div></article>)}</div>) : <div className="empty-state">Add a select property to create board columns.</div>}</div></div>}{database.view.mode === "list" && <div className="list-view">{visibleRows.map((row) => <button className="list-row" key={row.id} onClick={() => setOpenRowId(row.id)}><span className="list-leading">↗</span><strong>{row.title}</strong><span className="list-properties">{database.properties.slice(0, 2).map((entry) => <span key={entry.id}><small>{entry.name}</small>{valueText(getValue(row, entry.id)) || "—"}</span>)}</span><span className="list-arrow">→</span></button>)}{visibleRows.length === 0 && <div className="empty-state">No rows match these filters.</div>}</div>}<PropertyManager database={database} onUpdate={onUpdate} /></div>;
+  const filterOperators = (property: Property | undefined): FilterOperator[] => property?.type === "checkbox" ? ["checked", "unchecked"] : property?.type === "date" ? ["before", "after", "is", "is-not"] : property?.type === "select" ? ["is", "is-not", "contains"] : ["contains", "is", "is-not"];
+  return <div className="database-page"><div className="database-heading"><div><div className="page-kicker">Database</div><h1><span className="database-title-icon">{database.icon}</span>{database.title}</h1><p>{database.rows.length} records · {database.properties.length} properties</p></div><button className="primary-button" onClick={addRow}>＋ New row</button></div><div className="database-toolbar"><div className="view-switcher">{(["table", "board", "list"] as ViewMode[]).map((mode) => <button className={activeView.mode === mode ? "active" : ""} key={mode} onClick={() => switchMode(mode)}><span>{mode === "table" ? "▤" : mode === "board" ? "▥" : "☷"}</span>{mode[0].toUpperCase() + mode.slice(1)}</button>)}</div><div className="view-settings"><label>Sort <select value={activeView.sortBy} onChange={(event) => updateView({ sortBy: event.target.value })}><option value="">None</option>{database.properties.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>{activeView.sortBy && <button className="icon-button" aria-label="Reverse sort direction" onClick={() => updateView({ sortDir: activeView.sortDir === "asc" ? "desc" : "asc" })}>{activeView.sortDir === "asc" ? "↑" : "↓"}</button>}<button className="small-button" onClick={addFilter}>＋ Filter</button></div></div>{activeView.filters.length > 0 && <div className="filter-bar">{activeView.filters.map((filter, index) => { const filterProperty = database.properties.find((entry) => entry.id === filter.propertyId); return <div className="filter-pill" key={`${filter.propertyId}-${index}`}><span>Filter</span><select value={filter.propertyId} onChange={(event) => changeFilter(index, { propertyId: event.target.value })}>{database.properties.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select><select value={filter.operator} onChange={(event) => changeFilter(index, { operator: event.target.value as FilterOperator })}>{filterOperators(filterProperty).map((operator) => <option key={operator} value={operator}>{filterOperatorLabels[operator]}</option>)}</select>{filterProperty?.type !== "checkbox" && <input type={filterProperty?.type === "date" ? "date" : "text"} placeholder={filterProperty?.type === "date" ? "Choose date" : "Value…"} value={filter.query} onChange={(event) => changeFilter(index, { query: event.target.value })} />}<button aria-label="Remove filter" onClick={() => removeFilter(index)}>×</button></div>; })}</div>}{activeView.mode === "table" && <div className="table-wrap"><table><thead><tr><th className="row-title-col">Name</th>{database.properties.map((entry) => <th key={entry.id}>{entry.name}<small>{propertyLabels[entry.type]}</small></th>)}<th /></tr></thead><tbody>{visibleRows.map((row) => <tr key={row.id}><td className="row-name"><div className="row-name-cell"><span className="row-bullet">↗</span><input className="row-title-cell" aria-label={`Title for ${row.title}`} value={row.title} onChange={(event) => onUpdate({ ...database, rows: database.rows.map((entry) => entry.id === row.id ? { ...entry, title: event.target.value } : entry) })} /><button className="row-open" aria-label={`Open ${row.title}`} onClick={() => setOpenRowId(row.id)}>→</button></div></td>{database.properties.map((entry) => <td key={entry.id}><PropertyCell property={entry} value={getValue(row, entry.id)} onChange={(value) => updateCell(row.id, entry.id, value)} /></td>)}<td><button className="delete-row" onClick={() => deleteRow(row.id)} aria-label={`Delete ${row.title}`}>×</button></td></tr>)}</tbody></table>{visibleRows.length === 0 && <div className="empty-state">No rows match these filters.</div>}<button className="add-row-link" onClick={addRow}>＋ Add a row</button></div>}{activeView.mode === "board" && <div className="board-wrap"><div className="board-toolbar"><label>Group by <select value={selectProperty?.id || ""} onChange={(event) => updateView({ groupBy: event.target.value })}>{database.properties.filter((entry) => entry.type === "select").map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label><span>Drag cards between columns to update the select value.</span></div><div className="board-columns">{columns.length ? columns.map((column) => <div className="board-column" key={column.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { const rowId = event.dataTransfer.getData("row-id"); if (rowId) moveCard(rowId, column.label); }}><div className="column-heading"><span className="color-dot" style={{ background: column.color }} />{column.label}<small>{visibleRows.filter((row) => getValue(row, selectProperty?.id || "") === column.label).length}</small></div>{visibleRows.filter((row) => getValue(row, selectProperty?.id || "") === column.label).map((row) => <article className="board-card" key={row.id} draggable onDragStart={(event) => event.dataTransfer.setData("row-id", row.id)} onClick={() => setOpenRowId(row.id)}><div className="card-title">{row.title}</div><div className="card-meta">{database.properties.slice(0, 2).map((entry) => <span key={entry.id}>{entry.name}: {valueText(getValue(row, entry.id))}</span>)}</div></article>)}</div>) : <div className="empty-state">Add a select property to create board columns.</div>}</div></div>}{activeView.mode === "list" && <div className="list-view">{visibleRows.map((row) => <button className="list-row" key={row.id} onClick={() => setOpenRowId(row.id)}><span className="list-leading">↗</span><strong>{row.title}</strong><span className="list-properties">{database.properties.slice(0, 2).map((entry) => <span key={entry.id}><small>{entry.name}</small>{valueText(getValue(row, entry.id)) || "—"}</span>)}</span><span className="list-arrow">→</span></button>)}{visibleRows.length === 0 && <div className="empty-state">No rows match these filters.</div>}</div>}<PropertyManager database={database} onUpdate={onUpdate} /></div>;
 }
 
 export default function Home() {
-  const [items, setItems] = useState<Item[]>(makeSeed);
+  const [items, setItems] = useState<Item[]>(() => normalizeItems(makeSeed()));
   const [selectedId, setSelectedId] = useState("home");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(["home", "work"]));
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(["home", "work", "personal"]));
   const [theme, setTheme] = useState<Theme>("light");
   const [hydrated, setHydrated] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -365,7 +452,7 @@ export default function Home() {
     try {
       const stored = window.localStorage.getItem("personal-space-items");
       const storedTheme = window.localStorage.getItem("personal-space-theme") as Theme | null;
-      if (stored) setItems(JSON.parse(stored) as Item[]);
+      if (stored) setItems(normalizeItems(JSON.parse(stored) as Item[]));
       if (storedTheme === "dark" || storedTheme === "light") setTheme(storedTheme);
     } catch { /* use the seed when browser storage is unavailable */ }
     setHydrated(true);
@@ -380,15 +467,16 @@ export default function Home() {
   const updateItem = (next: Item) => setItems((current) => current.map((item) => item.id === next.id ? next : item));
   const selectItem = (id: string, rowId?: string) => { setSelectedId(id); setSelectedRowId(rowId || null); setSearchOpen(false); setQuery(""); };
   const createPage = (parentId: string | null) => { const page: Page = { id: uid("page"), kind: "page", title: "Untitled page", icon: "✦", parentId, blocks: [block("paragraph")] }; setItems((current) => [...current, page]); if (parentId) setExpanded((current) => new Set(current).add(parentId)); selectItem(page.id); };
-  const createDatabase = () => { const database: Database = { id: uid("database"), kind: "database", title: "Untitled database", icon: "▦", parentId: null, properties: [{ id: uid("property"), name: "Status", type: "select", options: [option("Backlog", palette[0]), option("Done", palette[3])] }], rows: [], view: { mode: "table", groupBy: "", filters: [], sortBy: "", sortDir: "asc" } }; setItems((current) => [...current, database]); selectItem(database.id); };
+  const createDatabase = () => { const statusId = uid("property"); const database: Database = { id: uid("database"), kind: "database", title: "Untitled database", icon: "▦", parentId: null, properties: [{ id: statusId, name: "Status", type: "select", options: [option("Backlog", palette[0]), option("Done", palette[3])] }], rows: [], view: { ...emptyView("table"), groupBy: statusId }, views: { table: { ...emptyView("table"), groupBy: statusId }, board: { ...emptyView("board"), groupBy: statusId }, list: emptyView("list") } }; setItems((current) => [...current, database]); selectItem(database.id); };
   const rename = (id: string, title: string) => setItems((current) => current.map((item) => item.id === id ? { ...item, title } : item));
+  const changeIcon = (id: string) => { const item = items.find((entry) => entry.id === id); if (!item) return; const icon = window.prompt("Choose an emoji icon", item.icon); if (icon?.trim()) setItems((current) => current.map((entry) => entry.id === id ? { ...entry, icon: icon.trim().slice(0, 3) } : entry)); };
   const deleteItem = (id: string) => { const target = items.find((item) => item.id === id); if (!target || id === "home" || !window.confirm(`Delete “${target.title}” and all nested pages?`)) return; const descendants = new Set<string>([id]); let changed = true; while (changed) { changed = false; items.forEach((item) => { if (item.parentId && descendants.has(item.parentId) && !descendants.has(item.id)) { descendants.add(item.id); changed = true; } }); } setItems((current) => current.filter((item) => !descendants.has(item.id))); selectItem("home"); };
   const searchResults = useMemo<SearchResult[]>(() => { const needle = query.toLowerCase().trim(); if (!needle) return []; return items.flatMap((item) => { const results: SearchResult[] = []; if (item.title.toLowerCase().includes(needle)) results.push({ id: item.id, label: item.title, kind: item.kind === "database" ? "Database" : "Page", parentId: item.parentId }); if (item.kind === "database") item.rows.forEach((row) => { if (row.title.toLowerCase().includes(needle)) results.push({ id: item.id, label: row.title, kind: `Row in ${item.title}`, parentId: item.parentId, rowId: row.id }); }); return results; }); }, [items, query]);
   const pageBlocks = isPage(selected) ? selected.blocks : [];
   const updateSelectedBlocks = (blocks: Block[]) => { if (isPage(selected)) updateItem({ ...selected, blocks }); };
   return <main className={`app-shell theme-${theme}`}>
     <Sidebar items={items} selectedId={selectedId} expanded={expanded} onSelect={(id) => id === "search" ? setSearchOpen(true) : selectItem(id)} onToggle={(id) => setExpanded((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} onCreatePage={createPage} onCreateDatabase={createDatabase} onRename={rename} onDelete={deleteItem} />
-    <section className="main-area"><header className="topbar"><div className="breadcrumbs"><span>Workspace</span><span>›</span><strong>{selected?.title || "Home"}</strong></div><div className="topbar-actions"><button className="search-trigger" onClick={() => setSearchOpen(true)}><span>⌕</span><span>Search your space</span><kbd>⌘ K</kbd></button><button className="theme-toggle" onClick={() => setTheme(theme === "light" ? "dark" : "light")} aria-label="Toggle theme">{theme === "light" ? "☾" : "☼"}</button><div className="avatar">A</div></div></header><div className="content-scroll">{isDatabase(selected) ? <DatabaseView key={`${selected.id}-${selectedRowId || "none"}`} database={selected} onUpdate={updateItem} initialRowId={selectedRowId} /> : <div className="page-view"><div className="page-heading"><div className="page-icon">{selected?.icon || "⌂"}</div><input className="page-title-input" value={selected?.title || ""} onChange={(event) => selected && rename(selected.id, event.target.value)} aria-label="Page title" /><button className="page-menu" aria-label="Page options" onClick={() => selected && deleteItem(selected.id)}>•••</button></div><div className="page-caption">Personal Space <span>·</span> edited just now</div><BlockEditor item={selected && isPage(selected) ? selected : { ...items[0] as Page, blocks: pageBlocks }} onChange={updateSelectedBlocks} /></div>}</div></section>
+    <section className="main-area"><header className="topbar"><div className="breadcrumbs"><span>Workspace</span><span>›</span><strong>{selected?.title || "Home"}</strong></div><div className="topbar-actions"><button className="search-trigger" onClick={() => setSearchOpen(true)}><span>⌕</span><span>Search your space</span><kbd>⌘ K</kbd></button><button className="theme-toggle" onClick={() => setTheme(theme === "light" ? "dark" : "light")} aria-label="Toggle theme">{theme === "light" ? "☾" : "☼"}</button><div className="avatar">A</div></div></header><div className="content-scroll">{isDatabase(selected) ? <DatabaseView key={`${selected.id}-${selectedRowId || "none"}`} database={selected} onUpdate={updateItem} initialRowId={selectedRowId} /> : <div className="page-view"><div className="page-heading"><button className="page-icon" aria-label="Change page icon" title="Change page icon" onClick={() => selected && changeIcon(selected.id)}>{selected?.icon || "⌂"}</button><input className="page-title-input" value={selected?.title || ""} onChange={(event) => selected && rename(selected.id, event.target.value)} aria-label="Page title" /><button className="page-menu" aria-label="Page options" onClick={() => selected && deleteItem(selected.id)}>•••</button></div><div className="page-caption">Personal Space <span>·</span> edited just now</div><BlockEditor item={selected && isPage(selected) ? selected : { ...items[0] as Page, blocks: pageBlocks }} onChange={updateSelectedBlocks} /></div>}</div></section>
     {searchOpen && <div className="search-overlay" role="dialog" aria-modal="true" aria-label="Quick find" onClick={() => setSearchOpen(false)}><div className="search-dialog" onClick={(event) => event.stopPropagation()}><div className="search-input-wrap"><span>⌕</span><input ref={searchInput} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search pages, databases and rows…" /><kbd>ESC</kbd></div>{query ? <div className="search-results">{searchResults.map((result) => <button key={`${result.id}-${result.rowId || "item"}`} onClick={() => selectItem(result.id, result.rowId)}><span className="result-icon">{result.kind.startsWith("Row") ? "↗" : result.kind === "Database" ? "▦" : "✦"}</span><span><strong>{result.label}</strong><small>{result.kind}</small></span><span className="result-arrow">→</span></button>)}{searchResults.length === 0 && <div className="no-results">No pages or rows found for “{query}”.</div>}</div> : <div className="search-empty"><span className="search-command">⌘K</span><p>Find anything in your workspace</p><small>Search titles as you type. Press Escape to close.</small></div>}</div></div>}
   </main>;
 }

@@ -1,45 +1,43 @@
 # Personal Space
 
-A personal knowledge manager inspired by Notion — pages, blocks, databases with table / board /
-list views — built autonomously by a team of OpenCode agents running on open-source models.
+Personal Space is a private, local-first knowledge manager for pages, notes, projects and
+databases. It is designed to feel calm enough for daily use while still being capable of holding
+the messy middle of real work.
 
-- [REQUIREMENTS.md](./REQUIREMENTS.md) — what gets built, phase by phase, with success criteria.
-- [AGENTS.md](./AGENTS.md) — the build rules: team roles, defect workflow, file formats.
-- `.opencode/agents/` — the five agent definitions (orchestrator, two devs, qa, adversary).
+## Run it
 
-## Running the build
+Install dependencies once, then start the app with one command:
 
-Prerequisites: Docker, and VS Code with the Dev Containers extension.
+```bash
+npm install
+npm run dev
+```
 
-1. Put an OpenRouter API key in `.env` at the repo root (gitignored):
+Open the local URL printed by the command. The first launch includes a complete example workspace
+with nested pages, a reading list, a project tracker, a travel plan and every editor block type.
 
-       OPENROUTER_API_KEY=sk-or-...
+## What is included
 
-   Use a dedicated key with a spend cap — the agents run unattended against paid models.
+- Nested pages with emoji icons, rename, cascade delete and local autosave.
+- Paragraphs, headings, lists, to-dos, quotes, dividers, code and callouts.
+- Slash commands with mouse and keyboard selection, plus drag-to-reorder blocks.
+- Databases with typed properties, configurable options, table, board and list views.
+- Per-view filters, sorting and board grouping, with rows that open as editable pages.
+- Quick find for pages, databases and rows, plus persistent light and dark themes.
 
-2. Open this folder in VS Code and reopen it in the container: click **Reopen in Container** on
-   the notification VS Code shows when it detects `.devcontainer`, or open the Command Palette
-   (Cmd+Shift+P) and run **Dev Containers: Reopen in Container**. The same menu sits behind the
-   `><` indicator in the bottom-left corner of the window. First build takes a few minutes:
-   setup installs OpenCode and agent-browser, downloads the browser, and adds the agent-browser
-   skill for OpenCode. The key is injected when the container is created, so after changing
-   `.env`, run **Dev Containers: Rebuild Container** to pick it up.
+All workspace data stays in the browser that runs the app. There are no accounts, trackers or
+external data services required for the core experience.
 
-   If the skill install ever needs re-running by hand:
+## Build and test
 
-       npx skills add vercel-labs/agent-browser -a opencode -y
+```bash
+npm test
+npm run lint
+```
 
-3. In the container terminal, start OpenCode and switch to the **orchestrator** agent (press
-   Tab to cycle primary agents). Its model, Kimi K3, comes from the agent definition — check the
-   status line shows it.
+The project uses the Sites-compatible Vinext/Cloudflare worker build. `.openai/hosting.json`
+contains the Sites project binding so the same source can be published as a private self-hosted
+workspace.
 
-       opencode
-
-4. Kick it off with:
-
-   > Complete the entire project as specified and don't stop until all success criteria are met
-   > and the product is running
-
-While it runs: defects appear in `DEFECTS.md`, adversarial findings in `ADVERSARIAL_REVIEW.md`,
-evidence in `screenshots/`, end-to-end tests in `e2e/`. When the app starts, VS Code forwards its
-port — open it in your own browser to watch and use the product.
+See [REQUIREMENTS.md](./REQUIREMENTS.md) for the complete product contract and [AGENTS.md](./AGENTS.md)
+for repository conventions.

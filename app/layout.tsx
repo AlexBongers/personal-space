@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { LanguageProvider } from "./personal-space/i18n";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://personal-space.a-a-t-bongers.chatgpt.site"),
@@ -21,5 +22,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}</body></html>;
+  return <html lang="en"><body><LanguageProvider>{children}</LanguageProvider></body></html>;
 }

@@ -126,11 +126,3 @@ export function useWorkspacePersistence() {
 
   return { items, setItems, hydrated, syncState };
 }
-
-export const syncLabel = (state: SyncState) => {
-  if (state === "loading") return "Connecting to D1";
-  if (state === "saving") return "Syncing changes";
-  if (state === "saved") return "Saved to D1";
-  if (state === "offline") return "D1 unavailable · local backup";
-  return "Sync paused · will retry";
-};

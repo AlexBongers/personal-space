@@ -27,4 +27,5 @@ viewport rather than checking only the seeded happy path.
 The original browser-storage limitation was resolved in the next release. Workspace content is now
 authoritative in a private D1 database behind the same-origin Worker API. Existing browser data is
 migrated once when the first D1-backed version opens; only theme preference and an emergency
-unsynced backup remain device-local.
+unsynced backup remain device-local. Theme and language preferences are intentionally device-local
+presentation settings.

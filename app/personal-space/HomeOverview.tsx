@@ -1,6 +1,7 @@
 "use client";
 
 import { isDatabase } from "./model";
+import { useLanguage } from "./i18n";
 import type { Item } from "./types";
 
 type HomeOverviewProps = {
@@ -9,6 +10,7 @@ type HomeOverviewProps = {
 };
 
 export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
+  const { t } = useLanguage();
   const databases = items.filter(isDatabase);
   const pageCount = items.length - databases.length;
   const rows = databases.flatMap((database) => database.rows);
@@ -19,18 +21,18 @@ export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
   ].filter((block) => block.type === "todo" && !block.checked).length;
   const readingNow = rows.filter((row) => row.values.status === "Reading").length;
   const quickLinks = [
-    { id: "projects", eyebrow: "Build", title: "Project tracker", note: `${openProjects} active records`, icon: "▦", tone: "purple" },
-    { id: "reading", eyebrow: "Learn", title: "Reading list", note: `${readingNow} currently reading`, icon: "▤", tone: "blue" },
-    { id: "travel", eyebrow: "Explore", title: "Spring route", note: "Keep the next adventure close", icon: "✈", tone: "amber" },
+    { id: "projects", eyebrow: t("overview.build"), title: "Project tracker", note: t("overview.activeRecords", { count: openProjects }), icon: "▦", tone: "purple" },
+    { id: "reading", eyebrow: t("overview.learn"), title: "Reading list", note: t("overview.currentlyReading", { count: readingNow }), icon: "▤", tone: "blue" },
+    { id: "travel", eyebrow: t("overview.explore"), title: "Spring route", note: t("overview.keepAdventure"), icon: "✈", tone: "amber" },
   ].filter((link) => items.some((item) => item.id === link.id));
 
   return (
-    <section className="home-overview" aria-label="Workspace overview">
+    <section className="home-overview" aria-label={t("overview.aria")}>
       <div className="home-hero">
         <div className="hero-copy">
-          <span className="hero-kicker"><i /> Your week, at a glance</span>
-          <h2>Make room for<br /><em>what matters.</em></h2>
-          <p>Your plans, notes and ideas are gathered here—quietly organized and ready when inspiration arrives.</p>
+          <span className="hero-kicker"><i /> {t("overview.week")}</span>
+          <h2>{t("overview.headline")}<br /><em>{t("overview.headlineEmphasis")}</em></h2>
+          <p>{t("overview.description")}</p>
         </div>
         <div className="hero-orbit" aria-hidden="true">
           <span className="orbit-ring ring-one" />
@@ -41,14 +43,14 @@ export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
           <span className="orbit-core">P</span>
         </div>
         <div className="hero-stats">
-          <div><strong>{openTodos}</strong><span>open to-dos</span></div>
-          <div><strong>{pageCount}</strong><span>living pages</span></div>
-          <div><strong>{rows.length}</strong><span>database rows</span></div>
+          <div><strong>{openTodos}</strong><span>{t("overview.openTodos")}</span></div>
+          <div><strong>{pageCount}</strong><span>{t("overview.livingPages")}</span></div>
+          <div><strong>{rows.length}</strong><span>{t("overview.databaseRows")}</span></div>
         </div>
       </div>
       <div className="quick-heading">
-        <div><span className="eyebrow">Continue where you left off</span><strong>Open a corner of your space</strong></div>
-        <span>{items.length} places, all yours</span>
+        <div><span className="eyebrow">{t("overview.continue")}</span><strong>{t("overview.openCorner")}</strong></div>
+        <span>{t("overview.places", { count: items.length })}</span>
       </div>
       <div className="quick-grid">
         {quickLinks.map((link) => (

@@ -18,17 +18,17 @@ with nested pages, a reading list, a project tracker, a travel plan and every ed
 
 ## What is included
 
-- Nested pages with emoji icons, rename, cascade delete and local autosave.
+- Nested pages with emoji icons, rename, cascade delete and automatic D1 saves.
 - Paragraphs, headings, lists, to-dos, quotes, dividers, code and callouts.
 - Slash commands with mouse and keyboard selection, plus drag-to-reorder blocks.
 - Databases with typed properties, configurable options, table, board and list views.
 - Per-view filters, sorting and board grouping, with rows that open as editable pages.
-- Quick find for pages, databases and rows, plus persistent light and dark themes.
+- Quick find for pages, databases and rows, persistent light and dark themes, and an English / Dutch interface switch.
 
 Workspace content is stored in the private Cloudflare D1 database provisioned by Sites. Changes
 therefore survive browser-storage clearing and are available anywhere the owner opens the private
-site. Browser storage is used only for the theme preference and as a temporary recovery backup if
-the database cannot be reached.
+site. Browser storage is used only for the theme and language preferences, plus a temporary
+recovery backup if the database cannot be reached.
 
 ## Build and test
 

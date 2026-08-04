@@ -15,7 +15,8 @@ import {
 import { SearchDialog } from "./personal-space/SearchDialog";
 import { Sidebar } from "./personal-space/Sidebar";
 import type { Block, Item, SearchResult, Theme } from "./personal-space/types";
-import { syncLabel, useWorkspacePersistence } from "./personal-space/useWorkspacePersistence";
+import { useLanguage } from "./personal-space/i18n";
+import { useWorkspacePersistence } from "./personal-space/useWorkspacePersistence";
 
 const isTypingTarget = (target: EventTarget | null) => {
   const element = target as HTMLElement | null;
@@ -24,6 +25,7 @@ const isTypingTarget = (target: EventTarget | null) => {
 
 export default function Home() {
   const { items, setItems, hydrated, syncState } = useWorkspacePersistence();
+  const { language, setLanguage, t } = useLanguage();
   const [selectedId, setSelectedId] = useState("home");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["home", "work", "personal"]));
@@ -102,7 +104,7 @@ export default function Home() {
   const changeIcon = (id: string) => {
     const item = items.find((entry) => entry.id === id);
     if (!item) return;
-    const icon = window.prompt("Choose an emoji icon", item.icon);
+    const icon = window.prompt(t("dialogs.chooseIcon"), item.icon);
     if (icon?.trim()) {
       setItems((current) => current.map((entry) => entry.id === id ? { ...entry, icon: icon.trim().slice(0, 3) } : entry));
     }
@@ -110,7 +112,7 @@ export default function Home() {
 
   const deleteItem = (id: string) => {
     const target = items.find((item) => item.id === id);
-    if (!target || id === "home" || !window.confirm(`Delete “${target.title}” and all nested pages?`)) return;
+    if (!target || id === "home" || !window.confirm(t("dialogs.deleteItem", { title: target.title }))) return;
     const idsToDelete = descendantIds(items, id);
     setItems((current) => current.filter((item) => !idsToDelete.has(item.id)));
     selectItem("home");
@@ -125,7 +127,7 @@ export default function Home() {
         results.push({
           id: item.id,
           label: item.title,
-          kind: item.kind === "database" ? "Database" : "Page",
+          kind: item.kind === "database" ? "database" : "page",
           parentId: item.parentId,
         });
       }
@@ -135,8 +137,9 @@ export default function Home() {
             results.push({
               id: item.id,
               label: row.title,
-              kind: `Row in ${item.title}`,
+              kind: "row",
               parentId: item.parentId,
+              context: item.title,
               rowId: row.id,
             });
           }
@@ -178,23 +181,27 @@ export default function Home() {
       <section className="main-area">
         <header className="topbar">
           <div className="topbar-leading">
-            <button className="mobile-menu" aria-label="Open workspace navigation" onClick={() => setSidebarOpen(true)}>☰</button>
-            <div className="breadcrumbs"><span>Workspace</span><span>›</span><strong>{selected?.title || "Home"}</strong></div>
+            <button className="mobile-menu" aria-label={t("nav.openNavigation")} onClick={() => setSidebarOpen(true)}>☰</button>
+            <div className="breadcrumbs"><span>{t("top.workspace")}</span><span>›</span><strong>{selected?.title || t("nav.home")}</strong></div>
           </div>
           <div className="topbar-actions">
-            <div className={`sync-indicator sync-${syncState}`} title={syncLabel(syncState)}>
-              <i /><span>{syncLabel(syncState)}</span>
+            <div className={`sync-indicator sync-${syncState}`} title={t(`sync.${syncState}`)}>
+              <i /><span>{t(`sync.${syncState}`)}</span>
             </div>
-            <button className="search-trigger" onClick={() => setSearchOpen(true)}>
-              <span>⌕</span><span>Search your space</span><kbd>⌘ K</kbd>
+            <button className="search-trigger" aria-label={t("top.search")} onClick={() => setSearchOpen(true)}>
+              <span>⌕</span><span>{t("top.search")}</span><kbd>⌘ K</kbd>
             </button>
+            <div className="language-switch" role="group" aria-label={t("language.label")}>
+              <button type="button" className={language === "en" ? "active" : ""} aria-label={t("language.switchToEnglish")} aria-pressed={language === "en"} onClick={() => setLanguage("en")}>EN</button>
+              <button type="button" className={language === "nl" ? "active" : ""} aria-label={t("language.switchToDutch")} aria-pressed={language === "nl"} onClick={() => setLanguage("nl")}>NL</button>
+            </div>
             <button
               className="theme-toggle"
               onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-              aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
+              aria-label={theme === "light" ? t("top.switchToDark") : t("top.switchToLight")}
               aria-pressed={theme === "dark"}
             >{theme === "light" ? "☾" : "☼"}</button>
-            <div className="avatar" aria-label="Personal workspace">A</div>
+            <div className="avatar" aria-label={t("top.personalWorkspace")}>A</div>
           </div>
         </header>
         <div className="content-scroll">
@@ -204,25 +211,25 @@ export default function Home() {
               database={selected}
               onUpdate={updateItem}
               initialRowId={selectedRowId}
-              saveLabel={syncLabel(syncState)}
+              saveLabel={t(`sync.${syncState}`)}
             />
           ) : (
             <div className="page-view">
               <div className="page-heading">
-                <button className="page-icon" aria-label="Change page icon" title="Change page icon" onClick={() => selected && changeIcon(selected.id)}>
+                <button className="page-icon" aria-label={t("top.changeIcon")} title={t("top.changeIcon")} onClick={() => selected && changeIcon(selected.id)}>
                   {selected?.icon || "⌂"}
                 </button>
                 <input
                   className="page-title-input"
                   value={selected?.title || ""}
                   onChange={(event) => selected && renameItem(selected.id, event.target.value)}
-                  aria-label="Page title"
+                  aria-label={t("top.pageTitle")}
                 />
-                {selected?.id !== "home" && <button className="page-menu" aria-label="Delete page" onClick={() => selected && deleteItem(selected.id)}>•••</button>}
+                {selected?.id !== "home" && <button className="page-menu" aria-label={t("top.deletePage")} onClick={() => selected && deleteItem(selected.id)}>•••</button>}
               </div>
-              <div className="page-caption">Personal Space <span>·</span> edited just now</div>
+              <div className="page-caption">Personal Space <span>·</span> {t("top.editedJustNow")}</div>
               {selected?.id === "home" && <HomeOverview items={items} onOpen={selectItem} />}
-              {selected && isPage(selected) && <BlockEditor item={selected} onChange={updateSelectedBlocks} saveLabel={syncLabel(syncState)} />}
+              {selected && isPage(selected) && <BlockEditor item={selected} onChange={updateSelectedBlocks} saveLabel={t(`sync.${syncState}`)} />}
             </div>
           )}
         </div>

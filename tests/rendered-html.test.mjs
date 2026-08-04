@@ -21,6 +21,8 @@ test("renders the Personal Space workspace shell", async () => {
   assert.match(html, /Personal Space/);
   assert.match(html, /A calm place for busy minds/);
   assert.match(html, /Search your space/);
+  assert.match(html, />EN<|>EN<\/button>/);
+  assert.match(html, />NL<|>NL<\/button>/);
   assert.match(html, /og\.png/);
   assert.match(html, /Make room for/);
   assert.match(html, /Connecting to D1/);

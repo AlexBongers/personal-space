@@ -67,10 +67,12 @@ export type Database = {
 };
 
 export type Item = Page | Database;
+export type SearchResultKind = "page" | "database" | "row";
 export type SearchResult = {
   id: string;
   label: string;
-  kind: string;
+  kind: SearchResultKind;
   parentId: string | null;
+  context?: string;
   rowId?: string;
 };

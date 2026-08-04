@@ -85,6 +85,10 @@ kbd { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; color
 .search-trigger { display: flex; align-items: center; gap: 9px; min-width: 207px; padding: 8px 9px 8px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--surface); font-size: 11px; text-align: left; }
 .search-trigger > span:first-child { color: var(--blue); font-size: 18px; }
 .search-trigger kbd { margin-left: auto; }
+.language-switch { display: inline-flex; align-items: center; gap: 2px; min-height: 33px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.language-switch button { min-width: 27px; height: 25px; padding: 0 5px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
+.language-switch button:hover { color: var(--ink); background: var(--surface-soft); }
+.language-switch button.active { color: var(--ink); background: color-mix(in srgb, var(--blue) 16%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 34%, transparent); }
 .theme-toggle, .icon-button { display: grid; place-items: center; width: 33px; height: 33px; padding: 0; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--surface); font-size: 17px; }
 .theme-toggle:hover, .icon-button:hover { color: var(--amber); border-color: var(--amber); }
 .avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; background: var(--blue); font-size: 12px; font-weight: 800; }

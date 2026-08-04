@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useLanguage } from "./i18n";
 import type { Item } from "./types";
-import { syncLabel, type SyncState } from "./useWorkspacePersistence";
+import type { SyncState } from "./useWorkspacePersistence";
 
 type SidebarProps = {
   items: Item[];
@@ -33,6 +34,7 @@ export function Sidebar({
   onDelete,
   syncState,
 }: SidebarProps) {
+  const { t } = useLanguage();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
   const childrenOf = (parentId: string | null) => items.filter((item) => item.parentId === parentId);
@@ -63,7 +65,7 @@ export function Sidebar({
         >
           <button
             className="chevron"
-            aria-label={hasChildren ? (expanded.has(item.id) ? `Collapse ${item.title}` : `Expand ${item.title}`) : "No nested pages"}
+            aria-label={hasChildren ? (expanded.has(item.id) ? t("nav.collapse", { title: item.title }) : t("nav.expand", { title: item.title })) : t("nav.noNestedPages")}
             onClick={() => hasChildren && onToggle(item.id)}
           >
             {hasChildren ? (expanded.has(item.id) ? "⌄" : "›") : "·"}
@@ -89,7 +91,7 @@ export function Sidebar({
           <div className="tree-actions">
             {item.kind === "page" && (
               <button
-                aria-label={`New page inside ${item.title}`}
+                aria-label={t("nav.newPageInside", { title: item.title })}
                 onClick={(event) => {
                   event.stopPropagation();
                   onCreatePage(item.id);
@@ -97,7 +99,7 @@ export function Sidebar({
               >＋</button>
             )}
             <button
-              aria-label={`Rename ${item.title}`}
+              aria-label={t("nav.rename", { title: item.title })}
               onClick={(event) => {
                 event.stopPropagation();
                 beginRename(item);
@@ -105,7 +107,7 @@ export function Sidebar({
             >•••</button>
             {item.id !== "home" && (
               <button
-                aria-label={`Delete ${item.title}`}
+                aria-label={t("nav.delete", { title: item.title })}
                 onClick={(event) => {
                   event.stopPropagation();
                   onDelete(item.id);
@@ -123,36 +125,36 @@ export function Sidebar({
     <>
       <button
         className={`sidebar-scrim ${mobileOpen ? "visible" : ""}`}
-        aria-label="Close workspace navigation"
+        aria-label={t("nav.closeNavigation")}
         tabIndex={mobileOpen ? 0 : -1}
         onClick={onDismiss}
       />
-      <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`} aria-label="Workspace navigation">
+      <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`} aria-label={t("nav.workspaceNavigation")}>
         <div className="brand">
           <div className="brand-mark">P</div>
-          <div><strong>Personal Space</strong><span>Private workspace</span></div>
-          <button className="sidebar-close" aria-label="Close navigation" onClick={onDismiss}>×</button>
-          <button className="sidebar-more" aria-label="Workspace menu">•••</button>
+          <div><strong>Personal Space</strong><span>{t("brand.privateWorkspace")}</span></div>
+          <button className="sidebar-close" aria-label={t("nav.closeNavigation")} onClick={onDismiss}>×</button>
+          <button className="sidebar-more" aria-label={t("nav.workspaceMenu")}>•••</button>
         </div>
         <div className="sidebar-nav">
           <button className="nav-item" onClick={() => chooseItem("home")}>
-            <span className="nav-glyph">⌂</span> Home <kbd>H</kbd>
+            <span className="nav-glyph">⌂</span> {t("nav.home")} <kbd>H</kbd>
           </button>
           <button className="nav-item" onClick={() => chooseItem("search")}>
-            <span className="nav-glyph">⌕</span> Quick find <kbd>⌘K</kbd>
+            <span className="nav-glyph">⌕</span> {t("nav.quickFind")} <kbd>⌘K</kbd>
           </button>
         </div>
         <div className="sidebar-section">
           <div className="section-heading">
-            <span>Workspace</span>
-            <button aria-label="New page" onClick={() => onCreatePage(null)}>＋</button>
+            <span>{t("nav.workspace")}</span>
+            <button aria-label={t("nav.newPage")} onClick={() => onCreatePage(null)}>＋</button>
           </div>
           <div className="tree">{childrenOf(null).map((item) => renderNode(item, 0))}</div>
         </div>
         <div className="sidebar-footer">
-          <button className="new-button" onClick={() => onCreatePage(null)}><span>＋</span> New page</button>
-          <button className="new-button secondary" onClick={onCreateDatabase}><span>▦</span> New database</button>
-          <div className={`storage-note sync-${syncState}`}><span className="local-dot" /> {syncLabel(syncState)}</div>
+          <button className="new-button" onClick={() => onCreatePage(null)}><span>＋</span> {t("nav.newPage")}</button>
+          <button className="new-button secondary" onClick={onCreateDatabase}><span>▦</span> {t("nav.newDatabase")}</button>
+          <div className={`storage-note sync-${syncState}`}><span className="local-dot" /> {t(`sync.${syncState}`)}</div>
         </div>
       </aside>
     </>

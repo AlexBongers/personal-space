@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useLanguage } from "./i18n";
 import type { SearchResult } from "./types";
 
 type SearchDialogProps = {
@@ -12,6 +13,7 @@ type SearchDialogProps = {
 };
 
 export function SearchDialog({ query, results, onQueryChange, onChoose, onClose }: SearchDialogProps) {
+  const { t } = useLanguage();
   const inputRef = useRef<HTMLInputElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -20,7 +22,7 @@ export function SearchDialog({ query, results, onQueryChange, onChoose, onClose 
   }, []);
 
   return (
-    <div className="search-overlay" role="dialog" aria-modal="true" aria-label="Quick find" onClick={onClose}>
+    <div className="search-overlay" role="dialog" aria-modal="true" aria-label={t("search.quickFind")} onClick={onClose}>
       <div className="search-dialog" onClick={(event) => event.stopPropagation()}>
         <div className="search-input-wrap">
           <span>⌕</span>
@@ -45,8 +47,8 @@ export function SearchDialog({ query, results, onQueryChange, onChoose, onClose 
                 onChoose(results[activeIndex]);
               }
             }}
-            placeholder="Search pages, databases and rows…"
-            aria-label="Search pages, databases and rows"
+            placeholder={t("search.placeholder")}
+            aria-label={t("search.aria")}
             aria-controls="search-results"
           />
           <kbd>ESC</kbd>
@@ -61,19 +63,19 @@ export function SearchDialog({ query, results, onQueryChange, onChoose, onClose 
                 onClick={() => onChoose(result)}
               >
                 <span className="result-icon">
-                  {result.kind.startsWith("Row") ? "↗" : result.kind === "Database" ? "▦" : "✦"}
+                  {result.kind === "row" ? "↗" : result.kind === "database" ? "▦" : "✦"}
                 </span>
-                <span><strong>{result.label}</strong><small>{result.kind}</small></span>
+                <span><strong>{result.label}</strong><small>{result.kind === "row" ? t("search.resultRow", { database: result.context || t("search.resultDatabase") }) : result.kind === "database" ? t("search.resultDatabase") : t("search.resultPage")}</small></span>
                 <span className="result-arrow">→</span>
               </button>
             ))}
-            {results.length === 0 && <div className="no-results">No pages or rows found for “{query}”.</div>}
+            {results.length === 0 && <div className="no-results">{t("search.noResults", { query })}</div>}
           </div>
         ) : (
           <div className="search-empty">
             <span className="search-command">⌘K</span>
-            <p>Find anything in your workspace</p>
-            <small>Search titles as you type. Use ↑↓ and Enter to jump.</small>
+            <p>{t("search.emptyTitle")}</p>
+            <small>{t("search.emptyHint")}</small>
           </div>
         )}
       </div>

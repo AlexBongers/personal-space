@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { useLanguage } from "./i18n";
 import { blockLabels, compactText, createBlock } from "./model";
 import type { Block, BlockType, Page, Row } from "./types";
 
@@ -24,7 +25,8 @@ const blockGlyph: Record<BlockType, string> = {
   callout: "✦",
 };
 
-export function BlockEditor({ item, onChange, saveLabel = "Saved to D1" }: BlockEditorProps) {
+export function BlockEditor({ item, onChange, saveLabel }: BlockEditorProps) {
+  const { t } = useLanguage();
   const [slashBlockId, setSlashBlockId] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
@@ -32,7 +34,7 @@ export function BlockEditor({ item, onChange, saveLabel = "Saved to D1" }: Block
   const editorRef = useRef<HTMLElement>(null);
   const blocks = useMemo(() => (item.blocks.length ? item.blocks : [createBlock("paragraph")]), [item.blocks]);
   const filteredTypes = (Object.keys(blockLabels) as BlockType[]).filter((type) =>
-    compactText(blockLabels[type]).includes(compactText(slashQuery)),
+    compactText(t(`blocks.${type}`)).includes(compactText(slashQuery)),
   );
 
   const focusBlock = (id: string) => {
@@ -144,15 +146,17 @@ export function BlockEditor({ item, onChange, saveLabel = "Saved to D1" }: Block
     setDragId(null);
   };
 
+  const resolvedSaveLabel = saveLabel || t("sync.saved");
+
   return (
     <section className="editor" ref={editorRef}>
       <div className="editor-toolbar">
-        <span className="eyebrow">Page content</span>
+        <span className="eyebrow">{t("editor.pageContent")}</span>
         <div className="toolbar-actions">
           <button className="text-button" onClick={() => insertBlock("paragraph")}>
-            <span>＋</span> Add block
+            <span>＋</span> {t("editor.addBlock")}
           </button>
-          <span className="autosave"><i /> {saveLabel}</span>
+          <span className="autosave"><i /> {resolvedSaveLabel}</span>
         </div>
       </div>
       <div className="block-list">
@@ -166,7 +170,7 @@ export function BlockEditor({ item, onChange, saveLabel = "Saved to D1" }: Block
             onDragOver={(event) => event.preventDefault()}
             onDrop={() => moveBlock(current.id)}
           >
-            <button className="drag-handle" aria-label={`Drag ${blockLabels[current.type]}`} title="Drag to reorder">⠿</button>
+            <button className="drag-handle" aria-label={t("editor.drag", { label: t(`blocks.${current.type}`) })} title={t("editor.dragTitle")}>⠿</button>
             <div className="block-content">
               {current.type === "divider" ? (
                 <div className="block-divider" />
@@ -174,7 +178,7 @@ export function BlockEditor({ item, onChange, saveLabel = "Saved to D1" }: Block
                 <div className={`block-input block-${current.type}`}>
                   {current.type === "todo" && (
                     <input
-                      aria-label="To-do complete"
+                      aria-label={t("editor.todoComplete")}
                       type="checkbox"
                       checked={Boolean(current.checked)}
                       onChange={(event) => updateBlock(current.id, { checked: event.target.checked })}
@@ -182,9 +186,9 @@ export function BlockEditor({ item, onChange, saveLabel = "Saved to D1" }: Block
                   )}
                   <textarea
                     data-block-id={current.id}
-                    aria-label={`${blockLabels[current.type]} block ${index + 1}`}
+                    aria-label={t("editor.blockAria", { label: t(`blocks.${current.type}`), index: index + 1 })}
                     value={current.text}
-                    placeholder={current.type === "paragraph" ? "Type something, or use / for blocks" : blockLabels[current.type]}
+                    placeholder={current.type === "paragraph" ? t("editor.typePlaceholder") : t(`blocks.${current.type}`)}
                     onChange={(event) => handleText(current, event.target.value)}
                     onKeyDown={(event) => handleKey(event, current)}
                     rows={current.type === "code" || current.type === "callout" || current.type === "quote" ? 2 : 1}
@@ -193,7 +197,7 @@ export function BlockEditor({ item, onChange, saveLabel = "Saved to D1" }: Block
               )}
               {slashBlockId === current.id && filteredTypes.length > 0 && (
                 <div className="slash-menu">
-                  <div className="slash-heading">Insert block <span>↑↓ Enter</span></div>
+                  <div className="slash-heading">{t("editor.slashInsert")} <span>{t("editor.slashKeys")}</span></div>
                   {filteredTypes.slice(0, 7).map((type, typeIndex) => (
                     <button
                       className={slashIndex === typeIndex ? "highlighted" : ""}
@@ -203,7 +207,7 @@ export function BlockEditor({ item, onChange, saveLabel = "Saved to D1" }: Block
                       onClick={() => chooseSlash(type)}
                     >
                       <span className={`slash-icon icon-${type}`}>{blockGlyph[type]}</span>
-                      {blockLabels[type]}
+                      {t(`blocks.${type}`)}
                       <span className="slash-shortcut">{typeIndex === 0 ? "↵" : ""}</span>
                     </button>
                   ))}

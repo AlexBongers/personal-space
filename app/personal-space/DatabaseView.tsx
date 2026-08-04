@@ -2,12 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { BlockEditor } from "./BlockEditor";
+import { useLanguage } from "./i18n";
 import {
   createBlock,
   createOption,
   defaultFilterOperator,
   emptyView,
-  filterOperatorLabels,
   getValue,
   matchesFilter,
   optionForValue,
@@ -36,11 +36,12 @@ type DatabaseViewProps = {
 };
 
 function PropertyCell({ property, value, onChange }: { property: Property; value: CellValue; onChange: (value: CellValue) => void }) {
+  const { t } = useLanguage();
   if (property.type === "checkbox") {
     return (
       <label className="cell-check">
         <input type="checkbox" checked={Boolean(value)} onChange={(event) => onChange(event.target.checked)} />
-        <span>{value ? "Done" : "No"}</span>
+        <span>{value ? t("database.done") : t("database.no")}</span>
       </label>
     );
   }
@@ -50,7 +51,7 @@ function PropertyCell({ property, value, onChange }: { property: Property; value
       <span className="select-cell-shell">
         <i style={{ background: selected?.color || "var(--faint)" }} />
         <select className="cell-select" value={String(value || "")} onChange={(event) => onChange(event.target.value)}>
-          <option value="">Empty</option>
+          <option value="">{t("database.empty")}</option>
           {(property.options || []).map((entry) => <option key={entry.id} value={entry.label}>{entry.label}</option>)}
         </select>
       </span>
@@ -59,7 +60,7 @@ function PropertyCell({ property, value, onChange }: { property: Property; value
   if (property.type === "multi-select") {
     const selectedValues = Array.isArray(value) ? value : [];
     return (
-      <span className="multi-choice-cell" aria-label={`${property.name} values`}>
+      <span className="multi-choice-cell" aria-label={t("database.values", { name: property.name })}>
         {(property.options || []).map((entry) => {
           const active = selectedValues.includes(entry.label);
           return (
@@ -83,13 +84,14 @@ function PropertyCell({ property, value, onChange }: { property: Property; value
       type={property.type === "number" ? "number" : property.type === "date" ? "date" : property.type === "url" ? "url" : "text"}
       value={valueText(value)}
       onChange={(event) => onChange(property.type === "number" ? (event.target.value ? Number(event.target.value) : null) : event.target.value)}
-      placeholder={propertyLabels[property.type]}
+      placeholder={t(`properties.${property.type}`)}
     />
   );
 }
 
 function ValueDisplay({ property, value }: { property: Property; value: CellValue }) {
-  if (property.type === "checkbox") return <span className={`value-check ${value ? "done" : ""}`}>{value ? "✓ Done" : "○ Open"}</span>;
+  const { t } = useLanguage();
+  if (property.type === "checkbox") return <span className={`value-check ${value ? "done" : ""}`}>{value ? `✓ ${t("database.done")}` : `○ ${t("database.open")}`}</span>;
   if (property.type === "select") {
     const selected = optionForValue(property, value);
     return value ? <span className="value-tag"><i style={{ background: selected?.color || "var(--faint)" }} />{String(value)}</span> : <span className="value-empty">—</span>;
@@ -108,20 +110,21 @@ function ValueDisplay({ property, value }: { property: Property; value: CellValu
 }
 
 function PropertyManager({ database, onUpdate }: { database: Database; onUpdate: (database: Database) => void }) {
+  const { t } = useLanguage();
   const addProperty = () => {
-    const name = window.prompt("Property name", "New property");
+    const name = window.prompt(t("database.propertyName"), t("database.newProperty"));
     if (!name?.trim()) return;
-    const typeInput = window.prompt("Type: text, number, select, multi-select, date, checkbox, or url", "text")?.toLowerCase().trim() as PropertyType;
+    const typeInput = window.prompt(t("database.typePrompt"), "text")?.toLowerCase().trim() as PropertyType;
     const type = Object.keys(propertyLabels).includes(typeInput) ? typeInput : "text";
     const next: Property = { id: uid("property"), name: name.trim(), type };
     if (type === "select" || type === "multi-select") {
-      next.options = [createOption("Option 1", palette[0]), createOption("Option 2", palette[1])];
+      next.options = [createOption(t("database.optionOne"), palette[0]), createOption(t("database.optionTwo"), palette[1])];
     }
     onUpdate({ ...database, properties: [...database.properties, next] });
   };
 
   const renameProperty = (property: Property) => {
-    const name = window.prompt("Rename property", property.name);
+    const name = window.prompt(t("database.renameProperty"), property.name);
     if (!name?.trim()) return;
     onUpdate({
       ...database,
@@ -130,7 +133,7 @@ function PropertyManager({ database, onUpdate }: { database: Database; onUpdate:
   };
 
   const removeProperty = (property: Property) => {
-    if (!window.confirm(`Remove ${property.name}? Values in this column will be deleted.`)) return;
+    if (!window.confirm(t("database.removeProperty", { name: property.name }))) return;
     const nextRows = database.rows.map((row) => {
       const values = { ...row.values };
       delete values[property.id];
@@ -157,7 +160,7 @@ function PropertyManager({ database, onUpdate }: { database: Database; onUpdate:
   };
 
   const addOption = (property: Property) => {
-    const label = window.prompt("Option label", "New option");
+    const label = window.prompt(t("database.optionLabel"), t("database.newOption"));
     if (!label?.trim()) return;
     const next = {
       ...property,
@@ -172,20 +175,20 @@ function PropertyManager({ database, onUpdate }: { database: Database; onUpdate:
   return (
     <section className="property-manager">
       <div className="property-manager-head">
-        <div><span className="eyebrow">Schema</span><strong>Properties</strong></div>
-        <button className="small-button" onClick={addProperty}>＋ Add property</button>
+        <div><span className="eyebrow">{t("database.schema")}</span><strong>{t("database.properties")}</strong></div>
+        <button className="small-button" onClick={addProperty}>＋ {t("database.addProperty")}</button>
       </div>
       <div className="property-chips">
         {database.properties.map((property) => (
           <div className="property-chip" key={property.id}>
             <span className={`property-type-dot type-${property.type}`} />
             <span>{property.name}</span>
-            <small>{propertyLabels[property.type]}</small>
-            <button onClick={() => renameProperty(property)} aria-label={`Rename ${property.name}`}>✎</button>
+            <small>{t(`properties.${property.type}`)}</small>
+            <button onClick={() => renameProperty(property)} aria-label={t("database.rename", { name: property.name })}>✎</button>
             {(property.type === "select" || property.type === "multi-select") && (
-              <button onClick={() => addOption(property)} aria-label={`Add option to ${property.name}`}>＋</button>
+              <button onClick={() => addOption(property)} aria-label={t("database.addOption", { name: property.name })}>＋</button>
             )}
-            <button className="danger-quiet" onClick={() => removeProperty(property)} aria-label={`Remove ${property.name}`}>×</button>
+            <button className="danger-quiet" onClick={() => removeProperty(property)} aria-label={t("database.remove", { name: property.name })}>×</button>
           </div>
         ))}
       </div>
@@ -194,6 +197,7 @@ function PropertyManager({ database, onUpdate }: { database: Database; onUpdate:
 }
 
 function RowPage({ database, row, onUpdate, onBack, saveLabel }: { database: Database; row: Row; onUpdate: (database: Database) => void; onBack: () => void; saveLabel?: string }) {
+  const { t } = useLanguage();
   const updateValue = (propertyId: string, value: CellValue) => onUpdate({
     ...database,
     rows: database.rows.map((entry) => entry.id === row.id ? { ...entry, values: { ...entry.values, [propertyId]: value } } : entry),
@@ -209,10 +213,10 @@ function RowPage({ database, row, onUpdate, onBack, saveLabel }: { database: Dat
 
   return (
     <div className="row-page">
-      <button className="back-link" onClick={onBack}>← Back to {database.title}</button>
+      <button className="back-link" onClick={onBack}>← {t("database.backTo", { title: database.title })}</button>
       <div className="row-page-heading">
-        <span className="page-kicker">Database row</span>
-        <input className="row-title-input" value={row.title} aria-label="Row title" onChange={(event) => updateTitle(event.target.value)} />
+        <span className="page-kicker">{t("database.row")}</span>
+        <input className="row-title-input" value={row.title} aria-label={t("database.rowTitle")} onChange={(event) => updateTitle(event.target.value)} />
       </div>
       <div className="row-properties">
         {database.properties.map((property) => (
@@ -228,6 +232,7 @@ function RowPage({ database, row, onUpdate, onBack, saveLabel }: { database: Dat
 }
 
 export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: DatabaseViewProps) {
+  const { t } = useLanguage();
   const [openRowId, setOpenRowId] = useState<string | null>(initialRowId || null);
   const activeView = database.views?.[database.view.mode] || database.view;
   const openRowPage = (rowId: string) => {
@@ -279,7 +284,7 @@ export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: Da
       ...database.rows,
       {
         id: uid("row"),
-        title: "Untitled row",
+        title: t("database.untitledRow"),
         values: Object.fromEntries(
           database.properties.map((entry) => [entry.id, entry.type === "checkbox" ? false : entry.type === "multi-select" ? [] : ""]),
         ),
@@ -289,7 +294,7 @@ export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: Da
   });
 
   const deleteRow = (rowId: string) => {
-    if (window.confirm("Delete this row permanently?")) {
+    if (window.confirm(t("database.deleteRow"))) {
       onUpdate({ ...database, rows: database.rows.filter((row) => row.id !== rowId) });
     }
   };
@@ -336,34 +341,34 @@ export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: Da
     <div className="database-page">
       <div className="database-heading">
         <div>
-          <div className="page-kicker">Database</div>
+          <div className="page-kicker">{t("database.title")}</div>
           <h1><span className="database-title-icon">{database.icon}</span>{database.title}</h1>
-          <p>{database.rows.length} records · {database.properties.length} properties · changes save instantly</p>
+          <p>{t("database.recordSummary", { records: database.rows.length, properties: database.properties.length })}</p>
         </div>
-        <button className="primary-button" onClick={addRow}>＋ New row</button>
+        <button className="primary-button" onClick={addRow}>＋ {t("database.newRow")}</button>
       </div>
       <div className="database-toolbar">
-        <div className="view-switcher" aria-label="Database view">
+        <div className="view-switcher" aria-label={t("database.view")}>
           {(["table", "board", "list"] as ViewMode[]).map((mode) => (
             <button className={activeView.mode === mode ? "active" : ""} key={mode} onClick={() => switchMode(mode)}>
               <span>{mode === "table" ? "▤" : mode === "board" ? "▥" : "☷"}</span>
-              {mode[0].toUpperCase() + mode.slice(1)}
+              {t(`database.${mode}`)}
             </button>
           ))}
         </div>
         <div className="view-settings">
-          <label>Sort
+          <label>{t("database.sort")}
             <select value={activeView.sortBy} onChange={(event) => updateView({ sortBy: event.target.value })}>
-              <option value="">None</option>
+              <option value="">{t("database.none")}</option>
               {database.properties.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
             </select>
           </label>
           {activeView.sortBy && (
-            <button className="icon-button" aria-label="Reverse sort direction" onClick={() => updateView({ sortDir: activeView.sortDir === "asc" ? "desc" : "asc" })}>
+            <button className="icon-button" aria-label={t("database.reverseSort")} onClick={() => updateView({ sortDir: activeView.sortDir === "asc" ? "desc" : "asc" })}>
               {activeView.sortDir === "asc" ? "↑" : "↓"}
             </button>
           )}
-          <button className="small-button" onClick={addFilter}>＋ Filter</button>
+          <button className="small-button" onClick={addFilter}>＋ {t("database.filter")}</button>
         </div>
       </div>
       {activeView.filters.length > 0 && (
@@ -372,22 +377,22 @@ export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: Da
             const filterProperty = database.properties.find((entry) => entry.id === filter.propertyId);
             return (
               <div className="filter-pill" key={`${filter.propertyId}-${index}`}>
-                <span>Filter</span>
+                <span>{t("database.filter")}</span>
                 <select value={filter.propertyId} onChange={(event) => changeFilter(index, { propertyId: event.target.value })}>
                   {database.properties.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
                 </select>
                 <select value={filter.operator} onChange={(event) => changeFilter(index, { operator: event.target.value as FilterOperator })}>
-                  {filterOperators(filterProperty).map((operator) => <option key={operator} value={operator}>{filterOperatorLabels[operator]}</option>)}
+                  {filterOperators(filterProperty).map((operator) => <option key={operator} value={operator}>{t(`operators.${operator}`)}</option>)}
                 </select>
                 {filterProperty?.type !== "checkbox" && (
                   <input
                     type={filterProperty?.type === "date" ? "date" : "text"}
-                    placeholder={filterProperty?.type === "date" ? "Choose date" : "Value…"}
+                    placeholder={filterProperty?.type === "date" ? t("database.chooseDate") : t("database.value")}
                     value={filter.query}
                     onChange={(event) => changeFilter(index, { query: event.target.value })}
                   />
                 )}
-                <button aria-label="Remove filter" onClick={() => updateView({ filters: activeView.filters.filter((_, filterIndex) => filterIndex !== index) })}>×</button>
+                <button aria-label={t("database.removeFilter")} onClick={() => updateView({ filters: activeView.filters.filter((_, filterIndex) => filterIndex !== index) })}>×</button>
               </div>
             );
           })}
@@ -396,7 +401,7 @@ export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: Da
       {activeView.mode === "table" && (
         <div className="table-wrap">
           <table>
-            <thead><tr><th className="row-title-col">Name</th>{database.properties.map((entry) => <th key={entry.id}>{entry.name}<small>{propertyLabels[entry.type]}</small></th>)}<th /></tr></thead>
+            <thead><tr><th className="row-title-col">{t("database.name")}</th>{database.properties.map((entry) => <th key={entry.id}>{entry.name}<small>{t(`properties.${entry.type}`)}</small></th>)}<th /></tr></thead>
             <tbody>
               {visibleRows.map((row) => (
                 <tr key={row.id}>
@@ -404,33 +409,33 @@ export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: Da
                     <span className="row-bullet">↗</span>
                     <input
                       className="row-title-cell"
-                      aria-label={`Title for ${row.title}`}
+                      aria-label={`${t("database.rowTitle")}: ${row.title}`}
                       value={row.title}
                       onChange={(event) => onUpdate({ ...database, rows: database.rows.map((entry) => entry.id === row.id ? { ...entry, title: event.target.value } : entry) })}
                     />
-                    <button className="row-open" aria-label={`Open ${row.title}`} onClick={() => openRowPage(row.id)}>→</button>
+                    <button className="row-open" aria-label={`${t("database.openRow")}: ${row.title}`} onClick={() => openRowPage(row.id)}>→</button>
                   </div></td>
                   {database.properties.map((entry) => (
                     <td key={entry.id}><PropertyCell property={entry} value={getValue(row, entry.id)} onChange={(value) => updateCell(row.id, entry.id, value)} /></td>
                   ))}
-                  <td><button className="delete-row" onClick={() => deleteRow(row.id)} aria-label={`Delete ${row.title}`}>×</button></td>
+                  <td><button className="delete-row" onClick={() => deleteRow(row.id)} aria-label={`${t("database.deleteRowLabel")}: ${row.title}`}>×</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {visibleRows.length === 0 && <div className="empty-state">No rows match these filters.</div>}
-          <button className="add-row-link" onClick={addRow}>＋ Add a row</button>
+          {visibleRows.length === 0 && <div className="empty-state">{t("database.noRows")}</div>}
+          <button className="add-row-link" onClick={addRow}>＋ {t("database.addRow")}</button>
         </div>
       )}
       {activeView.mode === "board" && (
         <div className="board-wrap">
           <div className="board-toolbar">
-            <label>Group by
+            <label>{t("database.groupBy")}
               <select value={selectProperty?.id || ""} onChange={(event) => updateView({ groupBy: event.target.value })}>
                 {database.properties.filter((entry) => entry.type === "select").map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}
               </select>
             </label>
-            <span>Drag cards between columns to update the select value.</span>
+            <span>{t("database.dragCards")}</span>
           </div>
           <div className="board-columns">
             {columns.length ? columns.map((column) => {
@@ -462,7 +467,7 @@ export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: Da
                   ))}
                 </section>
               );
-            }) : <div className="empty-state">Add a select property to create board columns.</div>}
+            }) : <div className="empty-state">{t("database.addSelect")}</div>}
           </div>
         </div>
       )}
@@ -480,7 +485,7 @@ export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: Da
               <span className="list-arrow">→</span>
             </button>
           ))}
-          {visibleRows.length === 0 && <div className="empty-state">No rows match these filters.</div>}
+          {visibleRows.length === 0 && <div className="empty-state">{t("database.noRows")}</div>}
         </div>
       )}
       <PropertyManager database={database} onUpdate={onUpdate} />

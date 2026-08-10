@@ -155,10 +155,8 @@ kbd { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; color
 .home-overview { max-width: 1030px; }
 .home-hero { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(230px, .7fr); position: relative; min-height: 360px; overflow: hidden; padding: 44px 46px 95px; border-radius: 24px; color: var(--hero-ink); background: var(--hero-bg); box-shadow: 0 22px 55px rgba(31, 41, 51, .15); }
 .hero-copy { position: relative; z-index: 2; max-width: 560px; }
-.hero-kicker { display: flex; align-items: center; gap: 8px; color: color-mix(in srgb, var(--hero-ink) 68%, transparent); font-size: 10px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
-.hero-kicker i { width: 17px; height: 3px; border-radius: 4px; background: var(--amber); }
-.hero-copy h2 { margin: 28px 0 16px; color: var(--hero-ink); font-size: clamp(37px, 5vw, 64px); line-height: .98; letter-spacing: -.065em; }
-.hero-copy h2 em { color: var(--amber); font-family: Georgia, serif; font-weight: 500; }
+.hero-copy h1 { margin: 0 0 16px; color: var(--hero-ink); font-size: clamp(37px, 5vw, 64px); line-height: .98; letter-spacing: -.065em; }
+.hero-copy h1 em { color: var(--amber); font-family: Georgia, serif; font-weight: 500; }
 .hero-copy p { max-width: 525px; margin: 0; color: color-mix(in srgb, var(--hero-ink) 72%, transparent); font-size: 13px; line-height: 1.7; }
 .hero-orbit { position: relative; align-self: center; width: 250px; height: 250px; justify-self: end; }
 .orbit-ring { position: absolute; inset: 17%; border: 1px solid color-mix(in srgb, var(--hero-ink) 24%, transparent); border-radius: 50%; }
@@ -308,7 +306,7 @@ tbody tr:hover td { background: color-mix(in srgb, var(--surface-soft) 60%, tran
   .editor-toolbar { align-items: flex-end; }
   .autosave { display: none; }
   .home-hero { display: block; min-height: 435px; padding: 34px 27px 100px; }
-  .hero-copy h2 { font-size: 43px; }
+  .hero-copy h1 { font-size: 43px; }
   .hero-orbit { position: absolute; right: 18px; bottom: 63px; width: 150px; height: 150px; opacity: .42; }
   .orbit-core { font-size: 28px; box-shadow: 6px 6px 0 var(--amber); }
   .hero-stats { min-height: 67px; }

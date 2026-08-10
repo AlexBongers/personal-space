@@ -30,8 +30,7 @@ export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
     <section className="home-overview" aria-label={t("overview.aria")}>
       <div className="home-hero">
         <div className="hero-copy">
-          <span className="hero-kicker"><i /> {t("overview.week")}</span>
-          <h2>{t("overview.headline")}<br /><em>{t("overview.headlineEmphasis")}</em></h2>
+          <h1>{t("overview.headline")}<br /><em>{t("overview.headlineEmphasis")}</em></h1>
           <p>{t("overview.description")}</p>
         </div>
         <div className="hero-orbit" aria-hidden="true">
@@ -49,7 +48,7 @@ export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
         </div>
       </div>
       <div className="quick-heading">
-        <div><span className="eyebrow">{t("overview.continue")}</span><strong>{t("overview.openCorner")}</strong></div>
+        <strong>{t("overview.openCorner")}</strong>
         <span>{t("overview.places", { count: items.length })}</span>
       </div>
       <div className="quick-grid">

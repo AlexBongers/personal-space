@@ -182,7 +182,7 @@ export default function Home() {
         <header className="topbar">
           <div className="topbar-leading">
             <button className="mobile-menu" aria-label={t("nav.openNavigation")} onClick={() => setSidebarOpen(true)}>☰</button>
-            <div className="breadcrumbs"><span>{t("top.workspace")}</span><span>›</span><strong>{selected?.title || t("nav.home")}</strong></div>
+            {selected?.id !== "home" && <div className="breadcrumbs"><span>{t("top.workspace")}</span><span>›</span><strong>{selected?.title || t("nav.home")}</strong></div>}
           </div>
           <div className="topbar-actions">
             <div className={`sync-indicator sync-${syncState}`} title={t(`sync.${syncState}`)}>
@@ -213,6 +213,10 @@ export default function Home() {
               initialRowId={selectedRowId}
               saveLabel={t(`sync.${syncState}`)}
             />
+          ) : selected?.id === "home" ? (
+            <div className="page-view home-page">
+              <HomeOverview items={items} onOpen={selectItem} />
+            </div>
           ) : (
             <div className="page-view">
               <div className="page-heading">
@@ -228,7 +232,6 @@ export default function Home() {
                 {selected?.id !== "home" && <button className="page-menu" aria-label={t("top.deletePage")} onClick={() => selected && deleteItem(selected.id)}>•••</button>}
               </div>
               <div className="page-caption">Personal Space <span>·</span> {t("top.editedJustNow")}</div>
-              {selected?.id === "home" && <HomeOverview items={items} onOpen={selectItem} />}
               {selected && isPage(selected) && <BlockEditor item={selected} onChange={updateSelectedBlocks} saveLabel={t(`sync.${syncState}`)} />}
             </div>
           )}

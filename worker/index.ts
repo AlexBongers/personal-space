@@ -2,6 +2,7 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import { handleGoogleTasksApi } from "./google-tasks";
+import { handleSlashdotApi } from "./slashdot";
 import { isWorkspaceItems, loadWorkspace, MAX_WORKSPACE_BYTES, saveWorkspace } from "./workspace-store";
 import type { GoogleTasksDatabase } from "./google-tasks";
 import type { WorkspaceDatabase } from "./workspace-store";
@@ -100,6 +101,10 @@ const worker = {
         console.error("Workspace API failed", error);
         return json({ error: "Workspace storage is temporarily unavailable" }, 500);
       }
+    }
+
+    if (url.pathname === "/api/slashdot") {
+      return handleSlashdotApi(request);
     }
 
     if (url.pathname.startsWith("/api/google-tasks/")) {

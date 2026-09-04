@@ -1,0 +1,141 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLanguage } from "./i18n";
+
+type SlashdotStory = {
+  id: string;
+  title: string;
+  url: string;
+  description: string;
+  author: string;
+  publishedAt: string;
+  section: string;
+};
+
+type SlashdotFeedResponse = {
+  stories: SlashdotStory[];
+  fetchedAt: string;
+  stale?: boolean;
+  error?: string;
+};
+
+const REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+
+const formatStoryTime = (value: string, language: "en" | "nl") => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+};
+
+const formatFeedTime = (value: string, language: "en" | "nl") => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+};
+
+export function SlashdotFeed() {
+  const { language, t } = useLanguage();
+  const [feed, setFeed] = useState<SlashdotFeedResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadFeed = useCallback(async (manual = false) => {
+    if (manual) setRefreshing(true);
+    try {
+      const response = await fetch("/api/slashdot", { cache: "no-store" });
+      const body = await response.json() as SlashdotFeedResponse;
+      if (!response.ok || !body.stories?.length) throw new Error(body.error || t("overview.newsUnavailable"));
+      setFeed(body);
+      setError(body.stale ? t("overview.newsStale") : "");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : t("overview.newsUnavailable"));
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    const initialLoad = window.setTimeout(() => void loadFeed(), 0);
+    const timer = window.setInterval(() => void loadFeed(), REFRESH_INTERVAL_MS);
+    return () => {
+      window.clearTimeout(initialLoad);
+      window.clearInterval(timer);
+    };
+  }, [loadFeed]);
+
+  const stories = useMemo(() => feed?.stories.slice(0, 10) || [], [feed]);
+
+  return (
+    <section className="slashdot-panel" aria-labelledby="slashdot-heading">
+      <div className="slashdot-heading">
+        <div>
+          <span className="section-kicker">{t("overview.newsLabel")}</span>
+          <h2 id="slashdot-heading">{t("overview.slashdot")}</h2>
+        </div>
+        <button
+          type="button"
+          className="feed-refresh"
+          aria-label={t("overview.refreshNews")}
+          onClick={() => void loadFeed(true)}
+          disabled={loading || refreshing}
+        >
+          <span className={loading || refreshing ? "spin" : ""}>↻</span>
+        </button>
+      </div>
+      <div className="slashdot-meta">
+        <span className="live-dot" />
+        <span>{feed?.fetchedAt ? t("overview.newsUpdated", { time: formatFeedTime(feed.fetchedAt, language) }) : t("overview.newsLoading")}</span>
+        <span className="meta-divider">·</span>
+        <a href="https://slashdot.org/" target="_blank" rel="noreferrer">Slashdot ↗</a>
+      </div>
+
+      {loading && !feed && (
+        <div className="news-skeleton" aria-hidden="true">
+          {[0, 1, 2, 3].map((entry) => <span key={entry} />)}
+        </div>
+      )}
+
+      {!loading && !stories.length && (
+        <div className="news-empty">
+          <strong>{t("overview.newsUnavailable")}</strong>
+          <button type="button" className="text-button" onClick={() => void loadFeed(true)}>{t("overview.tryAgain")}</button>
+        </div>
+      )}
+
+      {stories.length > 0 && (
+        <ol className="news-list">
+          {stories.map((story, index) => (
+            <li key={story.id} className={index === 0 ? "featured-story" : ""}>
+              <a href={story.url} target="_blank" rel="noreferrer">
+                <span className="story-number">{String(index + 1).padStart(2, "0")}</span>
+                <span className="story-copy">
+                  <strong>{story.title}</strong>
+                  <span className="story-meta">{story.section || t("overview.newsSection")} · {formatStoryTime(story.publishedAt, language)}</span>
+                  {index === 0 && story.description && <span className="story-description">{story.description}</span>}
+                </span>
+                <span className="story-arrow">↗</span>
+              </a>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {error && <p className="news-status">{error}</p>}
+      <div className="slashdot-footer">
+        <span>{t("overview.newsRefreshHint")}</span>
+        <a href="https://slashdot.org/" target="_blank" rel="noreferrer">{t("overview.openSlashdot")} ↗</a>
+      </div>
+    </section>
+  );
+}

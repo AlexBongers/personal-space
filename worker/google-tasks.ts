@@ -1,0 +1,514 @@
+import { createGoogleTasksDatabase, GOOGLE_TASKS_DATABASE_ID } from "../app/personal-space/model.ts";
+import type { Database, Item, Row } from "../app/personal-space/types.ts";
+import {
+  googleRowFingerprint,
+  googleTaskId,
+  googleTaskPayload,
+  googleTaskToRow,
+  type GoogleTask,
+  type GoogleTaskPayload,
+} from "./google-tasks-sync.ts";
+import { isWorkspaceItems, loadWorkspace, saveWorkspace } from "./workspace-store.ts";
+
+const CONNECTION_ID = "primary";
+const GOOGLE_SCOPE = "https://www.googleapis.com/auth/tasks";
+const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const GOOGLE_TASKS_URL = "https://tasks.googleapis.com/tasks/v1";
+const STATE_COOKIE = "personal_space_google_tasks_state";
+
+export interface GoogleTasksStatement {
+  bind(...values: unknown[]): GoogleTasksStatement;
+  first<T>(): Promise<T | null>;
+  all<T>(): Promise<{ results: T[] }>;
+  run(): Promise<unknown>;
+}
+
+export interface GoogleTasksDatabase {
+  prepare(query: string): GoogleTasksStatement;
+  batch(statements: GoogleTasksStatement[]): Promise<unknown[]>;
+}
+
+export interface GoogleTasksEnv {
+  DB?: GoogleTasksDatabase;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_REDIRECT_URI?: string;
+  GOOGLE_TOKEN_ENCRYPTION_KEY?: string;
+}
+
+type StoredConnection = {
+  id: string;
+  refresh_token: string;
+  task_list_id: string | null;
+  task_list_title: string | null;
+  last_sync_at: string | null;
+  last_error: string | null;
+};
+
+type StoredMapping = {
+  local_row_id: string;
+  task_list_id: string;
+  remote_task_id: string;
+  remote_etag: string;
+  remote_updated: string;
+  local_fingerprint: string;
+};
+
+type GoogleTaskList = { id: string; title: string };
+type GoogleCollection<T> = { items?: T[]; nextPageToken?: string };
+
+export type GoogleTasksStatus = {
+  configured: boolean;
+  connected: boolean;
+  needsReconnect?: boolean;
+  taskLists: GoogleTaskList[];
+  selectedTaskListId: string | null;
+  selectedTaskListTitle: string | null;
+  lastSyncAt: string | null;
+  error?: string;
+};
+
+export type GoogleTasksSyncSummary = {
+  imported: number;
+  exported: number;
+  updated: number;
+  removed: number;
+  conflicts: number;
+  taskListTitle: string;
+};
+
+class GoogleTasksError extends Error {
+  status: number;
+  constructor(message: string, status = 500) {
+    super(message);
+    this.name = "GoogleTasksError";
+    this.status = status;
+  }
+}
+
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status,
+  headers: {
+    "Cache-Control": "no-store",
+    "Content-Type": "application/json; charset=utf-8",
+    "X-Content-Type-Options": "nosniff",
+  },
+});
+
+const text = (body: string, status = 200) => new Response(body, {
+  status,
+  headers: {
+    "Cache-Control": "no-store",
+    "Content-Type": "text/plain; charset=utf-8",
+    "X-Content-Type-Options": "nosniff",
+  },
+});
+
+export const isGoogleTasksConfigured = (env: GoogleTasksEnv) => Boolean(
+  env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_TOKEN_ENCRYPTION_KEY,
+);
+
+const redirectUri = (request: Request, env: GoogleTasksEnv) =>
+  env.GOOGLE_REDIRECT_URI || new URL("/api/google-tasks/callback", request.url).toString();
+
+const parseCookies = (header: string | null) => Object.fromEntries(
+  (header || "").split(";").map((part) => part.trim().split("=")).filter(([key, value]) => key && value)
+    .map(([key, ...values]) => [key, values.join("=")]),
+);
+
+const base64Url = (bytes: Uint8Array) => {
+  let binary = "";
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+};
+
+const bytesFromBase64Url = (value: string) => {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+};
+
+const makeState = () => {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return base64Url(bytes);
+};
+
+const stateCookie = (state: string) => `${STATE_COOKIE}=${state}; Max-Age=600; Path=/api/google-tasks; HttpOnly; Secure; SameSite=Lax`;
+const clearStateCookie = () => `${STATE_COOKIE}=; Max-Age=0; Path=/api/google-tasks; HttpOnly; Secure; SameSite=Lax`;
+
+const encryptionKey = async (env: GoogleTasksEnv) => {
+  if (!env.GOOGLE_TOKEN_ENCRYPTION_KEY) throw new GoogleTasksError("Google token encryption is not configured", 503);
+  const keyBytes = bytesFromBase64Url(env.GOOGLE_TOKEN_ENCRYPTION_KEY);
+  if (keyBytes.byteLength !== 32) throw new GoogleTasksError("Google token encryption key must contain 32 bytes", 503);
+  return crypto.subtle.importKey("raw", keyBytes.buffer as ArrayBuffer, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+};
+
+const encryptToken = async (value: string, env: GoogleTasksEnv) => {
+  const key = await encryptionKey(env);
+  const iv = new Uint8Array(12);
+  crypto.getRandomValues(iv);
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(value));
+  const result = new Uint8Array(iv.byteLength + encrypted.byteLength);
+  result.set(iv);
+  result.set(new Uint8Array(encrypted), iv.byteLength);
+  return base64Url(result);
+};
+
+const decryptToken = async (value: string, env: GoogleTasksEnv) => {
+  const key = await encryptionKey(env);
+  const encrypted = bytesFromBase64Url(value);
+  if (encrypted.byteLength <= 12) throw new GoogleTasksError("Stored Google token is invalid", 500);
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: encrypted.slice(0, 12) },
+    key,
+    encrypted.slice(12).buffer as ArrayBuffer,
+  );
+  return new TextDecoder().decode(decrypted);
+};
+
+const connection = (database: GoogleTasksDatabase) => database.prepare(`SELECT id, refresh_token, task_list_id, task_list_title, last_sync_at, last_error
+FROM google_tasks_connection
+WHERE id = ?`).bind(CONNECTION_ID).first<StoredConnection>();
+
+const recordConnectionError = async (database: GoogleTasksDatabase, message: string) => {
+  await database.prepare(`UPDATE google_tasks_connection
+SET last_error = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?`).bind(message.slice(0, 500), CONNECTION_ID).run();
+};
+
+const apiJson = async <T>(url: string, accessToken: string, init: RequestInit = {}): Promise<T> => {
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${accessToken}`);
+  if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const response = await fetch(url, { ...init, headers });
+  const body = await response.text();
+  let parsed: unknown = null;
+  try { parsed = body ? JSON.parse(body) : null; } catch { parsed = null; }
+  if (!response.ok) {
+    const message = typeof parsed === "object" && parsed && "error" in parsed
+      ? String((parsed as { error?: { message?: string } }).error?.message || "Google Tasks request failed")
+      : `Google Tasks request failed (${response.status})`;
+    throw new GoogleTasksError(message, response.status);
+  }
+  return parsed as T;
+};
+
+const accessToken = async (stored: StoredConnection, env: GoogleTasksEnv) => {
+  const refreshToken = await decryptToken(stored.refresh_token, env);
+  const response = await fetch(GOOGLE_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID || "",
+      client_secret: env.GOOGLE_CLIENT_SECRET || "",
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+  const body = await response.json().catch(() => null) as { access_token?: string; error_description?: string } | null;
+  if (!response.ok || !body?.access_token) {
+    throw new GoogleTasksError(body?.error_description || "Google authorization has expired", response.status || 401);
+  }
+  return body.access_token;
+};
+
+const listTaskLists = async (token: string) => {
+  const lists: GoogleTaskList[] = [];
+  let pageToken = "";
+  do {
+    const query = new URLSearchParams({ maxResults: "1000" });
+    if (pageToken) query.set("pageToken", pageToken);
+    const result = await apiJson<GoogleCollection<GoogleTaskList>>(`${GOOGLE_TASKS_URL}/users/@me/lists?${query}`, token);
+    lists.push(...(result.items || []));
+    pageToken = result.nextPageToken || "";
+  } while (pageToken);
+  return lists;
+};
+
+const listTasks = async (token: string, taskListId: string) => {
+  const tasks: GoogleTask[] = [];
+  let pageToken = "";
+  do {
+    const query = new URLSearchParams({
+      maxResults: "100",
+      showCompleted: "true",
+      showDeleted: "true",
+      showHidden: "true",
+    });
+    if (pageToken) query.set("pageToken", pageToken);
+    const result = await apiJson<GoogleCollection<GoogleTask>>(`${GOOGLE_TASKS_URL}/lists/${encodeURIComponent(taskListId)}/tasks?${query}`, token);
+    tasks.push(...(result.items || []));
+    pageToken = result.nextPageToken || "";
+  } while (pageToken);
+  return tasks;
+};
+
+const insertTask = (token: string, taskListId: string, payload: GoogleTaskPayload) => apiJson<GoogleTask>(
+  `${GOOGLE_TASKS_URL}/lists/${encodeURIComponent(taskListId)}/tasks`,
+  token,
+  {
+    method: "POST",
+    body: JSON.stringify({
+      title: payload.title,
+      status: payload.status,
+      ...(payload.notes ? { notes: payload.notes } : {}),
+      ...(payload.due ? { due: payload.due } : {}),
+    }),
+  },
+);
+
+const patchTask = (token: string, taskListId: string, taskId: string, payload: GoogleTaskPayload) => apiJson<GoogleTask>(
+  `${GOOGLE_TASKS_URL}/lists/${encodeURIComponent(taskListId)}/tasks/${encodeURIComponent(taskId)}`,
+  token,
+  { method: "PATCH", body: JSON.stringify(payload) },
+);
+
+const deleteTask = async (token: string, taskListId: string, taskId: string) => {
+  try {
+    await apiJson<null>(`${GOOGLE_TASKS_URL}/lists/${encodeURIComponent(taskListId)}/tasks/${encodeURIComponent(taskId)}`, token, { method: "DELETE" });
+  } catch (error) {
+    if (!(error instanceof GoogleTasksError) || error.status !== 404) throw error;
+  }
+};
+
+const readMappings = async (database: GoogleTasksDatabase, taskListId: string) => {
+  const result = await database.prepare(`SELECT local_row_id, task_list_id, remote_task_id, remote_etag, remote_updated, local_fingerprint
+FROM google_tasks_mapping
+WHERE task_list_id = ?`).bind(taskListId).all<StoredMapping>();
+  return result.results;
+};
+
+const upsertMapping = (mapping: StoredMapping, database: GoogleTasksDatabase) => database.prepare(`INSERT INTO google_tasks_mapping (local_row_id, task_list_id, remote_task_id, remote_etag, remote_updated, local_fingerprint)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(local_row_id) DO UPDATE SET task_list_id = excluded.task_list_id, remote_task_id = excluded.remote_task_id, remote_etag = excluded.remote_etag, remote_updated = excluded.remote_updated, local_fingerprint = excluded.local_fingerprint, updated_at = CURRENT_TIMESTAMP`).bind(
+  mapping.local_row_id,
+  mapping.task_list_id,
+  mapping.remote_task_id,
+  mapping.remote_etag,
+  mapping.remote_updated,
+  mapping.local_fingerprint,
+);
+
+const deleteMapping = (database: GoogleTasksDatabase, localRowId: string) => database.prepare(`DELETE FROM google_tasks_mapping
+WHERE local_row_id = ?`).bind(localRowId);
+
+const textValue = (row: Row, id: string) => {
+  const value = row.values[id];
+  return Array.isArray(value) ? value.join(", ") : value === null || value === undefined ? "" : String(value);
+};
+
+const selectedRows = (database: Database, taskListTitle: string, mappings: Map<string, StoredMapping>) => database.rows.filter((row) => {
+  const list = textValue(row, "google-list");
+  return mappings.has(row.id) || !list || list === taskListTitle;
+});
+
+const replaceDatabase = (items: Item[], nextDatabase: Database) => items.map((item) => item.id === nextDatabase.id ? nextDatabase : item);
+
+const syncWorkspace = async (
+  database: GoogleTasksDatabase,
+  items: Item[],
+  baseRevision: number,
+  taskListId: string | null,
+  env: GoogleTasksEnv,
+) => {
+  const current = await loadWorkspace(database);
+  if (current.revision !== baseRevision) return { conflict: current } as const;
+  const stored = await connection(database);
+  if (!stored) throw new GoogleTasksError("Google Tasks is not connected", 401);
+  const token = await accessToken(stored, env);
+  const taskLists = await listTaskLists(token);
+  const selected = taskLists.find((entry) => entry.id === (taskListId || stored.task_list_id)) || taskLists[0];
+  if (!selected) throw new GoogleTasksError("Create a task list in Google Tasks first", 400);
+  const tasks = await listTasks(token, selected.id);
+  const storedMappings = await readMappings(database, selected.id);
+  const mappingByLocal = new Map(storedMappings.map((entry) => [entry.local_row_id, entry]));
+  const mappingByRemote = new Map(storedMappings.map((entry) => [entry.remote_task_id, entry]));
+  const remoteById = new Map(tasks.map((task) => [task.id, task]));
+  let nextItems = [...items];
+  let taskDatabase = nextItems.find((item): item is Database => item.id === GOOGLE_TASKS_DATABASE_ID && item.kind === "database");
+  if (!taskDatabase) {
+    taskDatabase = createGoogleTasksDatabase();
+    nextItems = [...nextItems, taskDatabase];
+  }
+  const initialRows = selectedRows(taskDatabase, selected.title, mappingByLocal);
+  const rows = new Map(taskDatabase.rows.map((row) => [row.id, row]));
+  const rowByRemote = new Map(initialRows.map((row) => [googleTaskId(row), row]).filter(([id]) => id));
+  const mappingStatements: GoogleTasksStatement[] = [];
+  const summary: GoogleTasksSyncSummary = { imported: 0, exported: 0, updated: 0, removed: 0, conflicts: 0, taskListTitle: selected.title };
+
+  const saveMapping = (row: Row, task: GoogleTask) => {
+    mappingStatements.push(upsertMapping({
+      local_row_id: row.id,
+      task_list_id: selected.id,
+      remote_task_id: task.id,
+      remote_etag: task.etag || "",
+      remote_updated: task.updated || new Date().toISOString(),
+      local_fingerprint: googleRowFingerprint(row),
+    }, database));
+  };
+
+  const pushLocal = async (row: Row, task: GoogleTask | undefined, conflict: boolean) => {
+    const result = task
+      ? await patchTask(token, selected.id, task.id, googleTaskPayload(row))
+      : await insertTask(token, selected.id, googleTaskPayload(row));
+    const nextRow = googleTaskToRow(result, selected.title, row);
+    rows.set(row.id, nextRow);
+    saveMapping(nextRow, result);
+    if (task) summary.updated += 1;
+    else summary.exported += 1;
+    if (conflict) summary.conflicts += 1;
+  };
+
+  for (const task of tasks) {
+    const mapping = mappingByRemote.get(task.id);
+    const existing = (mapping && rows.get(mapping.local_row_id)) || rowByRemote.get(task.id);
+    if (task.deleted) {
+      if (!existing) continue;
+      const localChanged = mapping ? googleRowFingerprint(existing) !== mapping.local_fingerprint : true;
+      if (localChanged) {
+        await pushLocal(existing, undefined, true);
+      } else {
+        rows.delete(existing.id);
+        mappingStatements.push(deleteMapping(database, existing.id));
+        summary.removed += 1;
+      }
+      continue;
+    }
+    if (!existing) {
+      const imported = googleTaskToRow(task, selected.title);
+      rows.set(imported.id, imported);
+      saveMapping(imported, task);
+      summary.imported += 1;
+      continue;
+    }
+    const localChanged = mapping ? googleRowFingerprint(existing) !== mapping.local_fingerprint : false;
+    const remoteChanged = mapping ? task.updated !== mapping.remote_updated || task.etag !== mapping.remote_etag : true;
+    if (localChanged) {
+      await pushLocal(existing, task, remoteChanged);
+    } else {
+      const nextRow = remoteChanged ? googleTaskToRow(task, selected.title, existing) : existing;
+      rows.set(existing.id, nextRow);
+      saveMapping(nextRow, task);
+      if (remoteChanged && mapping) summary.updated += 1;
+    }
+  }
+
+  for (const row of initialRows) {
+    const mapping = mappingByLocal.get(row.id);
+    if (mapping && mapping.task_list_id === selected.id && !remoteById.has(mapping.remote_task_id)) {
+      await deleteTask(token, selected.id, mapping.remote_task_id);
+      rows.delete(row.id);
+      mappingStatements.push(deleteMapping(database, row.id));
+      summary.removed += 1;
+      continue;
+    }
+    if (!mapping && !googleTaskId(row)) await pushLocal(row, undefined, false);
+  }
+
+  const updatedDatabase = { ...taskDatabase, rows: [...rows.values()] };
+  nextItems = replaceDatabase(nextItems, updatedDatabase);
+  const saved = await saveWorkspace(database, nextItems, baseRevision);
+  if (!saved.ok) return { conflict: saved.current } as const;
+  const connectionUpdate = database.prepare(`UPDATE google_tasks_connection
+SET task_list_id = ?, task_list_title = ?, last_sync_at = CURRENT_TIMESTAMP, last_error = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?`).bind(selected.id, selected.title, CONNECTION_ID);
+  await database.batch([...mappingStatements, connectionUpdate]);
+  return { workspace: saved.workspace, summary } as const;
+};
+
+const startConnect = (request: Request, env: GoogleTasksEnv) => {
+  if (!isGoogleTasksConfigured(env)) return json({ error: "Google Tasks integration is not configured" }, 503);
+  const state = makeState();
+  const params = new URLSearchParams({
+    client_id: env.GOOGLE_CLIENT_ID || "",
+    redirect_uri: redirectUri(request, env),
+    response_type: "code",
+    scope: GOOGLE_SCOPE,
+    access_type: "offline",
+    prompt: "consent",
+    include_granted_scopes: "true",
+    state,
+  });
+  return new Response(null, {
+    status: 302,
+    headers: { Location: `${GOOGLE_AUTH_URL}?${params}`, "Set-Cookie": stateCookie(state) },
+  });
+};
+
+const callback = async (request: Request, env: GoogleTasksEnv, database: GoogleTasksDatabase) => {
+  if (!isGoogleTasksConfigured(env)) return text("Google Tasks integration is not configured", 503);
+  const url = new URL(request.url);
+  const state = url.searchParams.get("state");
+  const code = url.searchParams.get("code");
+  const cookies = parseCookies(request.headers.get("Cookie"));
+  const headers = { "Set-Cookie": clearStateCookie() };
+  if (!state || !code || state !== cookies[STATE_COOKIE]) return new Response("Google authorization could not be verified", { status: 400, headers });
+  const response = await fetch(GOOGLE_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: env.GOOGLE_CLIENT_ID || "",
+      client_secret: env.GOOGLE_CLIENT_SECRET || "",
+      redirect_uri: redirectUri(request, env),
+      grant_type: "authorization_code",
+    }),
+  });
+  const body = await response.json().catch(() => null) as { refresh_token?: string; error_description?: string } | null;
+  if (!response.ok || !body?.refresh_token) return new Response(body?.error_description || "Google authorization was not completed", { status: 502, headers });
+  const encryptedToken = await encryptToken(body.refresh_token, env);
+  await database.prepare(`INSERT INTO google_tasks_connection (id, refresh_token)
+VALUES (?, ?)
+ON CONFLICT(id) DO UPDATE SET refresh_token = excluded.refresh_token, last_error = NULL, updated_at = CURRENT_TIMESTAMP`).bind(CONNECTION_ID, encryptedToken).run();
+  return new Response(null, { status: 303, headers: { ...headers, Location: "/?google=connected" } });
+};
+
+const status = async (env: GoogleTasksEnv, database: GoogleTasksDatabase): Promise<Response> => {
+  const stored = await connection(database);
+  if (!stored) return json({ configured: isGoogleTasksConfigured(env), connected: false, taskLists: [], selectedTaskListId: null, selectedTaskListTitle: null, lastSyncAt: null } satisfies GoogleTasksStatus);
+  if (!isGoogleTasksConfigured(env)) return json({ configured: false, connected: true, taskLists: [], selectedTaskListId: stored.task_list_id, selectedTaskListTitle: stored.task_list_title, lastSyncAt: stored.last_sync_at } satisfies GoogleTasksStatus);
+  try {
+    const taskLists = await listTaskLists(await accessToken(stored, env));
+    return json({ configured: true, connected: true, taskLists, selectedTaskListId: stored.task_list_id, selectedTaskListTitle: stored.task_list_title, lastSyncAt: stored.last_sync_at, error: stored.last_error || undefined } satisfies GoogleTasksStatus);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google authorization has expired";
+    await recordConnectionError(database, message);
+    return json({ configured: true, connected: true, needsReconnect: true, taskLists: [], selectedTaskListId: stored.task_list_id, selectedTaskListTitle: stored.task_list_title, lastSyncAt: stored.last_sync_at, error: message } satisfies GoogleTasksStatus);
+  }
+};
+
+export const handleGoogleTasksApi = async (request: Request, env: GoogleTasksEnv, url: URL): Promise<Response | null> => {
+  if (!url.pathname.startsWith("/api/google-tasks/")) return null;
+  if (!env.DB) return json({ error: "D1 database is not configured" }, 503);
+  const database = env.DB;
+  try {
+    if (url.pathname === "/api/google-tasks/connect" && request.method === "GET") return startConnect(request, env);
+    if (url.pathname === "/api/google-tasks/callback" && request.method === "GET") return await callback(request, env, database);
+    if (url.pathname === "/api/google-tasks/status" && request.method === "GET") return await status(env, database);
+    if (url.pathname === "/api/google-tasks/disconnect" && request.method === "POST") {
+      await database.batch([
+        database.prepare("DELETE FROM google_tasks_mapping"),
+        database.prepare("DELETE FROM google_tasks_connection WHERE id = ?").bind(CONNECTION_ID),
+      ]);
+      return json({ ok: true });
+    }
+    if (url.pathname === "/api/google-tasks/sync" && request.method === "POST") {
+      if (!isGoogleTasksConfigured(env)) return json({ error: "Google Tasks integration is not configured" }, 503);
+      const body = await request.json().catch(() => null) as { items?: unknown; baseRevision?: unknown; taskListId?: unknown } | null;
+      if (!body || !isWorkspaceItems(body.items) || !Number.isInteger(body.baseRevision) || Number(body.baseRevision) < 1 || (body.taskListId !== null && body.taskListId !== undefined && typeof body.taskListId !== "string")) {
+        return json({ error: "Invalid Google Tasks sync payload" }, 400);
+      }
+      const result = await syncWorkspace(database, body.items, Number(body.baseRevision), typeof body.taskListId === "string" ? body.taskListId : null, env);
+      if ("conflict" in result) return json({ error: "Workspace changed in another tab", workspace: result.conflict }, 409);
+      return json({ workspace: result.workspace, sync: result.summary });
+    }
+    return new Response(null, { status: 405, headers: { Allow: "GET, POST" } });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Google Tasks is temporarily unavailable";
+    if (error instanceof GoogleTasksError) return json({ error: message }, error.status >= 400 && error.status < 600 ? error.status : 500);
+    console.error("Google Tasks API failed", error);
+    return json({ error: "Google Tasks is temporarily unavailable" }, 500);
+  }
+};

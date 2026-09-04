@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BlockEditor } from "./personal-space/BlockEditor";
 import { DatabaseView } from "./personal-space/DatabaseView";
 import { HomeOverview } from "./personal-space/HomeOverview";
+import { GoogleTasksDialog } from "./personal-space/GoogleTasksDialog";
 import {
   createEmptyDatabase,
   createEmptyPage,
@@ -24,7 +25,7 @@ const isTypingTarget = (target: EventTarget | null) => {
 };
 
 export default function Home() {
-  const { items, setItems, hydrated, syncState } = useWorkspacePersistence();
+  const { items, setItems, replaceItems, revision, hydrated, syncState } = useWorkspacePersistence();
   const { language, setLanguage, t } = useLanguage();
   const [selectedId, setSelectedId] = useState("home");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
@@ -33,6 +34,7 @@ export default function Home() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [googleTasksOpen, setGoogleTasksOpen] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -41,6 +43,17 @@ export default function Home() {
         if (storedTheme === "dark" || storedTheme === "light") setTheme(storedTheme);
       } catch {
         // Keep the light theme if browser preferences are unavailable.
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("google") === "connected" || params.get("google") === "error") {
+        setGoogleTasksOpen(true);
+        window.history.replaceState({}, "", window.location.pathname);
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -59,6 +72,7 @@ export default function Home() {
       if (event.key === "Escape") {
         setSearchOpen(false);
         setSidebarOpen(false);
+        setGoogleTasksOpen(false);
       }
       if (!event.metaKey && !event.ctrlKey && event.key.toLowerCase() === "h" && !isTypingTarget(event.target)) {
         setSelectedId("home");
@@ -190,6 +204,9 @@ export default function Home() {
             <button className="search-trigger" aria-label={t("top.search")} onClick={() => setSearchOpen(true)}>
               <span>⌕</span><span>{t("top.search")}</span><kbd>⌘ K</kbd>
             </button>
+            <button className="tasks-trigger" aria-label={t("google.open")} onClick={() => setGoogleTasksOpen(true)}>
+              <span>✓</span><span>{t("top.googleTasks")}</span>
+            </button>
             <div className="language-switch" role="group" aria-label={t("language.label")}>
               <button type="button" className={language === "en" ? "active" : ""} aria-label={t("language.switchToEnglish")} aria-pressed={language === "en"} onClick={() => setLanguage("en")}>EN</button>
               <button type="button" className={language === "nl" ? "active" : ""} aria-label={t("language.switchToDutch")} aria-pressed={language === "nl"} onClick={() => setLanguage("nl")}>NL</button>
@@ -241,6 +258,15 @@ export default function Home() {
           onQueryChange={setQuery}
           onChoose={(result) => selectItem(result.id, result.rowId)}
           onClose={() => setSearchOpen(false)}
+        />
+      )}
+      {googleTasksOpen && (
+        <GoogleTasksDialog
+          items={items}
+          revision={revision}
+          onReplace={replaceItems}
+          onOpenDatabase={() => { setGoogleTasksOpen(false); selectItem("google-tasks"); }}
+          onClose={() => setGoogleTasksOpen(false)}
         />
       )}
     </main>

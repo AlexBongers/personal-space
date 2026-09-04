@@ -24,6 +24,7 @@ with nested pages, a reading list, a project tracker, a travel plan and every ed
 - Databases with typed properties, configurable options, table, board and list views.
 - Per-view filters, sorting and board grouping, with rows that open as editable pages.
 - Quick find for pages, databases and rows, persistent light and dark themes, and an English / Dutch interface switch.
+- Optional two-way Google Tasks sync through a dedicated database, with encrypted token storage and per-list selection.
 
 Workspace content is stored in the private Cloudflare D1 database provisioned by Sites. Changes
 therefore survive browser-storage clearing and are available anywhere the owner opens the private
@@ -45,6 +46,24 @@ self-hosted workspace. Sites provisions the physical database and applies the mi
 The client is split into focused editor, navigation, search, database, dashboard and domain-model
 modules under `app/personal-space/`. The test command builds the production worker, smoke-tests its
 rendered HTML, and enforces at least 80% line coverage for the domain model.
+
+## Google Tasks
+
+The Google Tasks integration is optional and is disabled until its runtime configuration is present.
+Create a Google Cloud OAuth 2.0 **Web application** client, enable the Google Tasks API, and add
+these redirect URIs to the client:
+
+```text
+http://localhost:3000/api/google-tasks/callback
+https://personal-space.a-a-t-bongers.chatgpt.site/api/google-tasks/callback
+```
+
+Copy `.env.example` to `.env` for local development. Set `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET`, and a fresh base64url-encoded 32-byte `GOOGLE_TOKEN_ENCRYPTION_KEY`.
+For the hosted Site, set the same values as private Sites runtime secrets; do not commit them.
+The integration uses the full Tasks scope because two-way sync must create, edit, organize and
+delete tasks. Connect from the `Google Tasks` button, choose a task list, and use `Sync now`.
+The Site remains private because the workspace and Google authorization are single-user data.
 
 See [REQUIREMENTS.md](./REQUIREMENTS.md) for the complete product contract and [AGENTS.md](./AGENTS.md)
 for repository conventions. The final hostile-use findings and accepted storage limitation are

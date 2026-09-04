@@ -1,12 +1,18 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { handleGoogleTasksApi } from "./google-tasks";
 import { isWorkspaceItems, loadWorkspace, MAX_WORKSPACE_BYTES, saveWorkspace } from "./workspace-store";
+import type { GoogleTasksDatabase } from "./google-tasks";
 import type { WorkspaceDatabase } from "./workspace-store";
 
 interface Env {
   ASSETS: Fetcher;
   DB?: D1Database;
+  GOOGLE_CLIENT_ID?: string;
+  GOOGLE_CLIENT_SECRET?: string;
+  GOOGLE_REDIRECT_URI?: string;
+  GOOGLE_TOKEN_ENCRYPTION_KEY?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -93,6 +99,21 @@ const worker = {
       } catch (error) {
         console.error("Workspace API failed", error);
         return json({ error: "Workspace storage is temporarily unavailable" }, 500);
+      }
+    }
+
+    if (url.pathname.startsWith("/api/google-tasks/")) {
+      try {
+        return await handleGoogleTasksApi(request, {
+          DB: env.DB as unknown as GoogleTasksDatabase | undefined,
+          GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
+          GOOGLE_REDIRECT_URI: env.GOOGLE_REDIRECT_URI,
+          GOOGLE_TOKEN_ENCRYPTION_KEY: env.GOOGLE_TOKEN_ENCRYPTION_KEY,
+        }, url) || new Response(null, { status: 404 });
+      } catch (error) {
+        console.error("Google Tasks API failed", error);
+        return json({ error: "Google Tasks is temporarily unavailable" }, 500);
       }
     }
 

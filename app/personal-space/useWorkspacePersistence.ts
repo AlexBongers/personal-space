@@ -40,6 +40,7 @@ export function useWorkspacePersistence() {
   const [hydrated, setHydrated] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>("loading");
+  const [revision, setRevision] = useState(0);
   const revisionRef = useRef(0);
   const skipNextSaveRef = useRef(true);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -65,6 +66,7 @@ export function useWorkspacePersistence() {
 
         if (cancelled) return;
         revisionRef.current = remote.revision;
+        setRevision(remote.revision);
         skipNextSaveRef.current = true;
         setItems(nextItems);
         setBackendReady(true);
@@ -113,6 +115,7 @@ export function useWorkspacePersistence() {
         }
         const saved = await readResponse(response);
         revisionRef.current = saved.revision;
+        setRevision(saved.revision);
         setSyncState("saved");
         window.localStorage.removeItem(STORAGE_KEYS.items);
       }).catch(() => {
@@ -124,5 +127,13 @@ export function useWorkspacePersistence() {
     return () => window.clearTimeout(timer);
   }, [backendReady, hydrated, items]);
 
-  return { items, setItems, hydrated, syncState };
+  const replaceItems = (nextItems: Item[], nextRevision: number) => {
+    revisionRef.current = nextRevision;
+    setRevision(nextRevision);
+    skipNextSaveRef.current = true;
+    setSyncState("saved");
+    setItems(normalizeItems(nextItems));
+  };
+
+  return { items, setItems, replaceItems, revision, hydrated, syncState };
 }

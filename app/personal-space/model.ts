@@ -444,6 +444,55 @@ export const createEmptyDatabase = (): Database => {
   };
 };
 
+export const GOOGLE_TASKS_DATABASE_ID = "google-tasks";
+export const GOOGLE_TASK_PROPERTY_IDS = {
+  status: "google-status",
+  due: "google-due",
+  notes: "google-notes",
+  list: "google-list",
+  link: "google-link",
+  id: "google-id",
+  parent: "google-parent",
+  position: "google-position",
+} as const;
+
+export const createGoogleTasksDatabase = (): Database => {
+  const properties: Property[] = [
+    {
+      id: GOOGLE_TASK_PROPERTY_IDS.status,
+      name: "Status",
+      type: "select",
+      options: [
+        createOption("Open", "#209dd7"),
+        createOption("Done", "#35a77c"),
+      ],
+    },
+    { id: GOOGLE_TASK_PROPERTY_IDS.due, name: "Due", type: "date" },
+    { id: GOOGLE_TASK_PROPERTY_IDS.notes, name: "Notes", type: "text" },
+    { id: GOOGLE_TASK_PROPERTY_IDS.list, name: "List", type: "text" },
+    { id: GOOGLE_TASK_PROPERTY_IDS.link, name: "Google link", type: "url" },
+    { id: GOOGLE_TASK_PROPERTY_IDS.id, name: "Google ID", type: "text" },
+    { id: GOOGLE_TASK_PROPERTY_IDS.parent, name: "Parent ID", type: "text" },
+    { id: GOOGLE_TASK_PROPERTY_IDS.position, name: "Position", type: "text" },
+  ];
+  const view = { ...emptyView("list"), sortBy: GOOGLE_TASK_PROPERTY_IDS.due, sortDir: "asc" as const };
+  return {
+    id: GOOGLE_TASKS_DATABASE_ID,
+    kind: "database",
+    title: "Google Tasks",
+    icon: "✓",
+    parentId: null,
+    properties,
+    rows: [],
+    view,
+    views: {
+      table: emptyView("table"),
+      board: { ...emptyView("board"), groupBy: GOOGLE_TASK_PROPERTY_IDS.status },
+      list: view,
+    },
+  };
+};
+
 export const createEmptyPage = (parentId: string | null): Page => ({
   id: uid("page"),
   kind: "page",

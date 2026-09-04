@@ -8,7 +8,6 @@ import type { Block, BlockType, Page, Row } from "./types";
 type BlockEditorProps = {
   item: Page | Row;
   onChange: (blocks: Block[]) => void;
-  saveLabel?: string;
 };
 
 const blockGlyph: Record<BlockType, string> = {
@@ -25,7 +24,7 @@ const blockGlyph: Record<BlockType, string> = {
   callout: "✦",
 };
 
-export function BlockEditor({ item, onChange, saveLabel }: BlockEditorProps) {
+export function BlockEditor({ item, onChange }: BlockEditorProps) {
   const { t } = useLanguage();
   const [slashBlockId, setSlashBlockId] = useState<string | null>(null);
   const [slashQuery, setSlashQuery] = useState("");
@@ -146,8 +145,6 @@ export function BlockEditor({ item, onChange, saveLabel }: BlockEditorProps) {
     setDragId(null);
   };
 
-  const resolvedSaveLabel = saveLabel || t("sync.saved");
-
   return (
     <section className="editor" ref={editorRef}>
       <div className="editor-toolbar">
@@ -156,7 +153,6 @@ export function BlockEditor({ item, onChange, saveLabel }: BlockEditorProps) {
           <button className="text-button" onClick={() => insertBlock("paragraph")}>
             <span>＋</span> {t("editor.addBlock")}
           </button>
-          <span className="autosave"><i /> {resolvedSaveLabel}</span>
         </div>
       </div>
       <div className="block-list">

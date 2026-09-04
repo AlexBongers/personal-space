@@ -36,7 +36,6 @@ type DatabaseViewProps = {
   database: Database;
   onUpdate: (database: Database) => void;
   initialRowId?: string | null;
-  saveLabel?: string;
 };
 
 function ClickTooltip({ label, text }: { label: string; text: string }) {
@@ -265,7 +264,7 @@ function PropertyManager({ database, onUpdate }: { database: Database; onUpdate:
   );
 }
 
-function RowPage({ database, row, onUpdate, onBack, saveLabel }: { database: Database; row: Row; onUpdate: (database: Database) => void; onBack: () => void; saveLabel?: string }) {
+function RowPage({ database, row, onUpdate, onBack }: { database: Database; row: Row; onUpdate: (database: Database) => void; onBack: () => void }) {
   const { t } = useLanguage();
   const updateValue = (propertyId: string, value: CellValue) => onUpdate({
     ...database,
@@ -314,12 +313,12 @@ function RowPage({ database, row, onUpdate, onBack, saveLabel }: { database: Dat
           </div>
         ))}
       </div>
-      <BlockEditor item={row} onChange={updateBlocks} saveLabel={saveLabel} />
+      <BlockEditor item={row} onChange={updateBlocks} />
     </div>
   );
 }
 
-export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: DatabaseViewProps) {
+export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewProps) {
   const { t } = useLanguage();
   const [openRowId, setOpenRowId] = useState<string | null>(initialRowId || null);
   const activeView = database.views?.[database.view.mode] || database.view;
@@ -418,7 +417,7 @@ export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: Da
 
   const openRow = openRowId ? database.rows.find((row) => row.id === openRowId) : undefined;
   if (openRow) {
-    return <RowPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} saveLabel={saveLabel} />;
+    return <RowPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} />;
   }
 
   if (database.id === GOOGLE_TASKS_DATABASE_ID) {

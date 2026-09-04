@@ -449,6 +449,13 @@ td { height: 76px; font-size: 15px; }
 .google-tasks-note { border-radius: 16px; background: rgba(236, 173, 10, .14); }
 .google-task-list-summary { border-radius: 16px; }
 .click-tooltip-content { border-radius: 13px; }
+.sync-indicator { width: 30px; min-height: 38px; justify-content: center; padding: 0; }
+.sync-indicator i { width: 9px; height: 9px; }
+.sync-indicator.sync-loading i, .sync-indicator.sync-saving i { background: var(--green); box-shadow: 0 0 0 3px rgba(92, 155, 121, .14); animation: none; }
+.sync-indicator.sync-offline i, .sync-indicator.sync-error i { background: var(--red); box-shadow: 0 0 0 3px rgba(201, 104, 85, .14); }
+.tasks-interface h1, .tasks-interface h2, .tasks-interface strong, .tasks-interface button, .tasks-interface .page-kicker,
+.calendar-interface h1, .calendar-interface h2, .calendar-interface strong, .calendar-interface button, .calendar-interface .page-kicker,
+.calendar-interface .calendar-weekday, .calendar-interface .calendar-day-number { font-weight: 500; }
 
 @media (max-width: 1000px) {
   .sidebar { width: 248px; flex-basis: 248px; }

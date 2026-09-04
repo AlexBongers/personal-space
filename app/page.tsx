@@ -212,9 +212,6 @@ export default function Home() {
             {selected?.id !== "home" && <div className="breadcrumbs"><span>{t("top.workspace")}</span><span>›</span><strong>{selected?.title || t("nav.home")}</strong></div>}
           </div>
           <div className="topbar-actions">
-            <div className={`sync-indicator sync-${syncState}`} role="status" aria-label={t(`sync.${syncState}`)}>
-              <i /><span>{t(`sync.${syncState}`)}</span>
-            </div>
             <button className="search-trigger" aria-label={t("top.search")} onClick={() => setSearchOpen(true)}>
               <span>⌕</span><span>{t("top.search")}</span><kbd>⌘ K</kbd>
             </button>
@@ -234,6 +231,9 @@ export default function Home() {
               aria-label={theme === "light" ? t("top.switchToDark") : t("top.switchToLight")}
               aria-pressed={theme === "dark"}
             >{theme === "light" ? "☾" : "☼"}</button>
+            <span className={`sync-indicator sync-${syncState}`} role="status" aria-label={t(`sync.${syncState}`)}>
+              <i aria-hidden="true" />
+            </span>
           </div>
         </header>
         <div className="content-scroll">
@@ -243,7 +243,6 @@ export default function Home() {
               database={selected}
               onUpdate={updateItem}
               initialRowId={selectedRowId}
-              saveLabel={t(`sync.${syncState}`)}
             />
           ) : selected?.id === "home" ? (
             <div className="page-view home-page">
@@ -263,7 +262,7 @@ export default function Home() {
                 />
                 {selected?.id !== "home" && <button className="page-menu" aria-label={t("top.deletePage")} onClick={() => selected && deleteItem(selected.id)}>•••</button>}
               </div>
-              {selected && isPage(selected) && <BlockEditor item={selected} onChange={updateSelectedBlocks} saveLabel={t(`sync.${syncState}`)} />}
+              {selected && isPage(selected) && <BlockEditor item={selected} onChange={updateSelectedBlocks} />}
             </div>
           )}
         </div>

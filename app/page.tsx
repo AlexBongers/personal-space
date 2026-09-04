@@ -32,7 +32,7 @@ export default function Home() {
   const { language, setLanguage, t } = useLanguage();
   const [selectedId, setSelectedId] = useState("home");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(["home", "work", "personal"]));
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [theme, setTheme] = useState<Theme>("light");
   const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);

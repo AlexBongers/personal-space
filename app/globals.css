@@ -150,6 +150,7 @@ kbd { padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; color
 
 .home-overview { width: min(100%, 1180px); }
 .landing-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, .9fr); align-items: start; gap: 20px; }
+.landing-grid.single-column { grid-template-columns: minmax(0, 1fr); }
 .quick-panel, .slashdot-panel { min-width: 0; padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); }
 .quick-heading { display: flex; align-items: flex-end; gap: 20px; margin: 0 0 21px; }
 .quick-heading h2, .slashdot-heading h2 { margin: 0; color: var(--ink); font-size: 25px; letter-spacing: -.04em; }

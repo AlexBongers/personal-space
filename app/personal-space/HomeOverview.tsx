@@ -20,10 +20,6 @@ const formatDueDate = (value: string, language: "en" | "nl") => {
 
 export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
   const { language, t } = useLanguage();
-  const databases = items.filter(isDatabase);
-  const rows = databases.flatMap((database) => database.rows);
-  const openProjects = rows.filter((row) => row.values.complete === false).length;
-  const readingNow = rows.filter((row) => row.values.status === "Reading").length;
   const taskCandidate = items.find((item) => item.id === GOOGLE_TASKS_DATABASE_ID);
   const taskDatabase = isDatabase(taskCandidate) ? taskCandidate : undefined;
   const todayDate = new Date();
@@ -33,12 +29,6 @@ export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
     .filter((entry) => entry.due && getValue(entry.row, GOOGLE_TASK_PROPERTY_IDS.status) !== "Done")
     .sort((a, b) => a.due.localeCompare(b.due))
     .slice(0, 6);
-  const quickLinks = [
-    { id: "projects", title: t("overview.projectTracker"), note: t("overview.activeRecords", { count: openProjects }), icon: "▦", tone: "purple" },
-    { id: "reading", title: t("overview.readingList"), note: t("overview.currentlyReading", { count: readingNow }), icon: "▤", tone: "blue" },
-    { id: "travel", title: t("overview.springRoute"), note: "", icon: "✈", tone: "amber" },
-  ].filter((link) => items.some((item) => item.id === link.id));
-
   return (
     <section className="home-overview" aria-label={t("overview.aria")}>
       {dueTasks.length > 0 && (
@@ -64,22 +54,8 @@ export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
           </div>
         </section>
       )}
-      <div className="landing-grid">
+      <div className="landing-grid single-column">
         <SlashdotFeed />
-        <aside className="quick-panel">
-          <div className="quick-heading">
-            <h2>{t("overview.openCorner")}</h2>
-          </div>
-          <div className="quick-grid">
-            {quickLinks.map((link) => (
-              <button className={`quick-card tone-${link.tone}`} key={link.id} onClick={() => onOpen(link.id)}>
-                <span className="quick-icon">{link.icon}</span>
-                <span className="quick-copy"><strong>{link.title}</strong>{link.note && <span>{link.note}</span>}</span>
-                <span className="quick-arrow">↗</span>
-              </button>
-            ))}
-          </div>
-        </aside>
       </div>
     </section>
   );

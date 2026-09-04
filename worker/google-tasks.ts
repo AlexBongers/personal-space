@@ -8,7 +8,8 @@ import {
   type GoogleTask,
   type GoogleTaskPayload,
 } from "./google-tasks-sync.ts";
-import { isWorkspaceItems, loadWorkspace, saveWorkspace } from "./workspace-store.ts";
+import { isWorkspaceItems, loadWorkspace, saveWorkspace, type D1RunResult } from "./workspace-store.ts";
+import { createRemoteOnce, GoogleSyncSafetyError, readCreateReceipts, withGoogleSyncLock, type SyncGuard } from "./google-sync-guard.ts";
 
 const CONNECTION_ID = "primary";
 // Gmail read access is requested only when connecting the inbox. All Google
@@ -28,7 +29,7 @@ export interface GoogleTasksStatement {
   bind(...values: unknown[]): GoogleTasksStatement;
   first<T>(): Promise<T | null>;
   all<T>(): Promise<{ results: T[] }>;
-  run(): Promise<unknown>;
+  run(): Promise<D1RunResult>;
 }
 
 export interface GoogleTasksDatabase {
@@ -193,7 +194,7 @@ const apiJson = async <T>(url: string, accessToken: string, init: RequestInit = 
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${accessToken}`);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const response = await fetch(url, { ...init, headers });
+  const response = await fetch(url, { ...init, headers, signal: init.signal || AbortSignal.timeout(15000) });
   const body = await response.text();
   let parsed: unknown = null;
   try { parsed = body ? JSON.parse(body) : null; } catch { parsed = null; }
@@ -210,7 +211,7 @@ const accessToken = async (stored: StoredConnection, env: GoogleTasksEnv, signal
   const refreshToken = await decryptToken(stored.refresh_token, env);
   const response = await fetch(GOOGLE_TOKEN_URL, {
     method: "POST",
-    signal,
+    signal: signal || AbortSignal.timeout(15000),
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       client_id: env.GOOGLE_CLIENT_ID || "",
@@ -336,6 +337,7 @@ const syncWorkspace = async (
   items: Item[],
   baseRevision: number,
   env: GoogleTasksEnv,
+  guard: SyncGuard,
 ) => {
   const current = await loadWorkspace(database);
   if (current.revision !== baseRevision) return { conflict: current } as const;
@@ -367,6 +369,34 @@ const syncWorkspace = async (
     nextItems = [...nextItems, taskDatabase];
   }
   const rows = new Map(taskDatabase.rows.map((row) => [row.id, row]));
+  for (const receipt of await readCreateReceipts(database, "tasks")) {
+    let resultJson = receipt.result_json;
+    if (!resultJson) {
+      const group = remoteGroups.find(({ list }) => list.id === receipt.container_id);
+      const mapped = new Set(storedMappings.filter((entry) => entry.task_list_id === receipt.container_id).map((entry) => entry.remote_task_id));
+      const observed = new Set(JSON.parse(receipt.observed_ids_json) as string[]);
+      const candidates = group?.tasks.filter((task) => !task.deleted && !mapped.has(task.id) && !observed.has(task.id) && JSON.stringify(googleTaskPayload(googleTaskToRow(task, group.list.title))) === receipt.payload_json) || [];
+      if (candidates.length !== 1) throw new GoogleSyncSafetyError("sync_uncertain");
+      resultJson = JSON.stringify(candidates[0]);
+      await database.prepare("UPDATE google_sync_creates SET result_json = ? WHERE operation_key = ?").bind(resultJson, receipt.operation_key).run();
+    }
+    const task = JSON.parse(resultJson) as GoogleTask;
+    const row = rows.get(receipt.local_row_id);
+    if (!row) {
+      await guard.check();
+      await deleteTask(token, receipt.container_id, task.id);
+      const group = remoteGroups.find(({ list }) => list.id === receipt.container_id);
+      const index = group?.tasks.findIndex((entry) => entry.id === task.id) ?? -1;
+      if (group && index >= 0) group.tasks.splice(index, 1);
+      await database.batch([deleteMapping(database, receipt.local_row_id), database.prepare("DELETE FROM google_sync_creates WHERE operation_key = ?").bind(receipt.operation_key)]);
+      continue;
+    }
+    if (mappingByLocal.has(row.id) || googleTaskId(row) !== receipt.replaces_id) continue;
+    const mapping: StoredMapping = { local_row_id: row.id, task_list_id: receipt.container_id, remote_task_id: task.id, remote_etag: task.etag || "", remote_updated: task.updated || "", local_fingerprint: googleRowFingerprint(googleTaskToRow(task, "", row)) };
+    await upsertMapping(mapping, database).run();
+    storedMappings.push(mapping);
+    mappingByLocal.set(row.id, mapping);
+  }
   const titleLists = listsByTitle(taskLists);
   const defaultList = taskLists[0];
   const rowsByList = new Map<string, Row[]>();
@@ -424,9 +454,16 @@ const syncWorkspace = async (
     };
 
     const pushLocal = async (row: Row, task: GoogleTask | undefined, conflict: boolean) => {
+      await guard.check();
       const result = task
         ? await patchTask(token, list.id, task.id, googleTaskPayload(row))
-        : await insertTask(token, list.id, googleTaskPayload(row));
+        : await createRemoteOnce({ database, guard, service: "tasks", localRowId: row.id, containerId: list.id,
+            replacesId: mappingByLocal.get(row.id)?.remote_task_id,
+            payload: googleTaskPayload(row),
+            observedIds: tasks.filter((entry) => JSON.stringify(googleTaskPayload(googleTaskToRow(entry, list.title))) === googleRowFingerprint(row)).map((entry) => entry.id),
+            create: () => insertTask(token, list.id, googleTaskPayload(row)),
+            mapping: (created) => upsertMapping({ local_row_id: row.id, task_list_id: list.id, remote_task_id: created.id, remote_etag: created.etag || "", remote_updated: created.updated || "", local_fingerprint: googleRowFingerprint(googleTaskToRow(created, list.title, row)) }, database),
+          });
       const nextRow = googleTaskToRow(result, list.title, row);
       rows.set(row.id, nextRow);
       saveMapping(nextRow, result);
@@ -438,6 +475,12 @@ const syncWorkspace = async (
     for (const task of tasks) {
       const mapping = listMappingByRemote.get(remoteKey(list.id, task.id));
       const existing = (mapping && rows.get(mapping.local_row_id)) || rowByRemote.get(remoteKey(list.id, task.id));
+      if (mapping && !existing) {
+        if (!task.deleted) { await guard.check(); await deleteTask(token, list.id, task.id); }
+        mappingStatements.push(deleteMapping(database, mapping.local_row_id));
+        summary.removed += 1;
+        continue;
+      }
       if (task.deleted) {
         if (!existing) continue;
         const localChanged = mapping ? googleRowFingerprint(existing) !== mapping.local_fingerprint : true;
@@ -472,6 +515,7 @@ const syncWorkspace = async (
     for (const row of localRows) {
       const mapping = mappingByLocal.get(row.id);
       if (mapping && mapping.task_list_id === list.id && !remoteById.has(mapping.remote_task_id)) {
+        await guard.check();
         await deleteTask(token, list.id, mapping.remote_task_id);
         rows.delete(row.id);
         mappingStatements.push(deleteMapping(database, row.id));
@@ -484,12 +528,14 @@ const syncWorkspace = async (
 
   const updatedDatabase = { ...taskDatabase, rows: [...rows.values()] };
   nextItems = replaceDatabase(nextItems, updatedDatabase);
+  await guard.check();
   const saved = await saveWorkspace(database, nextItems, baseRevision);
   if (!saved.ok) return { conflict: saved.current } as const;
   const connectionUpdate = database.prepare(`UPDATE google_tasks_connection
 SET task_list_id = NULL, task_list_title = ?, last_sync_at = CURRENT_TIMESTAMP, last_error = NULL, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?`).bind(summary.taskListTitle, CONNECTION_ID);
-  await database.batch([...mappingStatements, connectionUpdate]);
+  const clearReceipts = database.prepare("DELETE FROM google_sync_creates WHERE service = 'tasks' AND result_json IS NOT NULL");
+  await database.batch([...mappingStatements, connectionUpdate, clearReceipts]);
   return { workspace: saved.workspace, summary } as const;
 };
 
@@ -589,12 +635,13 @@ export const handleGoogleTasksApi = async (request: Request, env: GoogleTasksEnv
       if (!body || !isWorkspaceItems(body.items) || !Number.isInteger(body.baseRevision) || Number(body.baseRevision) < 1) {
         return json({ error: "Invalid Google Tasks sync payload" }, 400);
       }
-      const result = await syncWorkspace(database, body.items, Number(body.baseRevision), env);
+      const result = await withGoogleSyncLock(database, (guard) => syncWorkspace(database, body.items as Item[], Number(body.baseRevision), env, guard));
       if ("conflict" in result) return json({ error: "Workspace changed in another tab", workspace: result.conflict }, 409);
       return json({ workspace: result.workspace, sync: result.summary });
     }
     return new Response(null, { status: 405, headers: { Allow: "GET, POST" } });
   } catch (error) {
+    if (error instanceof GoogleSyncSafetyError) return json({ error: error.message, code: error.code }, error.status);
     const message = error instanceof Error ? error.message : "Google Tasks is temporarily unavailable";
     if (error instanceof GoogleTasksError) return json({ error: message }, error.status >= 400 && error.status < 600 ? error.status : 500);
     console.error("Google Tasks API failed", error);

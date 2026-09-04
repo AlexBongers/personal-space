@@ -79,8 +79,8 @@ export function GoogleCalendarDialog({ items, revision, onReplace, onOpenDatabas
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items: nextItems, baseRevision: revision }),
       });
-      const body = await response.json() as { workspace?: { items: Item[]; revision: number }; sync?: CalendarSummary; error?: string };
-      if (!response.ok || !body.workspace || !body.sync) throw new Error(body.error || t("calendar.syncError"));
+      const body = await response.json() as { workspace?: { items: Item[]; revision: number }; sync?: CalendarSummary; error?: string; code?: string };
+      if (!response.ok || !body.workspace || !body.sync) throw new Error(body.code === "sync_busy" ? t("sync.busy") : body.code === "sync_uncertain" ? t("sync.uncertain") : body.error || t("calendar.syncError"));
       onReplace(body.workspace.items, body.workspace.revision);
       setSummary(body.sync);
       await loadStatus();

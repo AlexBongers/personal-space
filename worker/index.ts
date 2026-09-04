@@ -11,8 +11,8 @@ import type { GoogleTasksDatabase } from "./google-tasks";
 import type { WorkspaceDatabase } from "./workspace-store";
 
 interface Env {
-  ASSETS: Fetcher;
-  DB?: D1Database;
+  ASSETS: { fetch(request: Request): Promise<Response> };
+  DB?: GoogleTasksDatabase;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
   GOOGLE_REDIRECT_URI?: string;

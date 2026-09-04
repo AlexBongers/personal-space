@@ -53,3 +53,22 @@ export const googleCalendarMapping = sqliteTable("google_calendar_mapping", {
   remoteEvent: uniqueIndex("uq_google_calendar_mapping_remote_event").on(table.calendarId, table.remoteEventId),
   calendar: index("idx_google_calendar_mapping_calendar").on(table.calendarId),
 }));
+
+export const googleSyncLease = sqliteTable("google_sync_lease", {
+  id: text("id").primaryKey(),
+  owner: text("owner").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+});
+
+// Keep acknowledged and uncertain creations across Worker restarts and retries.
+export const googleSyncCreates = sqliteTable("google_sync_creates", {
+  operationKey: text("operation_key").primaryKey(),
+  service: text("service").notNull(),
+  localRowId: text("local_row_id").notNull(),
+  containerId: text("container_id").notNull(),
+  replacesId: text("replaces_id").notNull().default(""),
+  payloadJson: text("payload_json").notNull(),
+  observedIdsJson: text("observed_ids_json").notNull().default("[]"),
+  resultJson: text("result_json"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({ service: index("idx_google_sync_creates_service").on(table.service) }));

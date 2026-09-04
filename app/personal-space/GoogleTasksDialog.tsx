@@ -83,8 +83,8 @@ export function GoogleTasksDialog({ items, revision, onReplace, onOpenDatabase, 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items: nextItems, baseRevision: revision }),
       });
-      const body = await response.json() as { workspace?: { items: Item[]; revision: number }; sync?: GoogleTasksSummary; error?: string };
-      if (!response.ok || !body.workspace || !body.sync) throw new Error(body.error || t("google.syncError"));
+      const body = await response.json() as { workspace?: { items: Item[]; revision: number }; sync?: GoogleTasksSummary; error?: string; code?: string };
+      if (!response.ok || !body.workspace || !body.sync) throw new Error(body.code === "sync_busy" ? t("sync.busy") : body.code === "sync_uncertain" ? t("sync.uncertain") : body.error || t("google.syncError"));
       onReplace(body.workspace.items, body.workspace.revision);
       setSummary(body.sync);
       await loadStatus();

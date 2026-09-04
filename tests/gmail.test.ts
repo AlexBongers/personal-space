@@ -71,7 +71,7 @@ test("Gmail bounds the shared OAuth refresh and returns a safe timeout response"
   const iv = new Uint8Array(12);
   const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode("test-refresh-token"));
   const token = Buffer.concat([iv, Buffer.from(encrypted)]).toString("base64url");
-  const statement = { bind() { return this; }, async first<T>() { return { refresh_token: token } as T; }, async all<T>() { return { results: [] as T[] }; }, async run() {} };
+  const statement = { bind() { return this; }, async first<T>() { return { refresh_token: token } as T; }, async all<T>() { return { results: [] as T[] }; }, async run() { return { meta: { changes: 0 } }; } };
   t.mock.method(AbortSignal, "timeout", (duration: number) => {
     assert.equal(duration, 15000);
     return AbortSignal.abort(new DOMException("Timed out", "TimeoutError"));

@@ -44,7 +44,7 @@ class MemoryStatement implements WorkspaceStatement {
     }
     if (this.query.startsWith("UPDATE")) {
       const [data, , expectedRevision] = this.values;
-      if (this.database.row?.revision !== expectedRevision) return { meta: { changes: 0 } };
+      if (!this.database.row || this.database.row.revision !== expectedRevision) return { meta: { changes: 0 } };
       this.database.row = {
         revision: this.database.row.revision + 1,
         data: String(data),

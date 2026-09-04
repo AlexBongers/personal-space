@@ -261,9 +261,11 @@ tbody tr:hover td { background: color-mix(in srgb, var(--surface-soft) 60%, tran
 .google-tasks-note p, .google-tasks-connect p { margin: 8px 0 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
 .google-tasks-connect { display: grid; gap: 18px; }
 .google-connect-button { display: inline-flex; width: max-content; align-items: center; text-decoration: none; }
-.google-task-list-picker { display: grid; gap: 8px; color: var(--ink); font-size: 14px; font-weight: 750; }
-.google-task-list-picker select { width: 100%; }
-.google-task-list-picker small { color: var(--muted); font-size: 12px; font-weight: 400; }
+.google-task-list-summary { display: grid; gap: 8px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+.google-task-list-summary strong { color: var(--ink); font-size: 16px; }
+.google-task-list-summary p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.google-task-list-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 3px; }
+.google-task-list-chips span { padding: 5px 9px; border: 1px solid var(--line); border-radius: 99px; color: var(--ink); background: var(--surface); font-size: 12px; }
 .google-tasks-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 20px; }
 .quiet-danger-button { min-height: 38px; padding: 0 9px; border: 0; color: var(--muted); background: transparent; font-size: 12px; }
 .quiet-danger-button:hover { color: var(--red); }

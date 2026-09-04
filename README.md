@@ -24,7 +24,7 @@ with nested pages, a reading list, a project tracker, a travel plan and every ed
 - Databases with typed properties, configurable options, table, board and list views.
 - Per-view filters, sorting and board grouping, with rows that open as editable pages.
 - Quick find for pages, databases and rows, persistent light and dark themes, and an English / Dutch interface switch.
-- Optional two-way Google Tasks sync through a dedicated database, with encrypted token storage and per-list selection.
+- Optional two-way Google Tasks sync through a dedicated database, with encrypted token storage and all-list synchronization.
 
 Workspace content is stored in the private Cloudflare D1 database provisioned by Sites. Changes
 therefore survive browser-storage clearing and are available anywhere the owner opens the private
@@ -62,7 +62,9 @@ Copy `.env.example` to `.env` for local development. Set `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`, and a fresh base64url-encoded 32-byte `GOOGLE_TOKEN_ENCRYPTION_KEY`.
 For the hosted Site, set the same values as private Sites runtime secrets; do not commit them.
 The integration uses the full Tasks scope because two-way sync must create, edit, organize and
-delete tasks. Connect from the `Google Tasks` button, choose a task list, and use `Sync now`.
+delete tasks. Connect from the `Google Tasks` button and use `Sync now`; every Google Tasks list
+is synchronized. New local tasks without a list are created in the first Google list returned by
+Google.
 The Site remains private because the workspace and Google authorization are single-user data.
 
 See [REQUIREMENTS.md](./REQUIREMENTS.md) for the complete product contract and [AGENTS.md](./AGENTS.md)

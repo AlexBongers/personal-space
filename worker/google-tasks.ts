@@ -62,6 +62,7 @@ export type GoogleTasksStatus = {
   configured: boolean;
   connected: boolean;
   needsReconnect?: boolean;
+  syncAllTaskLists: boolean;
   taskLists: GoogleTaskList[];
   selectedTaskListId: string | null;
   selectedTaskListTitle: string | null;
@@ -76,6 +77,7 @@ export type GoogleTasksSyncSummary = {
   removed: number;
   conflicts: number;
   taskListTitle: string;
+  taskListCount: number;
 };
 
 class GoogleTasksError extends Error {
@@ -273,10 +275,10 @@ const deleteTask = async (token: string, taskListId: string, taskId: string) => 
   }
 };
 
-const readMappings = async (database: GoogleTasksDatabase, taskListId: string) => {
+const readMappings = async (database: GoogleTasksDatabase) => {
   const result = await database.prepare(`SELECT local_row_id, task_list_id, remote_task_id, remote_etag, remote_updated, local_fingerprint
 FROM google_tasks_mapping
-WHERE task_list_id = ?`).bind(taskListId).all<StoredMapping>();
+`).all<StoredMapping>();
   return result.results;
 };
 
@@ -299,10 +301,17 @@ const textValue = (row: Row, id: string) => {
   return Array.isArray(value) ? value.join(", ") : value === null || value === undefined ? "" : String(value);
 };
 
-const selectedRows = (database: Database, taskListTitle: string, mappings: Map<string, StoredMapping>) => database.rows.filter((row) => {
-  const list = textValue(row, "google-list");
-  return mappings.has(row.id) || !list || list === taskListTitle;
-});
+const remoteKey = (taskListId: string, remoteTaskId: string) => `${taskListId}\u0000${remoteTaskId}`;
+
+const listsByTitle = (taskLists: GoogleTaskList[]) => {
+  const result = new Map<string, GoogleTaskList[]>();
+  taskLists.forEach((taskList) => {
+    const matches = result.get(taskList.title) || [];
+    matches.push(taskList);
+    result.set(taskList.title, matches);
+  });
+  return result;
+};
 
 const replaceDatabase = (items: Item[], nextDatabase: Database) => items.map((item) => item.id === nextDatabase.id ? nextDatabase : item);
 
@@ -310,7 +319,6 @@ const syncWorkspace = async (
   database: GoogleTasksDatabase,
   items: Item[],
   baseRevision: number,
-  taskListId: string | null,
   env: GoogleTasksEnv,
 ) => {
   const current = await loadWorkspace(database);
@@ -319,92 +327,143 @@ const syncWorkspace = async (
   if (!stored) throw new GoogleTasksError("Google Tasks is not connected", 401);
   const token = await accessToken(stored, env);
   const taskLists = await listTaskLists(token);
-  const selected = taskLists.find((entry) => entry.id === (taskListId || stored.task_list_id)) || taskLists[0];
-  if (!selected) throw new GoogleTasksError("Create a task list in Google Tasks first", 400);
-  const tasks = await listTasks(token, selected.id);
-  const storedMappings = await readMappings(database, selected.id);
+  if (!taskLists.length) throw new GoogleTasksError("Create a task list in Google Tasks first", 400);
+  const remoteGroups: Array<{ list: GoogleTaskList; tasks: GoogleTask[] }> = [];
+  const remoteTaskKeys = new Set<string>();
+  const remoteListsByTaskId = new Map<string, GoogleTaskList[]>();
+  for (const list of taskLists) {
+    const tasks = await listTasks(token, list.id);
+    remoteGroups.push({ list, tasks });
+    tasks.forEach((task) => {
+      if (!task.id) return;
+      remoteTaskKeys.add(remoteKey(list.id, task.id));
+      const matches = remoteListsByTaskId.get(task.id) || [];
+      matches.push(list);
+      remoteListsByTaskId.set(task.id, matches);
+    });
+  }
+  const storedMappings = await readMappings(database);
   const mappingByLocal = new Map(storedMappings.map((entry) => [entry.local_row_id, entry]));
-  const mappingByRemote = new Map(storedMappings.map((entry) => [entry.remote_task_id, entry]));
-  const remoteById = new Map(tasks.map((task) => [task.id, task]));
   let nextItems = [...items];
   let taskDatabase = nextItems.find((item): item is Database => item.id === GOOGLE_TASKS_DATABASE_ID && item.kind === "database");
   if (!taskDatabase) {
     taskDatabase = createGoogleTasksDatabase();
     nextItems = [...nextItems, taskDatabase];
   }
-  const initialRows = selectedRows(taskDatabase, selected.title, mappingByLocal);
   const rows = new Map(taskDatabase.rows.map((row) => [row.id, row]));
-  const rowByRemote = new Map(initialRows.map((row) => [googleTaskId(row), row]).filter(([id]) => id));
-  const mappingStatements: GoogleTasksStatement[] = [];
-  const summary: GoogleTasksSyncSummary = { imported: 0, exported: 0, updated: 0, removed: 0, conflicts: 0, taskListTitle: selected.title };
-
-  const saveMapping = (row: Row, task: GoogleTask) => {
-    mappingStatements.push(upsertMapping({
-      local_row_id: row.id,
-      task_list_id: selected.id,
-      remote_task_id: task.id,
-      remote_etag: task.etag || "",
-      remote_updated: task.updated || new Date().toISOString(),
-      local_fingerprint: googleRowFingerprint(row),
-    }, database));
-  };
-
-  const pushLocal = async (row: Row, task: GoogleTask | undefined, conflict: boolean) => {
-    const result = task
-      ? await patchTask(token, selected.id, task.id, googleTaskPayload(row))
-      : await insertTask(token, selected.id, googleTaskPayload(row));
-    const nextRow = googleTaskToRow(result, selected.title, row);
-    rows.set(row.id, nextRow);
-    saveMapping(nextRow, result);
-    if (task) summary.updated += 1;
-    else summary.exported += 1;
-    if (conflict) summary.conflicts += 1;
-  };
-
-  for (const task of tasks) {
-    const mapping = mappingByRemote.get(task.id);
-    const existing = (mapping && rows.get(mapping.local_row_id)) || rowByRemote.get(task.id);
-    if (task.deleted) {
-      if (!existing) continue;
-      const localChanged = mapping ? googleRowFingerprint(existing) !== mapping.local_fingerprint : true;
-      if (localChanged) {
-        await pushLocal(existing, undefined, true);
-      } else {
-        rows.delete(existing.id);
-        mappingStatements.push(deleteMapping(database, existing.id));
-        summary.removed += 1;
-      }
-      continue;
-    }
-    if (!existing) {
-      const imported = googleTaskToRow(task, selected.title);
-      rows.set(imported.id, imported);
-      saveMapping(imported, task);
-      summary.imported += 1;
-      continue;
-    }
-    const localChanged = mapping ? googleRowFingerprint(existing) !== mapping.local_fingerprint : false;
-    const remoteChanged = mapping ? task.updated !== mapping.remote_updated || task.etag !== mapping.remote_etag : true;
-    if (localChanged) {
-      await pushLocal(existing, task, remoteChanged);
-    } else {
-      const nextRow = remoteChanged ? googleTaskToRow(task, selected.title, existing) : existing;
-      rows.set(existing.id, nextRow);
-      saveMapping(nextRow, task);
-      if (remoteChanged && mapping) summary.updated += 1;
-    }
-  }
-
-  for (const row of initialRows) {
+  const titleLists = listsByTitle(taskLists);
+  const defaultList = taskLists[0];
+  const rowsByList = new Map<string, Row[]>();
+  const listForRow = (row: Row) => {
     const mapping = mappingByLocal.get(row.id);
-    if (mapping && mapping.task_list_id === selected.id && !remoteById.has(mapping.remote_task_id)) {
-      await deleteTask(token, selected.id, mapping.remote_task_id);
-      rows.delete(row.id);
-      mappingStatements.push(deleteMapping(database, row.id));
-      summary.removed += 1;
-      continue;
+    if (mapping) return taskLists.find((list) => list.id === mapping.task_list_id) || null;
+    const taskId = googleTaskId(row);
+    const title = textValue(row, "google-list").trim();
+    if (taskId) {
+      const titleMatches = (titleLists.get(title) || []).filter((list) => remoteTaskKeys.has(remoteKey(list.id, taskId)));
+      if (titleMatches.length) return titleMatches[0];
+      const remoteMatches = remoteListsByTaskId.get(taskId) || [];
+      if (remoteMatches.length === 1) return remoteMatches[0];
     }
-    if (!mapping && !googleTaskId(row)) await pushLocal(row, undefined, false);
+    if (title) return (titleLists.get(title) || [])[0] || null;
+    if (!taskId) return defaultList;
+    return null;
+  };
+  taskDatabase.rows.forEach((row) => {
+    const list = listForRow(row);
+    if (!list) return;
+    const listRows = rowsByList.get(list.id) || [];
+    listRows.push(row);
+    rowsByList.set(list.id, listRows);
+  });
+  const mappingStatements: GoogleTasksStatement[] = [];
+  const summary: GoogleTasksSyncSummary = {
+    imported: 0,
+    exported: 0,
+    updated: 0,
+    removed: 0,
+    conflicts: 0,
+    taskListTitle: taskLists.length === 1 ? taskLists[0].title : "All lists",
+    taskListCount: taskLists.length,
+  };
+
+  for (const group of remoteGroups) {
+    const { list, tasks } = group;
+    const localRows = rowsByList.get(list.id) || [];
+    const rowByRemote = new Map(localRows
+      .map((row) => [remoteKey(list.id, googleTaskId(row)), row] as const)
+      .filter(([, row]) => Boolean(googleTaskId(row))));
+    const remoteById = new Map(tasks.map((task) => [task.id, task]));
+    const listMappingByRemote = new Map(storedMappings.filter((mapping) => mapping.task_list_id === list.id).map((mapping) => [remoteKey(mapping.task_list_id, mapping.remote_task_id), mapping]));
+
+    const saveMapping = (row: Row, task: GoogleTask) => {
+      mappingStatements.push(upsertMapping({
+        local_row_id: row.id,
+        task_list_id: list.id,
+        remote_task_id: task.id,
+        remote_etag: task.etag || "",
+        remote_updated: task.updated || new Date().toISOString(),
+        local_fingerprint: googleRowFingerprint(row),
+      }, database));
+    };
+
+    const pushLocal = async (row: Row, task: GoogleTask | undefined, conflict: boolean) => {
+      const result = task
+        ? await patchTask(token, list.id, task.id, googleTaskPayload(row))
+        : await insertTask(token, list.id, googleTaskPayload(row));
+      const nextRow = googleTaskToRow(result, list.title, row);
+      rows.set(row.id, nextRow);
+      saveMapping(nextRow, result);
+      if (task) summary.updated += 1;
+      else summary.exported += 1;
+      if (conflict) summary.conflicts += 1;
+    };
+
+    for (const task of tasks) {
+      const mapping = listMappingByRemote.get(remoteKey(list.id, task.id));
+      const existing = (mapping && rows.get(mapping.local_row_id)) || rowByRemote.get(remoteKey(list.id, task.id));
+      if (task.deleted) {
+        if (!existing) continue;
+        const localChanged = mapping ? googleRowFingerprint(existing) !== mapping.local_fingerprint : true;
+        if (localChanged) {
+          await pushLocal(existing, undefined, true);
+        } else {
+          rows.delete(existing.id);
+          mappingStatements.push(deleteMapping(database, existing.id));
+          summary.removed += 1;
+        }
+        continue;
+      }
+      if (!existing) {
+        const imported = googleTaskToRow(task, list.title);
+        rows.set(imported.id, imported);
+        saveMapping(imported, task);
+        summary.imported += 1;
+        continue;
+      }
+      const localChanged = mapping ? googleRowFingerprint(existing) !== mapping.local_fingerprint : false;
+      const remoteChanged = mapping ? task.updated !== mapping.remote_updated || task.etag !== mapping.remote_etag : true;
+      if (localChanged) {
+        await pushLocal(existing, task, remoteChanged);
+      } else {
+        const nextRow = remoteChanged ? googleTaskToRow(task, list.title, existing) : existing;
+        rows.set(existing.id, nextRow);
+        saveMapping(nextRow, task);
+        if (remoteChanged && mapping) summary.updated += 1;
+      }
+    }
+
+    for (const row of localRows) {
+      const mapping = mappingByLocal.get(row.id);
+      if (mapping && mapping.task_list_id === list.id && !remoteById.has(mapping.remote_task_id)) {
+        await deleteTask(token, list.id, mapping.remote_task_id);
+        rows.delete(row.id);
+        mappingStatements.push(deleteMapping(database, row.id));
+        summary.removed += 1;
+        continue;
+      }
+      if (!mapping && !googleTaskId(row)) await pushLocal(row, undefined, false);
+    }
   }
 
   const updatedDatabase = { ...taskDatabase, rows: [...rows.values()] };
@@ -412,8 +471,8 @@ const syncWorkspace = async (
   const saved = await saveWorkspace(database, nextItems, baseRevision);
   if (!saved.ok) return { conflict: saved.current } as const;
   const connectionUpdate = database.prepare(`UPDATE google_tasks_connection
-SET task_list_id = ?, task_list_title = ?, last_sync_at = CURRENT_TIMESTAMP, last_error = NULL, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?`).bind(selected.id, selected.title, CONNECTION_ID);
+SET task_list_id = NULL, task_list_title = ?, last_sync_at = CURRENT_TIMESTAMP, last_error = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?`).bind(summary.taskListTitle, CONNECTION_ID);
   await database.batch([...mappingStatements, connectionUpdate]);
   return { workspace: saved.workspace, summary } as const;
 };
@@ -467,15 +526,15 @@ ON CONFLICT(id) DO UPDATE SET refresh_token = excluded.refresh_token, last_error
 
 const status = async (env: GoogleTasksEnv, database: GoogleTasksDatabase): Promise<Response> => {
   const stored = await connection(database);
-  if (!stored) return json({ configured: isGoogleTasksConfigured(env), connected: false, taskLists: [], selectedTaskListId: null, selectedTaskListTitle: null, lastSyncAt: null } satisfies GoogleTasksStatus);
-  if (!isGoogleTasksConfigured(env)) return json({ configured: false, connected: true, taskLists: [], selectedTaskListId: stored.task_list_id, selectedTaskListTitle: stored.task_list_title, lastSyncAt: stored.last_sync_at } satisfies GoogleTasksStatus);
+  if (!stored) return json({ configured: isGoogleTasksConfigured(env), connected: false, syncAllTaskLists: true, taskLists: [], selectedTaskListId: null, selectedTaskListTitle: null, lastSyncAt: null } satisfies GoogleTasksStatus);
+  if (!isGoogleTasksConfigured(env)) return json({ configured: false, connected: true, syncAllTaskLists: true, taskLists: [], selectedTaskListId: null, selectedTaskListTitle: null, lastSyncAt: stored.last_sync_at } satisfies GoogleTasksStatus);
   try {
     const taskLists = await listTaskLists(await accessToken(stored, env));
-    return json({ configured: true, connected: true, taskLists, selectedTaskListId: stored.task_list_id, selectedTaskListTitle: stored.task_list_title, lastSyncAt: stored.last_sync_at, error: stored.last_error || undefined } satisfies GoogleTasksStatus);
+    return json({ configured: true, connected: true, syncAllTaskLists: true, taskLists, selectedTaskListId: null, selectedTaskListTitle: null, lastSyncAt: stored.last_sync_at, error: stored.last_error || undefined } satisfies GoogleTasksStatus);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google authorization has expired";
     await recordConnectionError(database, message);
-    return json({ configured: true, connected: true, needsReconnect: true, taskLists: [], selectedTaskListId: stored.task_list_id, selectedTaskListTitle: stored.task_list_title, lastSyncAt: stored.last_sync_at, error: message } satisfies GoogleTasksStatus);
+    return json({ configured: true, connected: true, syncAllTaskLists: true, needsReconnect: true, taskLists: [], selectedTaskListId: null, selectedTaskListTitle: null, lastSyncAt: stored.last_sync_at, error: message } satisfies GoogleTasksStatus);
   }
 };
 
@@ -496,11 +555,11 @@ export const handleGoogleTasksApi = async (request: Request, env: GoogleTasksEnv
     }
     if (url.pathname === "/api/google-tasks/sync" && request.method === "POST") {
       if (!isGoogleTasksConfigured(env)) return json({ error: "Google Tasks integration is not configured" }, 503);
-      const body = await request.json().catch(() => null) as { items?: unknown; baseRevision?: unknown; taskListId?: unknown } | null;
-      if (!body || !isWorkspaceItems(body.items) || !Number.isInteger(body.baseRevision) || Number(body.baseRevision) < 1 || (body.taskListId !== null && body.taskListId !== undefined && typeof body.taskListId !== "string")) {
+      const body = await request.json().catch(() => null) as { items?: unknown; baseRevision?: unknown } | null;
+      if (!body || !isWorkspaceItems(body.items) || !Number.isInteger(body.baseRevision) || Number(body.baseRevision) < 1) {
         return json({ error: "Invalid Google Tasks sync payload" }, 400);
       }
-      const result = await syncWorkspace(database, body.items, Number(body.baseRevision), typeof body.taskListId === "string" ? body.taskListId : null, env);
+      const result = await syncWorkspace(database, body.items, Number(body.baseRevision), env);
       if ("conflict" in result) return json({ error: "Workspace changed in another tab", workspace: result.conflict }, 409);
       return json({ workspace: result.workspace, sync: result.summary });
     }

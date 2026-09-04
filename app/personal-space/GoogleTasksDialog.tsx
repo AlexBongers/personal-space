@@ -10,6 +10,7 @@ type GoogleTasksStatus = {
   configured: boolean;
   connected: boolean;
   needsReconnect?: boolean;
+  syncAllTaskLists: boolean;
   taskLists: GoogleTaskList[];
   selectedTaskListId: string | null;
   selectedTaskListTitle: string | null;
@@ -23,6 +24,7 @@ type GoogleTasksSummary = {
   removed: number;
   conflicts: number;
   taskListTitle: string;
+  taskListCount: number;
 };
 
 type GoogleTasksDialogProps = {
@@ -36,7 +38,6 @@ type GoogleTasksDialogProps = {
 export function GoogleTasksDialog({ items, revision, onReplace, onOpenDatabase, onClose }: GoogleTasksDialogProps) {
   const { language, t } = useLanguage();
   const [status, setStatus] = useState<GoogleTasksStatus | null>(null);
-  const [selectedListId, setSelectedListId] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -50,7 +51,6 @@ export function GoogleTasksDialog({ items, revision, onReplace, onOpenDatabase, 
       const body = await response.json() as GoogleTasksStatus & { error?: string };
       if (!response.ok) throw new Error(body.error || t("google.syncError"));
       setStatus(body);
-      setSelectedListId(body.selectedTaskListId || body.taskLists[0]?.id || "");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("google.syncError"));
     } finally {
@@ -81,7 +81,7 @@ export function GoogleTasksDialog({ items, revision, onReplace, onOpenDatabase, 
       const response = await fetch("/api/google-tasks/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: nextItems, baseRevision: revision, taskListId: selectedListId || null }),
+        body: JSON.stringify({ items: nextItems, baseRevision: revision }),
       });
       const body = await response.json() as { workspace?: { items: Item[]; revision: number }; sync?: GoogleTasksSummary; error?: string };
       if (!response.ok || !body.workspace || !body.sync) throw new Error(body.error || t("google.syncError"));
@@ -132,19 +132,23 @@ export function GoogleTasksDialog({ items, revision, onReplace, onOpenDatabase, 
         )}
         {!loading && status?.configured && !status.connected && (
           <div className="google-tasks-connect">
-            <p>{t("google.chooseListHint")}</p>
+            <p>{t("google.syncAllHint")}</p>
             <a className="primary-button google-connect-button" href="/api/google-tasks/connect">{t("google.connect")}</a>
           </div>
         )}
         {!loading && status?.configured && status.connected && !status.needsReconnect && (
           <>
-            <label className="google-task-list-picker">
-              <span>{t("google.chooseList")}</span>
-              <select value={selectedListId} onChange={(event) => setSelectedListId(event.target.value)} disabled={busy}>
-                {status.taskLists.map((list) => <option key={list.id} value={list.id}>{list.title}</option>)}
-              </select>
-              <small>{t("google.chooseListHint")}</small>
-            </label>
+            <div className="google-task-list-summary">
+              <span className="page-kicker">{t("google.syncMode")}</span>
+              <strong>{t("google.allLists", { count: status.taskLists.length })}</strong>
+              <p>{t("google.syncAllHint")}</p>
+              {status.taskLists.length > 0 && (
+                <div className="google-task-list-chips" aria-label={t("google.listNames")}>
+                  {status.taskLists.map((list) => <span key={list.id}>{list.title}</span>)}
+                </div>
+              )}
+              {!status.taskLists.length && <p className="google-tasks-error">{t("google.noLists")}</p>}
+            </div>
             <div className="google-tasks-actions">
               <button className="primary-button" onClick={() => void sync()} disabled={busy || !status.taskLists.length}>
                 {busy ? t("google.syncing") : t("google.syncNow")}
@@ -163,7 +167,7 @@ export function GoogleTasksDialog({ items, revision, onReplace, onOpenDatabase, 
         )}
         {summary && (
           <div className="google-tasks-result" aria-live="polite">
-            <strong>{summary.taskListTitle}</strong>
+            <strong>{t("google.allLists", { count: summary.taskListCount })}</strong>
             <span>{t("google.syncSummary", summary)}</span>
             {summary.conflicts > 0 && <small>{t("google.conflicts", { count: summary.conflicts })}</small>}
           </div>

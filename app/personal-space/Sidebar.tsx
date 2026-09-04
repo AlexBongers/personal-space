@@ -200,11 +200,7 @@ export function Sidebar({
         style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
         aria-label={t("nav.workspaceNavigation")}
       >
-        <div className="brand">
-          <div className="brand-mark">P</div>
-          <div><strong>Personal Space</strong></div>
-          <button className="sidebar-close" aria-label={t("nav.closeNavigation")} onClick={onDismiss}>×</button>
-        </div>
+        <button className="sidebar-close" aria-label={t("nav.closeNavigation")} onClick={onDismiss}>×</button>
         <div className="sidebar-nav">
           <button className="nav-item" onClick={() => chooseItem("home")}>
             <span className="nav-glyph">⌂</span> {t("nav.home")} <kbd>H</kbd>
@@ -212,6 +208,14 @@ export function Sidebar({
           <button className="nav-item" onClick={() => chooseItem("search")}>
             <span className="nav-glyph">⌕</span> {t("nav.quickFind")} <kbd>⌘K</kbd>
           </button>
+          {items.some((item) => item.id === "google-tasks") && (
+            <button className="nav-item" onClick={() => chooseItem("google-tasks")}>
+              <span className="nav-glyph">✓</span> {t("nav.googleTasks")}
+            </button>
+          )}
+          <a className="nav-item nav-external" href="https://slashdot.org/" target="_blank" rel="noreferrer">
+            <span className="nav-glyph">↗</span> {t("nav.slashdot")} <span className="nav-external-arrow">↗</span>
+          </a>
         </div>
         <div className="sidebar-section">
           <div className="section-heading">

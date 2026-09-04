@@ -80,7 +80,6 @@ export function SlashdotFeed() {
     <section className="slashdot-panel" aria-labelledby="slashdot-heading">
       <div className="slashdot-heading">
         <div>
-          <span className="section-kicker">{t("overview.newsLabel")}</span>
           <h2 id="slashdot-heading">{t("overview.slashdot")}</h2>
         </div>
         <button
@@ -133,7 +132,6 @@ export function SlashdotFeed() {
 
       {error && <p className="news-status">{error}</p>}
       <div className="slashdot-footer">
-        <span>{t("overview.newsRefreshHint")}</span>
         <a href="https://slashdot.org/" target="_blank" rel="noreferrer">{t("overview.openSlashdot")} ↗</a>
       </div>
     </section>

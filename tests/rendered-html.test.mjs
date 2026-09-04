@@ -24,7 +24,7 @@ test("renders the Personal Space workspace shell", async () => {
   assert.match(html, />EN<|>EN<\/button>/);
   assert.match(html, />NL<|>NL<\/button>/);
   assert.match(html, /og\.png/);
-  assert.match(html, /Make room for/);
+  assert.doesNotMatch(html, /Make room for|what matters\./i);
   assert.match(html, /Connecting to D1/);
   assert.doesNotMatch(html, /Changes stored in this browser/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);

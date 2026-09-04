@@ -219,9 +219,9 @@ export function Sidebar({
               <span className="nav-glyph"><InterfaceIcon name="calendar" /></span> {t("nav.googleCalendar")}
             </button>
           )}
-          <a className="nav-item nav-external" href="https://slashdot.org/" target="_blank" rel="noreferrer">
-            <span className="nav-glyph"><InterfaceIcon name="news" /></span> {t("nav.slashdot")} <span className="nav-external-arrow">↗</span>
-          </a>
+          <button className="nav-item" aria-current={selectedId === "gmail" ? "page" : undefined} onClick={() => chooseItem("gmail")}><span className="nav-glyph"><InterfaceIcon name="mail" /></span>{t("gmail.title")}</button>
+          <button className="nav-item" aria-current={selectedId === "news-slashdot" ? "page" : undefined} onClick={() => chooseItem("news-slashdot")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>Slashdot</button>
+          <button className="nav-item" aria-current={selectedId === "news-tweakers" ? "page" : undefined} onClick={() => chooseItem("news-tweakers")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>Tweakers</button>
         </div>
         <div className="sidebar-section">
           <div className="section-heading">

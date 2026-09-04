@@ -4,6 +4,8 @@ import handler from "vinext/server/app-router-entry";
 import { handleGoogleTasksApi } from "./google-tasks";
 import { handleGoogleCalendarApi } from "./google-calendar";
 import { handleSlashdotApi } from "./slashdot";
+import { handleNewsApi } from "./news";
+import { handleGmailApi } from "./gmail";
 import { isWorkspaceItems, loadWorkspace, MAX_WORKSPACE_BYTES, saveWorkspace } from "./workspace-store";
 import type { GoogleTasksDatabase } from "./google-tasks";
 import type { WorkspaceDatabase } from "./workspace-store";
@@ -107,6 +109,14 @@ const worker = {
     if (url.pathname === "/api/slashdot") {
       return handleSlashdotApi(request);
     }
+    if (url.pathname === "/api/tweakers") return handleNewsApi(request, "tweakers");
+    if (url.pathname === "/api/gmail/inbox") return handleGmailApi(request, {
+      DB: env.DB as unknown as GoogleTasksDatabase | undefined,
+      GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
+      GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
+      GOOGLE_REDIRECT_URI: env.GOOGLE_REDIRECT_URI,
+      GOOGLE_TOKEN_ENCRYPTION_KEY: env.GOOGLE_TOKEN_ENCRYPTION_KEY,
+    });
 
     if (url.pathname.startsWith("/api/google-tasks/")) {
       try {

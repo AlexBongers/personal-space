@@ -42,8 +42,10 @@ const formatFeedTime = (value: string, language: "en" | "nl") => {
   }).format(date);
 };
 
-export function SlashdotFeed() {
+export function SlashdotFeed({ source = "slashdot" }: { source?: "slashdot" | "tweakers" }) {
   const { language, t } = useLanguage();
+  const sourceName = source === "slashdot" ? "Slashdot" : "Tweakers";
+  const sourceUrl = source === "slashdot" ? "https://slashdot.org/" : "https://tweakers.net/";
   const [feed, setFeed] = useState<SlashdotFeedResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -56,10 +58,10 @@ export function SlashdotFeed() {
     requestRef.current = controller;
     if (manual) setRefreshing(true);
     try {
-      const response = await fetch("/api/slashdot", { cache: "no-store", signal: controller.signal });
+      const response = await fetch(`/api/${source}`, { cache: "no-store", signal: controller.signal });
       const body = await response.json() as SlashdotFeedResponse;
       if (requestRef.current !== controller) return;
-      if (!response.ok || !body.stories?.length) throw new Error(body.error || t("overview.newsUnavailable"));
+      if (!response.ok || !body.stories?.length) throw new Error(t("overview.newsUnavailable"));
       setFeed(body);
       setError(body.stale ? t("overview.newsStale") : "");
     } catch (requestError) {
@@ -73,11 +75,11 @@ export function SlashdotFeed() {
         setRefreshing(false);
       }
     }
-  }, [t]);
+  }, [t, source]);
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => void loadFeed(), 0);
-    const timer = window.setInterval(() => void loadFeed(), REFRESH_INTERVAL_MS);
+    const timer = window.setInterval(() => { if (!document.hidden) void loadFeed(); }, REFRESH_INTERVAL_MS);
     return () => {
       window.clearTimeout(initialLoad);
       window.clearInterval(timer);
@@ -89,15 +91,15 @@ export function SlashdotFeed() {
   const stories = useMemo(() => feed?.stories.slice(0, 10) || [], [feed]);
 
   return (
-    <section className="slashdot-panel" aria-labelledby="slashdot-heading">
+    <section className="slashdot-panel" aria-labelledby={`${source}-heading`}>
       <div className="slashdot-heading">
         <div>
-          <h2 id="slashdot-heading">{t("overview.slashdot")}</h2>
+          <h2 id={`${source}-heading`}>{sourceName}</h2>
         </div>
         <button
           type="button"
           className="feed-refresh"
-          aria-label={t("overview.refreshNews")}
+          aria-label={`${sourceName}: ${t("news.refresh")}`}
           onClick={() => void loadFeed(true)}
           disabled={loading || refreshing}
         >
@@ -105,10 +107,10 @@ export function SlashdotFeed() {
         </button>
       </div>
       <div className="slashdot-meta">
-        <span className="live-dot" />
+        <span className={`live-dot ${error ? "feed-warning" : ""}`} aria-hidden="true" />
         <span>{feed?.fetchedAt ? t("overview.newsUpdated", { time: formatFeedTime(feed.fetchedAt, language) }) : t("overview.newsLoading")}</span>
         <span className="meta-divider">·</span>
-        <a href="https://slashdot.org/" target="_blank" rel="noreferrer">Slashdot ↗</a>
+        <a href={sourceUrl} target="_blank" rel="noreferrer">{sourceName} ↗</a>
       </div>
 
       {loading && !feed && (
@@ -144,7 +146,7 @@ export function SlashdotFeed() {
 
       {error && <p className="news-status">{error}</p>}
       <div className="slashdot-footer">
-        <a href="https://slashdot.org/" target="_blank" rel="noreferrer">{t("overview.openSlashdot")} ↗</a>
+        <a href={sourceUrl} target="_blank" rel="noreferrer">{t("news.open", { source: sourceName })} ↗</a>
       </div>
     </section>
   );

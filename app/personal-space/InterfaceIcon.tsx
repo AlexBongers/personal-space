@@ -1,6 +1,7 @@
-type IconName = "home" | "search" | "tasks" | "calendar" | "news" | "plus" | "database" | "menu";
+type IconName = "home" | "search" | "tasks" | "calendar" | "news" | "plus" | "database" | "menu" | "mail";
 
 const paths: Record<IconName, string> = {
+  mail: "M3 5h18v14H3ZM3 5l9 7 9-7",
   home: "m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z",
   search: "M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z",
   tasks: "m3 6 2 2 4-4m-6 9 2 2 4-4m-6 9 2 2 4-4M13 6h8M13 13h8M13 20h8",

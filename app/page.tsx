@@ -19,6 +19,8 @@ import {
 import { SearchDialog } from "./personal-space/SearchDialog";
 import { Sidebar } from "./personal-space/Sidebar";
 import { InterfaceIcon } from "./personal-space/InterfaceIcon";
+import { GmailInbox } from "./personal-space/GmailInbox";
+import { SlashdotFeed } from "./personal-space/SlashdotFeed";
 import type { Block, Item, SearchResult, Theme } from "./personal-space/types";
 import { useLanguage } from "./personal-space/i18n";
 import { useWorkspacePersistence } from "./personal-space/useWorkspacePersistence";
@@ -41,6 +43,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [googleTasksOpen, setGoogleTasksOpen] = useState(false);
   const [googleCalendarOpen, setGoogleCalendarOpen] = useState(false);
+  const [gmailAuthorizationError, setGmailAuthorizationError] = useState(false);
 
   useEffect(() => {
     if (!hydrated || items.some((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID)) return;
@@ -66,7 +69,10 @@ export default function Home() {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
       if (params.get("google") === "connected" || params.get("google") === "error") {
-        if (params.get("service") === "calendar") setGoogleCalendarOpen(true);
+        if (params.get("service") === "gmail") {
+          setSelectedId("gmail");
+          setGmailAuthorizationError(params.get("google") === "error");
+        } else if (params.get("service") === "calendar") setGoogleCalendarOpen(true);
         else setGoogleTasksOpen(true);
         window.history.replaceState({}, "", window.location.pathname);
       }
@@ -106,6 +112,8 @@ export default function Home() {
   }, []);
 
   const selected = items.find((item) => item.id === selectedId) || items[0];
+  const utilityPage = selectedId === "gmail" || selectedId === "news-slashdot" || selectedId === "news-tweakers" ? selectedId : null;
+  const currentTitle = utilityPage === "gmail" ? t("gmail.title") : utilityPage === "news-slashdot" ? "Slashdot" : utilityPage === "news-tweakers" ? "Tweakers" : selected?.title || t("nav.home");
 
   const updateItem = (next: Item) => {
     setItems((current) => current.map((item) => item.id === next.id ? next : item));
@@ -217,8 +225,8 @@ export default function Home() {
         <header className="topbar">
           <div className="topbar-leading">
             <button className="mobile-menu" aria-label={t("nav.openNavigation")} onClick={() => setSidebarOpen(true)}><InterfaceIcon name="menu" /></button>
-            {selected?.id === "home" && <span className="compact-greeting">{t("overview.greeting")}</span>}
-            {selected?.id !== "home" && <div className="breadcrumbs"><span>{t("top.workspace")}</span><span>›</span><strong>{selected?.title || t("nav.home")}</strong></div>}
+            {!utilityPage && selected?.id === "home" && <span className="compact-greeting">{t("overview.greeting")}</span>}
+            {(utilityPage || selected?.id !== "home") && <div className="breadcrumbs"><span>{t("top.workspace")}</span><span>›</span><strong>{currentTitle}</strong></div>}
           </div>
           <div className="topbar-actions">
             <button className="search-trigger" aria-label={t("top.search")} onClick={() => setSearchOpen(true)}>
@@ -248,7 +256,7 @@ export default function Home() {
           </div>
         </header>
         <div className="content-scroll">
-          {isDatabase(selected) ? (
+          {utilityPage ? <div className="page-view utility-page">{utilityPage === "gmail" ? <GmailInbox authorizationError={gmailAuthorizationError} /> : <SlashdotFeed key={utilityPage} source={utilityPage === "news-slashdot" ? "slashdot" : "tweakers"} />}</div> : isDatabase(selected) ? (
             <DatabaseView
               key={`${selected.id}-${selectedRowId || "none"}`}
               database={selected}

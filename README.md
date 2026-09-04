@@ -72,6 +72,25 @@ Google list returned by Google; new local calendar events without a Calendar ID 
 writable calendar. Calendar entries without a start date stay local until completed.
 The Site remains private because the workspace and Google authorization are single-user data.
 
+## News and Gmail inbox
+
+Home and the sidebar include Slashdot and Tweakers. Both feeds use the same four-line summary
+layout and a 15-minute refresh interval. Upstream responses are cached per running Worker,
+concurrent refreshes are combined, and a failed refresh keeps the last successful headlines.
+
+The optional Gmail panel shows the five latest inbox messages on Home and a paginated inbox
+in the sidebar. It uses the existing Google OAuth client and callback above; no extra redirect
+URI or runtime secret is needed. Enable **Gmail API** in the same Google Cloud project, then
+choose **Gmail koppelen** in the site and approve the additional `gmail.readonly` scope. If the
+OAuth app is in testing, the account must be on its test-user list. Tasks and Calendar keep
+their existing permissions; the inbox requests no mail-writing or sending permission.
+
+Mail is fetched on opening the inbox and every five minutes while the page is visible. After
+loading extra pages, automatic refresh pauses until a manual refresh to preserve your position.
+The server requests only envelope headers, snippets, dates and labels, not message bodies or
+attachments. Mail previews are not stored in D1 or browser storage; API responses use `no-store`.
+Opening a message takes you to the connected account in Gmail. The site must remain owner-only.
+
 See [REQUIREMENTS.md](./REQUIREMENTS.md) for the complete product contract and [AGENTS.md](./AGENTS.md)
 for repository conventions. The final hostile-use findings and accepted storage limitation are
 recorded in [docs/ADVERSARIAL_REVIEW.md](./docs/ADVERSARIAL_REVIEW.md).

@@ -11,8 +11,9 @@ import {
 import { isWorkspaceItems, loadWorkspace, saveWorkspace } from "./workspace-store.ts";
 
 const CONNECTION_ID = "primary";
-// Both integrations share one encrypted refresh token. Reauthorizing from either
-// integration grants the complete two-way scope set to the existing OAuth client.
+// Gmail read access is requested only when connecting the inbox. All Google
+// integrations share the existing encrypted refresh token and callback.
+export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
 export const GOOGLE_SCOPE = [
   "https://www.googleapis.com/auth/tasks",
   "https://www.googleapis.com/auth/calendar",
@@ -144,7 +145,7 @@ const makeState = () => {
 };
 
 const stateCookie = (state: string) => `${STATE_COOKIE}=${state}; Max-Age=600; Path=/api/google-tasks; HttpOnly; Secure; SameSite=Lax`;
-const returnCookie = (service: "tasks" | "calendar") => `${RETURN_COOKIE}=${service}; Max-Age=600; Path=/api/google-tasks; HttpOnly; Secure; SameSite=Lax`;
+const returnCookie = (service: "tasks" | "calendar" | "gmail") => `${RETURN_COOKIE}=${service}; Max-Age=600; Path=/api/google-tasks; HttpOnly; Secure; SameSite=Lax`;
 const clearStateCookie = () => `${STATE_COOKIE}=; Max-Age=0; Path=/api/google-tasks; HttpOnly; Secure; SameSite=Lax`;
 const clearReturnCookie = () => `${RETURN_COOKIE}=; Max-Age=0; Path=/api/google-tasks; HttpOnly; Secure; SameSite=Lax`;
 
@@ -494,12 +495,13 @@ WHERE id = ?`).bind(summary.taskListTitle, CONNECTION_ID);
 const startConnect = (request: Request, env: GoogleTasksEnv) => {
   if (!isGoogleTasksConfigured(env)) return json({ error: "Google Tasks integration is not configured" }, 503);
   const state = makeState();
-  const returnService = new URL(request.url).searchParams.get("return") === "calendar" ? "calendar" : "tasks";
+  const requestedService = new URL(request.url).searchParams.get("return");
+  const returnService = requestedService === "gmail" ? "gmail" : requestedService === "calendar" ? "calendar" : "tasks";
   const params = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID || "",
     redirect_uri: redirectUri(request, env),
     response_type: "code",
-    scope: GOOGLE_SCOPE,
+    scope: returnService === "gmail" ? `${GOOGLE_SCOPE} ${GMAIL_SCOPE}` : GOOGLE_SCOPE,
     access_type: "offline",
     prompt: "consent",
     include_granted_scopes: "true",
@@ -520,7 +522,12 @@ const callback = async (request: Request, env: GoogleTasksEnv, database: GoogleT
   const headers = new Headers();
   headers.append("Set-Cookie", clearStateCookie());
   headers.append("Set-Cookie", clearReturnCookie());
-  if (!state || !code || state !== cookies[STATE_COOKIE]) return new Response("Google authorization could not be verified", { status: 400, headers });
+  if (!state || state !== cookies[STATE_COOKIE]) return new Response("Google authorization could not be verified", { status: 400, headers });
+  const returnService = cookies[RETURN_COOKIE] === "gmail" ? "gmail" : cookies[RETURN_COOKIE] === "calendar" ? "calendar" : "tasks";
+  if (!code || url.searchParams.has("error")) {
+    headers.set("Location", `/?google=error&service=${returnService}`);
+    return new Response(null, { status: 303, headers });
+  }
   const response = await fetch(GOOGLE_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -532,13 +539,16 @@ const callback = async (request: Request, env: GoogleTasksEnv, database: GoogleT
       grant_type: "authorization_code",
     }),
   });
-  const body = await response.json().catch(() => null) as { refresh_token?: string; error_description?: string } | null;
+  const body = await response.json().catch(() => null) as { refresh_token?: string; scope?: string; error_description?: string } | null;
+  if (returnService === "gmail" && response.ok && !body?.scope?.split(" ").includes(GMAIL_SCOPE)) {
+    headers.set("Location", "/?google=error&service=gmail");
+    return new Response(null, { status: 303, headers });
+  }
   if (!response.ok || !body?.refresh_token) return new Response(body?.error_description || "Google authorization was not completed", { status: 502, headers });
   const encryptedToken = await encryptToken(body.refresh_token, env);
   await database.prepare(`INSERT INTO google_tasks_connection (id, refresh_token)
 VALUES (?, ?)
 ON CONFLICT(id) DO UPDATE SET refresh_token = excluded.refresh_token, last_error = NULL, updated_at = CURRENT_TIMESTAMP`).bind(CONNECTION_ID, encryptedToken).run();
-  const returnService = cookies[RETURN_COOKIE] === "calendar" ? "calendar" : "tasks";
   headers.set("Location", `/?google=connected&service=${returnService}`);
   return new Response(null, { status: 303, headers });
 };

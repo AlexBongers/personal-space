@@ -3,6 +3,7 @@
 import { getValue, GOOGLE_TASKS_DATABASE_ID, GOOGLE_TASK_PROPERTY_IDS, isDatabase, valueText } from "./model";
 import { useLanguage } from "./i18n";
 import { SlashdotFeed } from "./SlashdotFeed";
+import { GmailInbox } from "./GmailInbox";
 import type { Item } from "./types";
 
 type HomeOverviewProps = {
@@ -31,7 +32,8 @@ export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
     .slice(0, 6);
   return (
     <section className="home-overview" aria-label={t("overview.aria")}>
-      <div className={`planner-home-grid ${dueTasks.length ? "has-deadlines" : "only-news"}`}>
+      <div className="home-dashboard">
+        <div className="home-priority-rail">
         {dueTasks.length > 0 && (
           <section className="due-panel" aria-labelledby="due-tasks-heading">
             <div className="due-heading">
@@ -55,7 +57,9 @@ export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
             </div>
           </section>
         )}
-        <SlashdotFeed />
+        <GmailInbox compact onOpenInbox={() => onOpen("gmail")} />
+        </div>
+        <div className="home-news-grid"><SlashdotFeed /><SlashdotFeed source="tweakers" /></div>
       </div>
     </section>
   );

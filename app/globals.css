@@ -587,7 +587,6 @@ td { height: 56px; font-size: .9375rem; }
 }
 @container (max-width: 900px) {
   .home-dashboard { grid-template-columns: minmax(0, 1fr); }
-  .home-priority-rail { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
   .home-news-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @container (max-width: 650px) {

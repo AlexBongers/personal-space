@@ -465,7 +465,7 @@ export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewP
           <h1><span className="database-title-icon">{database.icon}</span>{database.title}</h1>
           <p>{t("database.recordSummary", { records: database.rows.length, properties: database.properties.length })}</p>
         </div>
-        <button className="primary-button" onClick={addRow}>＋ {t("database.newRow")}</button>
+        <button className="primary-button" onClick={() => addRow()}>＋ {t("database.newRow")}</button>
       </div>
       <div className="database-toolbar">
         <div className="view-switcher" aria-label={t("database.view")}>
@@ -544,7 +544,7 @@ export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewP
             </tbody>
           </table>
           {visibleRows.length === 0 && <div className="empty-state">{t("database.noRows")}</div>}
-          <button className="add-row-link" onClick={addRow}>＋ {t("database.addRow")}</button>
+      <button className="add-row-link" onClick={() => addRow()}>＋ {t("database.addRow")}</button>
         </div>
       )}
       {activeView.mode === "board" && (

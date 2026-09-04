@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "./i18n";
+import { InterfaceIcon } from "./InterfaceIcon";
 import type { Item } from "./types";
 
 const SIDEBAR_WIDTH_KEY = "personal-space-sidebar-width";
@@ -202,24 +203,24 @@ export function Sidebar({
       >
         <button className="sidebar-close" aria-label={t("nav.closeNavigation")} onClick={onDismiss}>×</button>
         <div className="sidebar-nav">
-          <button className="nav-item" onClick={() => chooseItem("home")}>
-            <span className="nav-glyph">⌂</span> {t("nav.home")} <kbd>H</kbd>
+          <button className="nav-item" aria-current={selectedId === "home" ? "page" : undefined} onClick={() => chooseItem("home")}>
+            <span className="nav-glyph"><InterfaceIcon name="home" /></span> {t("nav.home")} <kbd>H</kbd>
           </button>
           <button className="nav-item" onClick={() => chooseItem("search")}>
-            <span className="nav-glyph">⌕</span> {t("nav.quickFind")} <kbd>⌘K</kbd>
+            <span className="nav-glyph"><InterfaceIcon name="search" /></span> {t("nav.quickFind")} <kbd>⌘K</kbd>
           </button>
           {items.some((item) => item.id === "google-tasks") && (
-            <button className="nav-item" onClick={() => chooseItem("google-tasks")}>
-              <span className="nav-glyph">✓</span> {t("nav.googleTasks")}
+            <button className="nav-item" aria-current={selectedId === "google-tasks" ? "page" : undefined} onClick={() => chooseItem("google-tasks")}>
+              <span className="nav-glyph"><InterfaceIcon name="tasks" /></span> {t("nav.googleTasks")}
             </button>
           )}
           {items.some((item) => item.id === "google-calendar") && (
-            <button className="nav-item" onClick={() => chooseItem("google-calendar")}>
-              <span className="nav-glyph">◷</span> {t("nav.googleCalendar")}
+            <button className="nav-item" aria-current={selectedId === "google-calendar" ? "page" : undefined} onClick={() => chooseItem("google-calendar")}>
+              <span className="nav-glyph"><InterfaceIcon name="calendar" /></span> {t("nav.googleCalendar")}
             </button>
           )}
           <a className="nav-item nav-external" href="https://slashdot.org/" target="_blank" rel="noreferrer">
-            <span className="nav-glyph">↗</span> {t("nav.slashdot")} <span className="nav-external-arrow">↗</span>
+            <span className="nav-glyph"><InterfaceIcon name="news" /></span> {t("nav.slashdot")} <span className="nav-external-arrow">↗</span>
           </a>
         </div>
         <div className="sidebar-section">
@@ -236,8 +237,8 @@ export function Sidebar({
           {workspaceOpen && <div className="tree">{childrenOf(null).map((item) => renderNode(item, 0))}</div>}
         </div>
         <div className="sidebar-footer">
-          <button className="new-button" onClick={() => onCreatePage(null)}><span>＋</span> {t("nav.newPage")}</button>
-          <button className="new-button secondary" onClick={onCreateDatabase}><span>▦</span> {t("nav.newDatabase")}</button>
+          <button className="new-button" onClick={() => onCreatePage(null)}><InterfaceIcon name="plus" /> {t("nav.newPage")}</button>
+          <button className="new-button secondary" onClick={onCreateDatabase}><InterfaceIcon name="database" /> {t("nav.newDatabase")}</button>
         </div>
         <div
           className="sidebar-resize"

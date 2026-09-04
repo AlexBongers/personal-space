@@ -18,6 +18,7 @@ import {
 } from "./personal-space/model";
 import { SearchDialog } from "./personal-space/SearchDialog";
 import { Sidebar } from "./personal-space/Sidebar";
+import { InterfaceIcon } from "./personal-space/InterfaceIcon";
 import type { Block, Item, SearchResult, Theme } from "./personal-space/types";
 import { useLanguage } from "./personal-space/i18n";
 import { useWorkspacePersistence } from "./personal-space/useWorkspacePersistence";
@@ -34,6 +35,7 @@ export default function Home() {
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [theme, setTheme] = useState<Theme>("light");
+  const [themeReady, setThemeReady] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -55,6 +57,7 @@ export default function Home() {
       } catch {
         // Keep the light theme if browser preferences are unavailable.
       }
+      setThemeReady(true);
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -72,8 +75,14 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (hydrated) window.localStorage.setItem(STORAGE_KEYS.theme, theme);
-  }, [theme, hydrated]);
+    if (!themeReady) return;
+    document.documentElement.style.colorScheme = theme;
+    try {
+      window.localStorage.setItem(STORAGE_KEYS.theme, theme);
+    } catch {
+      // Theme switching also works when browser storage is unavailable.
+    }
+  }, [theme, themeReady]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -207,30 +216,32 @@ export default function Home() {
       <section className="main-area">
         <header className="topbar">
           <div className="topbar-leading">
-            <button className="mobile-menu" aria-label={t("nav.openNavigation")} onClick={() => setSidebarOpen(true)}>☰</button>
+            <button className="mobile-menu" aria-label={t("nav.openNavigation")} onClick={() => setSidebarOpen(true)}><InterfaceIcon name="menu" /></button>
             {selected?.id === "home" && <span className="compact-greeting">{t("overview.greeting")}</span>}
             {selected?.id !== "home" && <div className="breadcrumbs"><span>{t("top.workspace")}</span><span>›</span><strong>{selected?.title || t("nav.home")}</strong></div>}
           </div>
           <div className="topbar-actions">
             <button className="search-trigger" aria-label={t("top.search")} onClick={() => setSearchOpen(true)}>
-              <span>⌕</span><span>{t("top.search")}</span><kbd>⌘ K</kbd>
+              <span><InterfaceIcon name="search" /></span><span>{t("top.search")}</span><kbd>⌘ K</kbd>
             </button>
             <button className="tasks-trigger" aria-label={t("google.open")} onClick={() => setGoogleTasksOpen(true)}>
-              <span>✓</span><span>{t("top.googleTasks")}</span>
+              <span><InterfaceIcon name="tasks" /></span><span>{t("top.googleTasks")}</span>
             </button>
             <button className="tasks-trigger calendar-trigger" aria-label={t("calendar.title")} onClick={() => setGoogleCalendarOpen(true)}>
-              <span>◷</span><span>{t("top.googleCalendar")}</span>
+              <span><InterfaceIcon name="calendar" /></span><span>{t("top.googleCalendar")}</span>
             </button>
             <div className="language-switch" role="group" aria-label={t("language.label")}>
               <button type="button" className={language === "en" ? "active" : ""} aria-label={t("language.switchToEnglish")} aria-pressed={language === "en"} onClick={() => setLanguage("en")}>EN</button>
               <button type="button" className={language === "nl" ? "active" : ""} aria-label={t("language.switchToDutch")} aria-pressed={language === "nl"} onClick={() => setLanguage("nl")}>NL</button>
             </div>
-            <button
-              className="theme-toggle"
-              onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-              aria-label={theme === "light" ? t("top.switchToDark") : t("top.switchToLight")}
-              aria-pressed={theme === "dark"}
-            >{theme === "light" ? "☾" : "☼"}</button>
+            <div className="theme-switch" role="group" aria-label={t("top.theme")}>
+              <button type="button" className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")} aria-label={t("top.switchToLight")} aria-pressed={theme === "light"}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></svg>
+              </button>
+              <button type="button" className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")} aria-label={t("top.switchToDark")} aria-pressed={theme === "dark"}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z" /></svg>
+              </button>
+            </div>
             <span className={`sync-indicator sync-${syncState}`} role="status" aria-label={t(`sync.${syncState}`)}>
               <i aria-hidden="true" />
             </span>

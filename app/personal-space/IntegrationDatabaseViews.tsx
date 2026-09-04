@@ -52,14 +52,11 @@ export function GoogleTasksInterface({ database, rows, onOpenRow, onUpdateCell, 
   const { language, t } = useLanguage();
   const [statusFilter, setStatusFilter] = useState<"open" | "all" | "done">("open");
   const [query, setQuery] = useState("");
-  const today = dateKey(new Date());
-
   const counts = useMemo(() => ({
     all: rows.length,
     done: rows.filter(taskIsDone).length,
     open: rows.filter((row) => !taskIsDone(row)).length,
-    due: rows.filter((row) => !taskIsDone(row) && taskDueKey(row) && taskDueKey(row) <= today).length,
-  }), [rows, today]);
+  }), [rows]);
 
   const groupedRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -78,7 +75,9 @@ export function GoogleTasksInterface({ database, rows, onOpenRow, onUpdateCell, 
     const groups = new Map<string, Row[]>();
     filtered.forEach((row) => {
       const list = valueFor(row, GOOGLE_TASK_PROPERTY_IDS.list) || t("tasks.noList");
-      groups.set(list, [...(groups.get(list) || []), row]);
+      const group = groups.get(list);
+      if (group) group.push(row);
+      else groups.set(list, [row]);
     });
     return [...groups.entries()];
   }, [language, query, rows, statusFilter, t]);
@@ -90,15 +89,7 @@ export function GoogleTasksInterface({ database, rows, onOpenRow, onUpdateCell, 
 
   return (
     <div className="integration-page tasks-interface">
-      <div className="database-heading integration-heading">
-        <div>
-          <div className="page-kicker">{t("tasks.eyebrow")}</div>
-          <h1><span className="database-title-icon task-interface-icon">✓</span>{database.title}</h1>
-          <p>{t("tasks.summary", { open: counts.open, due: counts.due })}</p>
-        </div>
-        <button className="primary-button" onClick={addTask}>＋ {t("tasks.newTask")}</button>
-      </div>
-
+      <h1 className="visually-hidden">{database.title}</h1>
       <div className="integration-toolbar">
         <div className="task-filter-tabs" role="tablist" aria-label={t("tasks.filterLabel")}>
           {(["open", "all", "done"] as const).map((filter) => (
@@ -114,10 +105,11 @@ export function GoogleTasksInterface({ database, rows, onOpenRow, onUpdateCell, 
             </button>
           ))}
         </div>
-        <label className="integration-search">
+        <div className="integration-actions"><label className="integration-search">
           <span aria-hidden="true">⌕</span>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("tasks.search")} aria-label={t("tasks.search")} />
         </label>
+        <button type="button" className="primary-button" onClick={addTask}>＋ {t("tasks.newTask")}</button></div>
       </div>
 
       <div className="task-groups">
@@ -155,7 +147,6 @@ export function GoogleTasksInterface({ database, rows, onOpenRow, onUpdateCell, 
         ))}
       </div>
       {groupedRows.length === 0 && <div className="integration-empty"><span className="empty-icon">✓</span><strong>{t("tasks.emptyTitle")}</strong><p>{query ? t("tasks.emptySearch") : t("tasks.emptyHint")}</p></div>}
-      <p className="integration-footnote">{t("tasks.syncNote")}</p>
     </div>
   );
 }
@@ -181,10 +172,31 @@ function formatCalendarTime(row: Row, language: "en" | "nl", allDayLabel: string
   return new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", { hour: "2-digit", minute: "2-digit" }).format(date);
 }
 
+function CalendarAgenda({ rows, onOpenRow }: Pick<IntegrationViewProps, "rows" | "onOpenRow">) {
+  const { language, t } = useLanguage();
+  const locale = language === "nl" ? "nl-NL" : "en-US";
+  return <div className="calendar-agenda">
+    {rows.map((row) => {
+      const day = calendarRowDate(row);
+      const date = new Date(`${day}T12:00:00`);
+      const label = Number.isNaN(date.getTime()) ? day : new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short" }).format(date);
+      return <button type="button" className="agenda-event" key={row.id} onClick={() => onOpenRow(row.id)}>
+        <span className="agenda-date"><strong>{label}</strong><small>{formatCalendarTime(row, language, t("calendarView.allDay"))}</small></span>
+        <i style={{ background: calendarColor(valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.calendar)) }} />
+        <span className="agenda-copy"><strong>{row.title || t("database.untitledRow")}</strong><small>{valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.calendar) || t("calendarView.defaultCalendar")}{valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.location) ? ` · ${valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.location)}` : ""}</small></span>
+        <span className="agenda-arrow" aria-hidden="true">→</span>
+      </button>;
+    })}
+    {!rows.length && <p className="calendar-empty">{t("calendarView.noEvents")}</p>}
+  </div>;
+}
+
 export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }: IntegrationViewProps) {
   const { language, t } = useLanguage();
   const [cursor, setCursor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [mode, setMode] = useState<"month" | "agenda">("month");
+  const [selectedDay, setSelectedDay] = useState(() => dateKey(new Date()));
+  const [agendaDay, setAgendaDay] = useState<string | null>(null);
   const locale = language === "nl" ? "nl-NL" : "en-US";
   const today = dateKey(new Date());
 
@@ -192,7 +204,11 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
     const grouped = new Map<string, Row[]>();
     rows.forEach((row) => {
       const day = calendarRowDate(row);
-      if (day) grouped.set(day, [...(grouped.get(day) || []), row]);
+      if (day) {
+        const group = grouped.get(day);
+        if (group) group.push(row);
+        else grouped.set(day, [row]);
+      }
     });
     grouped.forEach((dayRows, day) => {
       grouped.set(
@@ -215,35 +231,37 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
   }, [cursor]);
 
   const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(cursor);
+  const monthKey = dateKey(cursor).slice(0, 7);
   const agendaRows = useMemo(() => [...rows]
-    .filter((row) => calendarRowDate(row) >= today)
+    .filter((row) => agendaDay ? calendarRowDate(row) === agendaDay : calendarRowDate(row).startsWith(monthKey))
     .sort((a, b) => valueFor(a, GOOGLE_CALENDAR_PROPERTY_IDS.start).localeCompare(valueFor(b, GOOGLE_CALENDAR_PROPERTY_IDS.start)))
-    .slice(0, 40), [rows, today]);
+    , [rows, monthKey, agendaDay]);
 
   const addEvent = () => {
     const id = onAddRow({
       [GOOGLE_CALENDAR_PROPERTY_IDS.status]: "Confirmed",
-      [GOOGLE_CALENDAR_PROPERTY_IDS.start]: dateKey(cursor),
+      [GOOGLE_CALENDAR_PROPERTY_IDS.start]: mode === "month" ? selectedDay : agendaDay || dateKey(cursor),
       [GOOGLE_CALENDAR_PROPERTY_IDS.allDay]: true,
     });
     onOpenRow(id);
   };
 
-  const moveMonth = (amount: number) => setCursor((current) => new Date(current.getFullYear(), current.getMonth() + amount, 1));
-  const resetToday = () => setCursor(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const moveMonth = (amount: number) => {
+    const next = new Date(cursor.getFullYear(), cursor.getMonth() + amount, 1);
+    setCursor(next);
+    setSelectedDay(dateKey(next));
+    setAgendaDay(null);
+  };
+  const resetToday = () => {
+    setCursor(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+    setSelectedDay(today);
+    setAgendaDay(null);
+  };
   const weekdays = Array.from({ length: 7 }, (_, index) => new Intl.DateTimeFormat(locale, { weekday: "short" }).format(new Date(2024, 0, 1 + index)));
 
   return (
     <div className="integration-page calendar-interface">
-      <div className="database-heading integration-heading">
-        <div>
-          <div className="page-kicker">{t("calendarView.eyebrow")}</div>
-          <h1><span className="database-title-icon calendar-interface-icon">◷</span>{database.title}</h1>
-          <p>{t("calendarView.summary", { count: rows.length })}</p>
-        </div>
-        <button className="primary-button" onClick={addEvent}>＋ {t("calendarView.newEvent")}</button>
-      </div>
-
+      <h1 className="visually-hidden">{database.title}</h1>
       <div className="calendar-toolbar">
         <div className="calendar-navigation">
           <button type="button" className="today-button" onClick={resetToday}>{t("calendarView.today")}</button>
@@ -251,48 +269,41 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
           <button type="button" className="calendar-nav-button" aria-label={t("calendarView.next")} onClick={() => moveMonth(1)}>›</button>
           <h2>{monthLabel}</h2>
         </div>
-        <div className="calendar-mode-tabs" role="tablist" aria-label={t("calendarView.viewLabel")}>
+        <div className="integration-actions"><div className="calendar-mode-tabs" role="tablist" aria-label={t("calendarView.viewLabel")}>
           {(["month", "agenda"] as const).map((view) => (
-            <button type="button" role="tab" aria-selected={mode === view} className={mode === view ? "active" : ""} key={view} onClick={() => setMode(view)}>{t(`calendarView.${view}`)}</button>
+            <button type="button" role="tab" aria-selected={mode === view} className={mode === view ? "active" : ""} key={view} onClick={() => { setMode(view); setAgendaDay(null); }}>{t(`calendarView.${view}`)}</button>
           ))}
         </div>
+        <button type="button" className="primary-button" onClick={addEvent}>＋ {t("calendarView.newEvent")}</button></div>
       </div>
 
       {mode === "month" ? (
-        <div className="calendar-grid" role="grid" aria-label={monthLabel}>
+        <><div className="calendar-grid" role="grid" aria-label={monthLabel}>
           {weekdays.map((day) => <div className="calendar-weekday" role="columnheader" key={day}>{day}</div>)}
           {monthDays.map(({ date, key, inMonth }) => {
             const dayRows = eventsByDay.get(key) || [];
             return (
               <div className={`calendar-day ${inMonth ? "" : "outside-month"} ${key === today ? "is-today" : ""}`} role="gridcell" key={key}>
-                <div className="calendar-day-number">{date.getDate()}{key === today && <span>{t("calendarView.todayShort")}</span>}</div>
+                <button type="button" className="calendar-day-number" aria-label={new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date)} aria-pressed={selectedDay === key} aria-current={key === today ? "date" : undefined} onClick={() => setSelectedDay(key)}>{date.getDate()}{key === today && <span>{t("calendarView.todayShort")}</span>}</button>
+                <span className="mobile-event-count" aria-hidden="true">{dayRows.length > 0 ? dayRows.length : ""}</span>
                 <div className="calendar-day-events">
                   {dayRows.slice(0, 3).map((row) => <button type="button" className="calendar-event" key={row.id} onClick={() => onOpenRow(row.id)}><i style={{ background: calendarColor(valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.calendar)) }} /><span>{formatCalendarTime(row, language, t("calendarView.allDay"))}</span><strong>{row.title || t("database.untitledRow")}</strong></button>)}
-                  {dayRows.length > 3 && <button type="button" className="calendar-more" onClick={() => setMode("agenda")}>+{dayRows.length - 3} {t("calendarView.more")}</button>}
+                  {dayRows.length > 3 && <button type="button" className="calendar-more" onClick={() => { setAgendaDay(key); setSelectedDay(key); setMode("agenda"); }}>+{dayRows.length - 3} {t("calendarView.more")}</button>}
                 </div>
               </div>
             );
           })}
         </div>
+        <section className="calendar-day-agenda" aria-label={t("calendarView.agenda")}>
+          <h2>{new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long" }).format(new Date(`${selectedDay}T12:00:00`))}</h2>
+          <CalendarAgenda rows={eventsByDay.get(selectedDay) || []} onOpenRow={onOpenRow} />
+        </section></>
       ) : (
-        <div className="calendar-agenda">
-          {agendaRows.map((row) => {
-            const day = calendarRowDate(row);
-            const date = new Date(`${day}T12:00:00`);
-            const label = Number.isNaN(date.getTime()) ? day : new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long" }).format(date);
-            return (
-              <button type="button" className="agenda-event" key={row.id} onClick={() => onOpenRow(row.id)}>
-                <span className="agenda-date"><strong>{label}</strong><small>{formatCalendarTime(row, language, t("calendarView.allDay"))}</small></span>
-                <i style={{ background: calendarColor(valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.calendar)) }} />
-                <span className="agenda-copy"><strong>{row.title || t("database.untitledRow")}</strong><small>{valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.calendar) || t("calendarView.defaultCalendar")}{valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.location) ? ` · ${valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.location)}` : ""}</small></span>
-                <span className="agenda-arrow">→</span>
-              </button>
-            );
-          })}
-          {!agendaRows.length && <div className="integration-empty"><span className="empty-icon">◷</span><strong>{t("calendarView.emptyTitle")}</strong><p>{t("calendarView.emptyHint")}</p></div>}
-        </div>
+        <>
+          {agendaDay && <button type="button" className="back-link" onClick={() => setAgendaDay(null)}>← {monthLabel}</button>}
+          <CalendarAgenda rows={agendaRows} onOpenRow={onOpenRow} />
+        </>
       )}
-      <p className="integration-footnote">{t("calendarView.syncNote")}</p>
     </div>
   );
 }

@@ -158,12 +158,17 @@ const listCalendars = async (token: string) => {
 const listEvents = async (token: string, calendarId: string) => {
   const events: GoogleCalendarEvent[] = [];
   let pageToken = "";
+  const now = Date.now();
+  const timeMin = new Date(now - 45 * 24 * 60 * 60 * 1000).toISOString();
+  const timeMax = new Date(now + 365 * 24 * 60 * 60 * 1000).toISOString();
   do {
     const query = new URLSearchParams({
       maxResults: "2500",
       orderBy: "startTime",
       showDeleted: "true",
       singleEvents: "true",
+      timeMin,
+      timeMax,
     });
     if (pageToken) query.set("pageToken", pageToken);
     const result = await apiJson<GoogleCollection<GoogleCalendarEvent>>(`${CALENDAR_API_URL}/calendars/${encodeURIComponent(calendarId)}/events?${query}`, token);
@@ -478,6 +483,6 @@ export const handleGoogleCalendarApi = async (request: Request, env: GoogleCalen
     await updateState(database, (await readState(database))?.last_sync_at || null, message).run();
     if (error instanceof GoogleCalendarError) return json({ error: message }, error.status >= 400 && error.status < 600 ? error.status : 500);
     console.error("Google Calendar API failed", error);
-    return json({ error: "Google Calendar is temporarily unavailable" }, 500);
+    return json({ error: message }, 500);
   }
 };

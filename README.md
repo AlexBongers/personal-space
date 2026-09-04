@@ -66,9 +66,10 @@ The integration uses the full Tasks scope because two-way sync must create, edit
 delete tasks. The same OAuth client also requests the full Calendar scope so it can create, edit
 and delete events across every writable calendar. Connect or reconnect from either the `Google
 Tasks` or `Google Calendar` button and use `Sync now`; the refresh token is encrypted in D1 and
-shared by both integrations. New local tasks without a list are created in the first Google list
-returned by Google; new local calendar events without a Calendar ID use the first writable
-calendar. Calendar entries without a start date stay local until completed.
+shared by both integrations. Calendar sync covers the last 45 days and the next 12 months to keep
+the personal workspace fast and compact. New local tasks without a list are created in the first
+Google list returned by Google; new local calendar events without a Calendar ID use the first
+writable calendar. Calendar entries without a start date stay local until completed.
 The Site remains private because the workspace and Google authorization are single-user data.
 
 See [REQUIREMENTS.md](./REQUIREMENTS.md) for the complete product contract and [AGENTS.md](./AGENTS.md)

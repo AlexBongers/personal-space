@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BlockEditor } from "./BlockEditor";
+import { GoogleCalendarInterface, GoogleTasksInterface } from "./IntegrationDatabaseViews";
 import { useLanguage } from "./i18n";
 import {
   createBlock,
   createOption,
   defaultFilterOperator,
   emptyView,
+  GOOGLE_CALENDAR_DATABASE_ID,
   GOOGLE_TASKS_DATABASE_ID,
   GOOGLE_TASK_PROPERTY_IDS,
   getValue,
@@ -364,20 +366,27 @@ export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: Da
     return rows;
   }, [activeView, database.properties, database.rows]);
 
-  const addRow = () => onUpdate({
-    ...database,
-    rows: [
-      ...database.rows,
-      {
-        id: uid("row"),
-        title: t("database.untitledRow"),
-        values: Object.fromEntries(
-          database.properties.map((entry) => [entry.id, entry.type === "checkbox" ? false : entry.type === "multi-select" ? [] : ""]),
-        ),
-        blocks: [createBlock("paragraph")],
-      },
-    ],
-  });
+  const addRow = (initialValues: Record<string, CellValue> = {}) => {
+    const rowId = uid("row");
+    onUpdate({
+      ...database,
+      rows: [
+        ...database.rows,
+        {
+          id: rowId,
+          title: t("database.untitledRow"),
+          values: {
+            ...Object.fromEntries(
+              database.properties.map((entry) => [entry.id, entry.type === "checkbox" ? false : entry.type === "multi-select" ? [] : ""]),
+            ),
+            ...initialValues,
+          },
+          blocks: [createBlock("paragraph")],
+        },
+      ],
+    });
+    return rowId;
+  };
 
   const deleteRow = (rowId: string) => {
     if (window.confirm(t("database.deleteRow"))) {
@@ -410,6 +419,32 @@ export function DatabaseView({ database, onUpdate, initialRowId, saveLabel }: Da
   const openRow = openRowId ? database.rows.find((row) => row.id === openRowId) : undefined;
   if (openRow) {
     return <RowPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} saveLabel={saveLabel} />;
+  }
+
+  if (database.id === GOOGLE_TASKS_DATABASE_ID) {
+    return (
+      <GoogleTasksInterface
+        database={database}
+        rows={visibleRows}
+        onOpenRow={openRowPage}
+        onUpdateCell={updateCell}
+        onAddRow={addRow}
+        onDeleteRow={deleteRow}
+      />
+    );
+  }
+
+  if (database.id === GOOGLE_CALENDAR_DATABASE_ID) {
+    return (
+      <GoogleCalendarInterface
+        database={database}
+        rows={visibleRows}
+        onOpenRow={openRowPage}
+        onUpdateCell={updateCell}
+        onAddRow={addRow}
+        onDeleteRow={deleteRow}
+      />
+    );
   }
 
   const selectProperty =

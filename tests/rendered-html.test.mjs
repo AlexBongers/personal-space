@@ -20,12 +20,12 @@ test("renders the Personal Space workspace shell", async () => {
   assert.match(html, /<title>Personal Space — Your quiet knowledge manager<\/title>/i);
   assert.match(html, /Personal Space/);
   assert.match(html, /A calm place for busy minds/);
-  assert.match(html, /Search your space/);
+  assert.match(html, /Zoek in je ruimte/);
   assert.match(html, />EN<|>EN<\/button>/);
   assert.match(html, />NL<|>NL<\/button>/);
   assert.match(html, /og\.png/);
   assert.doesNotMatch(html, /Make room for|what matters\./i);
-  assert.match(html, /Connecting to D1/);
+  assert.match(html, /Verbinden met D1/);
   assert.doesNotMatch(html, /Changes stored in this browser/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });

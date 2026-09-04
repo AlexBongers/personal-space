@@ -176,7 +176,6 @@ export default function Home() {
         onCreateDatabase={createDatabase}
         onRename={renameItem}
         onDelete={deleteItem}
-        syncState={syncState}
       />
       <section className="main-area">
         <header className="topbar">
@@ -201,7 +200,6 @@ export default function Home() {
               aria-label={theme === "light" ? t("top.switchToDark") : t("top.switchToLight")}
               aria-pressed={theme === "dark"}
             >{theme === "light" ? "☾" : "☼"}</button>
-            <div className="avatar" aria-label={t("top.personalWorkspace")}>A</div>
           </div>
         </header>
         <div className="content-scroll">
@@ -231,7 +229,6 @@ export default function Home() {
                 />
                 {selected?.id !== "home" && <button className="page-menu" aria-label={t("top.deletePage")} onClick={() => selected && deleteItem(selected.id)}>•••</button>}
               </div>
-              <div className="page-caption">Personal Space <span>·</span> {t("top.editedJustNow")}</div>
               {selected && isPage(selected) && <BlockEditor item={selected} onChange={updateSelectedBlocks} saveLabel={t(`sync.${syncState}`)} />}
             </div>
           )}

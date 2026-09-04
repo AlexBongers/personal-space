@@ -9,7 +9,6 @@ type TranslationVars = Record<string, string | number>;
 
 const messages: Record<Language, Record<string, TranslationValue>> = {
   en: {
-    "brand.privateWorkspace": "Private workspace",
     "nav.home": "Home",
     "nav.quickFind": "Quick find",
     "nav.workspace": "Workspace",
@@ -18,7 +17,6 @@ const messages: Record<Language, Record<string, TranslationValue>> = {
     "nav.closeNavigation": "Close navigation",
     "nav.openNavigation": "Open workspace navigation",
     "nav.workspaceNavigation": "Workspace navigation",
-    "nav.workspaceMenu": "Workspace menu",
     "nav.collapseWorkspace": "Collapse workspace pages",
     "nav.expandWorkspace": "Expand workspace pages",
     "nav.noNestedPages": "No nested pages",
@@ -29,11 +27,9 @@ const messages: Record<Language, Record<string, TranslationValue>> = {
     "nav.delete": "Delete {title}",
     "top.workspace": "Workspace",
     "top.search": "Search your space",
-    "top.personalWorkspace": "Personal workspace",
     "top.changeIcon": "Change page icon",
     "top.pageTitle": "Page title",
     "top.deletePage": "Delete page",
-    "top.editedJustNow": "edited just now",
     "top.switchToDark": "Switch to dark theme",
     "top.switchToLight": "Switch to light theme",
     "language.label": "Language",
@@ -47,11 +43,10 @@ const messages: Record<Language, Record<string, TranslationValue>> = {
     "sync.offline": "D1 unavailable · local backup",
     "sync.error": "Sync paused · will retry",
     "overview.aria": "Workspace overview",
-    "overview.openCorner": "Open a corner of your space",
-    "overview.places": "{count} places, all yours",
-    "overview.build": "Build",
-    "overview.learn": "Learn",
-    "overview.explore": "Explore",
+    "overview.openCorner": "Quick access",
+    "overview.projectTracker": "Project tracker",
+    "overview.readingList": "Reading list",
+    "overview.springRoute": "Spring route",
     "overview.activeRecords": "{count} active records",
     "overview.currentlyReading": "{count} currently reading",
     "overview.keepAdventure": "Keep the next adventure close",
@@ -152,7 +147,6 @@ const messages: Record<Language, Record<string, TranslationValue>> = {
     "dialogs.deleteItem": "Delete “{title}” and all nested pages?",
   },
   nl: {
-    "brand.privateWorkspace": "Privé werkblad",
     "nav.home": "Home",
     "nav.quickFind": "Snel zoeken",
     "nav.workspace": "Werkruimte",
@@ -161,7 +155,6 @@ const messages: Record<Language, Record<string, TranslationValue>> = {
     "nav.closeNavigation": "Navigatie sluiten",
     "nav.openNavigation": "Werkruimtenavigatie openen",
     "nav.workspaceNavigation": "Werkruimtenavigatie",
-    "nav.workspaceMenu": "Werkruimtemenu",
     "nav.collapseWorkspace": "Werkruimtepagina’s inklappen",
     "nav.expandWorkspace": "Werkruimtepagina’s uitvouwen",
     "nav.noNestedPages": "Geen onderliggende pagina’s",
@@ -172,11 +165,9 @@ const messages: Record<Language, Record<string, TranslationValue>> = {
     "nav.delete": "{title} verwijderen",
     "top.workspace": "Werkruimte",
     "top.search": "Zoek in je ruimte",
-    "top.personalWorkspace": "Persoonlijke werkruimte",
     "top.changeIcon": "Pagina-icoon wijzigen",
     "top.pageTitle": "Paginatitel",
     "top.deletePage": "Pagina verwijderen",
-    "top.editedJustNow": "zojuist bewerkt",
     "top.switchToDark": "Donker thema inschakelen",
     "top.switchToLight": "Licht thema inschakelen",
     "language.label": "Taal",
@@ -190,11 +181,10 @@ const messages: Record<Language, Record<string, TranslationValue>> = {
     "sync.offline": "D1 niet beschikbaar · lokale back-up",
     "sync.error": "Synchronisatie gepauzeerd · wordt opnieuw geprobeerd",
     "overview.aria": "Werkruimte-overzicht",
-    "overview.openCorner": "Open een hoek van je ruimte",
-    "overview.places": "{count} plekken, helemaal van jou",
-    "overview.build": "Bouwen",
-    "overview.learn": "Leren",
-    "overview.explore": "Ontdekken",
+    "overview.openCorner": "Snel naar",
+    "overview.projectTracker": "Projectoverzicht",
+    "overview.readingList": "Leeslijst",
+    "overview.springRoute": "Voorjaarsroute",
     "overview.activeRecords": "{count} actieve regels",
     "overview.currentlyReading": "{count} momenteel aan het lezen",
     "overview.keepAdventure": "Houd het volgende avontuur dichtbij",
@@ -312,7 +302,7 @@ type LanguageContextValue = {
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguage] = useState<Language>("en");
+  const [language, setLanguage] = useState<Language>("nl");
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -320,7 +310,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
         if (stored === "en" || stored === "nl") setLanguage(stored);
       } catch {
-        // English is the safe default when browser preferences are unavailable.
+        // Dutch is the default when browser preferences are unavailable.
       }
     }, 0);
     return () => window.clearTimeout(timer);

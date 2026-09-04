@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useLanguage } from "./i18n";
 import type { Item } from "./types";
-import type { SyncState } from "./useWorkspacePersistence";
 
 type SidebarProps = {
   items: Item[];
@@ -17,7 +16,6 @@ type SidebarProps = {
   onCreateDatabase: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
-  syncState: SyncState;
 };
 
 export function Sidebar({
@@ -32,7 +30,6 @@ export function Sidebar({
   onCreateDatabase,
   onRename,
   onDelete,
-  syncState,
 }: SidebarProps) {
   const { t } = useLanguage();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -133,9 +130,8 @@ export function Sidebar({
       <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`} aria-label={t("nav.workspaceNavigation")}>
         <div className="brand">
           <div className="brand-mark">P</div>
-          <div><strong>Personal Space</strong><span>{t("brand.privateWorkspace")}</span></div>
+          <div><strong>Personal Space</strong></div>
           <button className="sidebar-close" aria-label={t("nav.closeNavigation")} onClick={onDismiss}>×</button>
-          <button className="sidebar-more" aria-label={t("nav.workspaceMenu")}>•••</button>
         </div>
         <div className="sidebar-nav">
           <button className="nav-item" onClick={() => chooseItem("home")}>
@@ -161,7 +157,6 @@ export function Sidebar({
         <div className="sidebar-footer">
           <button className="new-button" onClick={() => onCreatePage(null)}><span>＋</span> {t("nav.newPage")}</button>
           <button className="new-button secondary" onClick={onCreateDatabase}><span>▦</span> {t("nav.newDatabase")}</button>
-          <div className={`storage-note sync-${syncState}`}><span className="local-dot" /> {t(`sync.${syncState}`)}</div>
         </div>
       </aside>
     </>

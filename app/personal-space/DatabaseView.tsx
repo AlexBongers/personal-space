@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BlockEditor } from "./BlockEditor";
 import { useLanguage } from "./i18n";
 import {
@@ -8,6 +8,8 @@ import {
   createOption,
   defaultFilterOperator,
   emptyView,
+  GOOGLE_TASKS_DATABASE_ID,
+  GOOGLE_TASK_PROPERTY_IDS,
   getValue,
   matchesFilter,
   optionForValue,
@@ -35,6 +37,58 @@ type DatabaseViewProps = {
   saveLabel?: string;
 };
 
+function ClickTooltip({ label, text }: { label: string; text: string }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <span className="click-tooltip" ref={containerRef}>
+      <button
+        type="button"
+        className="tooltip-trigger"
+        aria-label={label}
+        aria-expanded={open}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((current) => !current);
+        }}
+      >
+        ?
+      </button>
+      {open && <span className="click-tooltip-content" role="tooltip">{text}</span>}
+    </span>
+  );
+}
+
+function googleTaskHelp(propertyId: string, t: (key: string) => string) {
+  const helpKeys: Partial<Record<string, string>> = {
+    [GOOGLE_TASK_PROPERTY_IDS.status]: "database.googleStatusHelp",
+    [GOOGLE_TASK_PROPERTY_IDS.list]: "database.googleListHelp",
+    [GOOGLE_TASK_PROPERTY_IDS.link]: "database.googleLinkHelp",
+    [GOOGLE_TASK_PROPERTY_IDS.id]: "database.googleIdHelp",
+    [GOOGLE_TASK_PROPERTY_IDS.parent]: "database.googleParentHelp",
+    [GOOGLE_TASK_PROPERTY_IDS.position]: "database.googlePositionHelp",
+  };
+  const key = helpKeys[propertyId];
+  return key ? t(key) : undefined;
+}
+
 function PropertyCell({ property, value, onChange }: { property: Property; value: CellValue; onChange: (value: CellValue) => void }) {
   const { t } = useLanguage();
   if (property.type === "checkbox") {
@@ -46,12 +100,13 @@ function PropertyCell({ property, value, onChange }: { property: Property; value
     );
   }
   if (property.type === "select") {
-    const selected = optionForValue(property, value);
+    const normalizedValue = property.id === GOOGLE_TASK_PROPERTY_IDS.status && !value ? "Open" : value;
+    const selected = optionForValue(property, normalizedValue);
     return (
       <span className="select-cell-shell">
         <i style={{ background: selected?.color || "var(--faint)" }} />
-        <select className="cell-select" value={String(value || "")} onChange={(event) => onChange(event.target.value)}>
-          <option value="">{t("database.empty")}</option>
+        <select className="cell-select" value={String(normalizedValue || "")} onChange={(event) => onChange(event.target.value)}>
+          {property.id !== GOOGLE_TASK_PROPERTY_IDS.status && <option value="">{t("database.empty")}</option>}
           {(property.options || []).map((entry) => <option key={entry.id} value={entry.label}>{entry.label}</option>)}
         </select>
       </span>
@@ -93,8 +148,9 @@ function ValueDisplay({ property, value }: { property: Property; value: CellValu
   const { t } = useLanguage();
   if (property.type === "checkbox") return <span className={`value-check ${value ? "done" : ""}`}>{value ? `✓ ${t("database.done")}` : `○ ${t("database.open")}`}</span>;
   if (property.type === "select") {
-    const selected = optionForValue(property, value);
-    return value ? <span className="value-tag"><i style={{ background: selected?.color || "var(--faint)" }} />{String(value)}</span> : <span className="value-empty">—</span>;
+    const normalizedValue = property.id === GOOGLE_TASK_PROPERTY_IDS.status && !value ? "Open" : value;
+    const selected = optionForValue(property, normalizedValue);
+    return normalizedValue ? <span className="value-tag"><i style={{ background: selected?.color || "var(--faint)" }} />{String(normalizedValue)}</span> : <span className="value-empty">—</span>;
   }
   if (property.type === "multi-select" && Array.isArray(value)) {
     return (
@@ -231,10 +287,29 @@ function RowPage({ database, row, onUpdate, onBack, saveLabel }: { database: Dat
       </div>
       <div className="row-properties">
         {database.properties.map((property) => (
-          <label key={property.id}>
-            <span>{property.name}</span>
-            <PropertyCell property={property} value={getValue(row, property.id)} onChange={(value) => updateValue(property.id, value)} />
-          </label>
+          <div className="row-property" key={property.id}>
+            <div className="row-property-label">
+              <span>{property.name}</span>
+              {database.id === GOOGLE_TASKS_DATABASE_ID && (() => {
+                const help = googleTaskHelp(property.id, t);
+                return help ? <ClickTooltip label={t("database.showHelp")} text={help} /> : null;
+              })()}
+            </div>
+            <div className="row-property-control">
+              {database.id === GOOGLE_TASKS_DATABASE_ID && property.id === GOOGLE_TASK_PROPERTY_IDS.notes ? (
+                <textarea
+                  className="cell-input row-notes-input"
+                  rows={4}
+                  value={valueText(getValue(row, property.id))}
+                  aria-label={property.name}
+                  placeholder={t("properties.text")}
+                  onChange={(event) => updateValue(property.id, event.target.value)}
+                />
+              ) : (
+                <PropertyCell property={property} value={getValue(row, property.id)} onChange={(value) => updateValue(property.id, value)} />
+              )}
+            </div>
+          </div>
         ))}
       </div>
       <BlockEditor item={row} onChange={updateBlocks} saveLabel={saveLabel} />

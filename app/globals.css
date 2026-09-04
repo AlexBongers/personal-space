@@ -27,7 +27,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .app-shell { display: flex; min-height: 100vh; background: var(--surface-warm); color: var(--ink); --theme-contrast: #fff; }
 .theme-dark { --ink: #edf2f5; --muted: #9aa8b2; --faint: #66747e; --line: #27333b; --surface: #131b20; --surface-soft: #182228; --surface-warm: #0d1418; --shadow: 0 18px 46px rgba(0, 0, 0, .2); background: var(--surface-warm); }
 
-.sidebar { position: sticky; z-index: 12; top: 0; width: 272px; height: 100vh; flex: 0 0 272px; display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--line); }
+.sidebar { position: sticky; z-index: 12; top: 0; width: var(--sidebar-width, 272px); height: 100vh; flex: 0 0 var(--sidebar-width, 272px); display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 12px; height: 78px; padding: 0 18px; border-bottom: 1px solid var(--line); }
 .brand-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 10px; color: #fff; font-size: 19px; font-weight: 800; background: var(--purple); }
 .brand strong { display: block; color: var(--ink); font-size: 16px; letter-spacing: -.02em; }
@@ -66,6 +66,10 @@ kbd { padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; color
 .new-button { display: flex; align-items: center; gap: 9px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 8px; color: #fff; background: var(--purple); font-size: 13px; font-weight: 700; text-align: left; }
 .new-button:hover { filter: brightness(1.1); }
 .new-button.secondary { color: var(--blue); background: rgba(32, 157, 215, .09); }
+.sidebar-resize { position: absolute; z-index: 13; top: 0; right: -5px; bottom: 0; width: 10px; cursor: col-resize; touch-action: none; }
+.sidebar-resize::after { content: ""; position: absolute; inset: 0 4px; background: transparent; transition: background .15s ease; }
+.sidebar-resize:hover::after, .sidebar-resize:focus-visible::after, .sidebar-resizing .sidebar-resize::after { background: var(--blue); opacity: .72; }
+.sidebar-resizing, .sidebar-resizing * { cursor: col-resize !important; user-select: none; }
 
 .main-area { min-width: 0; flex: 1; min-height: 100vh; }
 .topbar { display: flex; align-items: center; justify-content: space-between; position: sticky; z-index: 8; top: 0; height: 72px; padding: 0 36px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface-warm) 94%, transparent); backdrop-filter: blur(14px); }
@@ -259,11 +263,12 @@ tbody tr:hover td { background: color-mix(in srgb, var(--surface-soft) 60%, tran
 }
 
 @media (max-width: 720px) {
-  .sidebar { position: fixed; inset: 0 auto 0 0; width: min(310px, calc(100vw - 42px)); min-height: 100dvh; transform: translateX(-105%); box-shadow: 18px 0 60px rgba(0, 0, 0, .24); transition: transform .22s ease; }
+  .sidebar { position: fixed; inset: 0 auto 0 0; width: min(310px, calc(100vw - 42px)); flex-basis: auto; min-height: 100dvh; transform: translateX(-105%); box-shadow: 18px 0 60px rgba(0, 0, 0, .24); transition: transform .22s ease; }
   .sidebar.mobile-open { transform: translateX(0); }
   .sidebar-scrim { display: block; position: fixed; z-index: 11; inset: 0; width: 100%; border: 0; pointer-events: none; opacity: 0; background: rgba(8, 14, 18, .48); backdrop-filter: blur(3px); transition: opacity .2s ease; }
   .sidebar-scrim.visible { pointer-events: auto; opacity: 1; }
   .sidebar-close { display: grid; place-items: center; width: 30px; height: 30px; margin-left: auto; border: 0; border-radius: 8px; color: var(--muted); background: var(--surface-soft); font-size: 18px; }
+  .sidebar-resize { display: none; }
   .mobile-menu { display: grid; place-items: center; width: 35px; height: 35px; padding: 0; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--surface); font-size: 16px; }
   .topbar { height: 60px; padding: 0 16px; }
   .content-scroll { min-height: calc(100vh - 60px); }

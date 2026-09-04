@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "./i18n";
 import type { Item } from "./types";
+
+const SIDEBAR_WIDTH_KEY = "personal-space-sidebar-width";
+const SIDEBAR_MIN_WIDTH = 220;
+const SIDEBAR_MAX_WIDTH = 420;
+const SIDEBAR_DEFAULT_WIDTH = 272;
+
+const clampSidebarWidth = (width: number) => Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
 
 type SidebarProps = {
   items: Item[];
@@ -35,7 +42,68 @@ export function Sidebar({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
   const [workspaceOpen, setWorkspaceOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
+  const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const childrenOf = (parentId: string | null) => items.filter((item) => item.parentId === parentId);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const storedWidthValue = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+        const storedWidth = storedWidthValue === null ? Number.NaN : Number(storedWidthValue);
+        if (Number.isFinite(storedWidth)) {
+          const nextWidth = clampSidebarWidth(storedWidth);
+          sidebarWidthRef.current = nextWidth;
+          setSidebarWidth(nextWidth);
+        }
+      } catch {
+        // Keep the default width when browser preferences are unavailable.
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const start = resizeStartRef.current;
+      if (!start) return;
+      const nextWidth = clampSidebarWidth(start.startWidth + event.clientX - start.startX);
+      sidebarWidthRef.current = nextWidth;
+      setSidebarWidth(nextWidth);
+    };
+    const finishResize = () => {
+      if (!resizeStartRef.current) return;
+      resizeStartRef.current = null;
+      setIsResizing(false);
+      try {
+        window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidthRef.current));
+      } catch {
+        // The resized width remains active for this session.
+      }
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", finishResize);
+    window.addEventListener("pointercancel", finishResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishResize);
+      window.removeEventListener("pointercancel", finishResize);
+    };
+  }, []);
+
+  const resizeWithKeyboard = (nextWidth: number) => {
+    const clampedWidth = clampSidebarWidth(nextWidth);
+    sidebarWidthRef.current = clampedWidth;
+    setSidebarWidth(clampedWidth);
+    try {
+      window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clampedWidth));
+    } catch {
+      // The resized width remains active for this session.
+    }
+  };
 
   const beginRename = (item: Item) => {
     setEditingId(item.id);
@@ -127,7 +195,11 @@ export function Sidebar({
         tabIndex={mobileOpen ? 0 : -1}
         onClick={onDismiss}
       />
-      <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`} aria-label={t("nav.workspaceNavigation")}>
+      <aside
+        className={`sidebar ${mobileOpen ? "mobile-open" : ""} ${isResizing ? "sidebar-resizing" : ""}`}
+        style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
+        aria-label={t("nav.workspaceNavigation")}
+      >
         <div className="brand">
           <div className="brand-mark">P</div>
           <div><strong>Personal Space</strong></div>
@@ -158,6 +230,39 @@ export function Sidebar({
           <button className="new-button" onClick={() => onCreatePage(null)}><span>＋</span> {t("nav.newPage")}</button>
           <button className="new-button secondary" onClick={onCreateDatabase}><span>▦</span> {t("nav.newDatabase")}</button>
         </div>
+        <div
+          className="sidebar-resize"
+          role="separator"
+          tabIndex={0}
+          aria-label={t("nav.resizeSidebar")}
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          aria-valuenow={sidebarWidth}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            resizeStartRef.current = { startX: event.clientX, startWidth: sidebarWidthRef.current };
+            setIsResizing(true);
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              resizeWithKeyboard(sidebarWidth - 16);
+            }
+            if (event.key === "ArrowRight") {
+              event.preventDefault();
+              resizeWithKeyboard(sidebarWidth + 16);
+            }
+            if (event.key === "Home") {
+              event.preventDefault();
+              resizeWithKeyboard(SIDEBAR_MIN_WIDTH);
+            }
+            if (event.key === "End") {
+              event.preventDefault();
+              resizeWithKeyboard(SIDEBAR_MAX_WIDTH);
+            }
+          }}
+        />
       </aside>
     </>
   );

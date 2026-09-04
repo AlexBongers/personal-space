@@ -111,6 +111,7 @@ function ValueDisplay({ property, value }: { property: Property; value: CellValu
 
 function PropertyManager({ database, onUpdate }: { database: Database; onUpdate: (database: Database) => void }) {
   const { t } = useLanguage();
+  const [schemaOpen, setSchemaOpen] = useState(false);
   const addProperty = () => {
     const name = window.prompt(t("database.propertyName"), t("database.newProperty"));
     if (!name?.trim()) return;
@@ -175,23 +176,33 @@ function PropertyManager({ database, onUpdate }: { database: Database; onUpdate:
   return (
     <section className="property-manager">
       <div className="property-manager-head">
-        <div><span className="eyebrow">{t("database.schema")}</span><strong>{t("database.properties")}</strong></div>
+        <div className="property-manager-title">
+          <button
+            className="collapse-button"
+            aria-expanded={schemaOpen}
+            aria-label={schemaOpen ? t("database.collapseProperties") : t("database.expandProperties")}
+            onClick={() => setSchemaOpen((open) => !open)}
+          >{schemaOpen ? "⌄" : "›"}</button>
+          <div><span className="eyebrow">{t("database.schema")}</span><strong>{t("database.properties")}</strong></div>
+        </div>
         <button className="small-button" onClick={addProperty}>＋ {t("database.addProperty")}</button>
       </div>
-      <div className="property-chips">
-        {database.properties.map((property) => (
-          <div className="property-chip" key={property.id}>
-            <span className={`property-type-dot type-${property.type}`} />
-            <span>{property.name}</span>
-            <small>{t(`properties.${property.type}`)}</small>
-            <button onClick={() => renameProperty(property)} aria-label={t("database.rename", { name: property.name })}>✎</button>
-            {(property.type === "select" || property.type === "multi-select") && (
-              <button onClick={() => addOption(property)} aria-label={t("database.addOption", { name: property.name })}>＋</button>
-            )}
-            <button className="danger-quiet" onClick={() => removeProperty(property)} aria-label={t("database.remove", { name: property.name })}>×</button>
-          </div>
-        ))}
-      </div>
+      {schemaOpen && (
+        <div className="property-chips">
+          {database.properties.map((property) => (
+            <div className="property-chip" key={property.id}>
+              <span className={`property-type-dot type-${property.type}`} />
+              <span>{property.name}</span>
+              <small>{t(`properties.${property.type}`)}</small>
+              <button onClick={() => renameProperty(property)} aria-label={t("database.rename", { name: property.name })}>✎</button>
+              {(property.type === "select" || property.type === "multi-select") && (
+                <button onClick={() => addOption(property)} aria-label={t("database.addOption", { name: property.name })}>＋</button>
+              )}
+              <button className="danger-quiet" onClick={() => removeProperty(property)} aria-label={t("database.remove", { name: property.name })}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

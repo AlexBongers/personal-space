@@ -37,6 +37,7 @@ export function Sidebar({
   const { t } = useLanguage();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
+  const [workspaceOpen, setWorkspaceOpen] = useState(true);
   const childrenOf = (parentId: string | null) => items.filter((item) => item.parentId === parentId);
 
   const beginRename = (item: Item) => {
@@ -146,10 +147,16 @@ export function Sidebar({
         </div>
         <div className="sidebar-section">
           <div className="section-heading">
+            <button
+              className="section-toggle"
+              aria-expanded={workspaceOpen}
+              aria-label={workspaceOpen ? t("nav.collapseWorkspace") : t("nav.expandWorkspace")}
+              onClick={() => setWorkspaceOpen((open) => !open)}
+            >{workspaceOpen ? "⌄" : "›"}</button>
             <span>{t("nav.workspace")}</span>
             <button aria-label={t("nav.newPage")} onClick={() => onCreatePage(null)}>＋</button>
           </div>
-          <div className="tree">{childrenOf(null).map((item) => renderNode(item, 0))}</div>
+          {workspaceOpen && <div className="tree">{childrenOf(null).map((item) => renderNode(item, 0))}</div>}
         </div>
         <div className="sidebar-footer">
           <button className="new-button" onClick={() => onCreatePage(null)}><span>＋</span> {t("nav.newPage")}</button>

@@ -32,3 +32,24 @@ export const googleTasksMapping = sqliteTable("google_tasks_mapping", {
   remoteTask: uniqueIndex("uq_google_tasks_mapping_remote_task").on(table.taskListId, table.remoteTaskId),
   taskList: index("idx_google_tasks_mapping_task_list").on(table.taskListId),
 }));
+
+export const googleCalendarState = sqliteTable("google_calendar_state", {
+  id: text("id").primaryKey(),
+  lastSyncAt: text("last_sync_at"),
+  lastError: text("last_error"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const googleCalendarMapping = sqliteTable("google_calendar_mapping", {
+  localRowId: text("local_row_id").primaryKey(),
+  calendarId: text("calendar_id").notNull(),
+  remoteEventId: text("remote_event_id").notNull(),
+  remoteEtag: text("remote_etag").notNull(),
+  remoteUpdated: text("remote_updated").notNull(),
+  localFingerprint: text("local_fingerprint").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  remoteEvent: uniqueIndex("uq_google_calendar_mapping_remote_event").on(table.calendarId, table.remoteEventId),
+  calendar: index("idx_google_calendar_mapping_calendar").on(table.calendarId),
+}));

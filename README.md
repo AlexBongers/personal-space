@@ -25,6 +25,7 @@ with nested pages, a reading list, a project tracker, a travel plan and every ed
 - Per-view filters, sorting and board grouping, with rows that open as editable pages.
 - Quick find for pages, databases and rows, persistent light and dark themes, and an English / Dutch interface switch.
 - Optional two-way Google Tasks sync through a dedicated database, with encrypted token storage and all-list synchronization.
+- Optional two-way Google Calendar sync through a dedicated database, covering every writable calendar with encrypted shared OAuth storage.
 
 Workspace content is stored in the private Cloudflare D1 database provisioned by Sites. Changes
 therefore survive browser-storage clearing and are available anywhere the owner opens the private
@@ -50,7 +51,7 @@ rendered HTML, and enforces at least 80% line coverage for the domain model.
 ## Google Tasks
 
 The Google Tasks integration is optional and is disabled until its runtime configuration is present.
-Create a Google Cloud OAuth 2.0 **Web application** client, enable the Google Tasks API, and add
+Create a Google Cloud OAuth 2.0 **Web application** client, enable the Google Tasks API and Google Calendar API, and add
 these redirect URIs to the client:
 
 ```text
@@ -62,9 +63,12 @@ Copy `.env.example` to `.env` for local development. Set `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`, and a fresh base64url-encoded 32-byte `GOOGLE_TOKEN_ENCRYPTION_KEY`.
 For the hosted Site, set the same values as private Sites runtime secrets; do not commit them.
 The integration uses the full Tasks scope because two-way sync must create, edit, organize and
-delete tasks. Connect from the `Google Tasks` button and use `Sync now`; every Google Tasks list
-is synchronized. New local tasks without a list are created in the first Google list returned by
-Google.
+delete tasks. The same OAuth client also requests the full Calendar scope so it can create, edit
+and delete events across every writable calendar. Connect or reconnect from either the `Google
+Tasks` or `Google Calendar` button and use `Sync now`; the refresh token is encrypted in D1 and
+shared by both integrations. New local tasks without a list are created in the first Google list
+returned by Google; new local calendar events without a Calendar ID use the first writable
+calendar. Calendar entries without a start date stay local until completed.
 The Site remains private because the workspace and Google authorization are single-user data.
 
 See [REQUIREMENTS.md](./REQUIREMENTS.md) for the complete product contract and [AGENTS.md](./AGENTS.md)

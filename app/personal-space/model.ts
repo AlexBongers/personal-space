@@ -493,6 +493,64 @@ export const createGoogleTasksDatabase = (): Database => {
   };
 };
 
+export const GOOGLE_CALENDAR_DATABASE_ID = "google-calendar";
+export const GOOGLE_CALENDAR_PROPERTY_IDS = {
+  status: "calendar-status",
+  start: "calendar-start",
+  end: "calendar-end",
+  allDay: "calendar-all-day",
+  calendar: "calendar-name",
+  calendarId: "calendar-id",
+  location: "calendar-location",
+  notes: "calendar-notes",
+  link: "calendar-link",
+  id: "calendar-event-id",
+  etag: "calendar-etag",
+  updated: "calendar-updated",
+} as const;
+
+export const createGoogleCalendarDatabase = (): Database => {
+  const properties: Property[] = [
+    {
+      id: GOOGLE_CALENDAR_PROPERTY_IDS.status,
+      name: "Status",
+      type: "select",
+      options: [
+        createOption("Confirmed", "#35a77c"),
+        createOption("Tentative", "#ecad0a"),
+        createOption("Cancelled", "#d6574b"),
+      ],
+    },
+    { id: GOOGLE_CALENDAR_PROPERTY_IDS.start, name: "Start", type: "text" },
+    { id: GOOGLE_CALENDAR_PROPERTY_IDS.end, name: "End", type: "text" },
+    { id: GOOGLE_CALENDAR_PROPERTY_IDS.allDay, name: "All day", type: "checkbox" },
+    { id: GOOGLE_CALENDAR_PROPERTY_IDS.calendar, name: "Calendar", type: "text" },
+    { id: GOOGLE_CALENDAR_PROPERTY_IDS.calendarId, name: "Calendar ID", type: "text" },
+    { id: GOOGLE_CALENDAR_PROPERTY_IDS.location, name: "Location", type: "text" },
+    { id: GOOGLE_CALENDAR_PROPERTY_IDS.notes, name: "Notes", type: "text" },
+    { id: GOOGLE_CALENDAR_PROPERTY_IDS.link, name: "Google link", type: "url" },
+    { id: GOOGLE_CALENDAR_PROPERTY_IDS.id, name: "Google ID", type: "text" },
+    { id: GOOGLE_CALENDAR_PROPERTY_IDS.etag, name: "Google etag", type: "text" },
+    { id: GOOGLE_CALENDAR_PROPERTY_IDS.updated, name: "Google updated", type: "text" },
+  ];
+  const view = { ...emptyView("list"), sortBy: GOOGLE_CALENDAR_PROPERTY_IDS.start, sortDir: "asc" as const };
+  return {
+    id: GOOGLE_CALENDAR_DATABASE_ID,
+    kind: "database",
+    title: "Google Calendar",
+    icon: "◷",
+    parentId: null,
+    properties,
+    rows: [],
+    view,
+    views: {
+      table: emptyView("table"),
+      board: { ...emptyView("board"), groupBy: GOOGLE_CALENDAR_PROPERTY_IDS.status },
+      list: view,
+    },
+  };
+};
+
 export const createEmptyPage = (parentId: string | null): Page => ({
   id: uid("page"),
   kind: "page",

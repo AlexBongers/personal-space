@@ -11,11 +11,17 @@ import {
 import { isWorkspaceItems, loadWorkspace, saveWorkspace } from "./workspace-store.ts";
 
 const CONNECTION_ID = "primary";
-const GOOGLE_SCOPE = "https://www.googleapis.com/auth/tasks";
+// Both integrations share one encrypted refresh token. Reauthorizing from either
+// integration grants the complete two-way scope set to the existing OAuth client.
+export const GOOGLE_SCOPE = [
+  "https://www.googleapis.com/auth/tasks",
+  "https://www.googleapis.com/auth/calendar",
+].join(" ");
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_TASKS_URL = "https://tasks.googleapis.com/tasks/v1";
 const STATE_COOKIE = "personal_space_google_tasks_state";
+const RETURN_COOKIE = "personal_space_google_return";
 
 export interface GoogleTasksStatement {
   bind(...values: unknown[]): GoogleTasksStatement;
@@ -138,7 +144,9 @@ const makeState = () => {
 };
 
 const stateCookie = (state: string) => `${STATE_COOKIE}=${state}; Max-Age=600; Path=/api/google-tasks; HttpOnly; Secure; SameSite=Lax`;
+const returnCookie = (service: "tasks" | "calendar") => `${RETURN_COOKIE}=${service}; Max-Age=600; Path=/api/google-tasks; HttpOnly; Secure; SameSite=Lax`;
 const clearStateCookie = () => `${STATE_COOKIE}=; Max-Age=0; Path=/api/google-tasks; HttpOnly; Secure; SameSite=Lax`;
+const clearReturnCookie = () => `${RETURN_COOKIE}=; Max-Age=0; Path=/api/google-tasks; HttpOnly; Secure; SameSite=Lax`;
 
 const encryptionKey = async (env: GoogleTasksEnv) => {
   if (!env.GOOGLE_TOKEN_ENCRYPTION_KEY) throw new GoogleTasksError("Google token encryption is not configured", 503);
@@ -214,6 +222,12 @@ const accessToken = async (stored: StoredConnection, env: GoogleTasksEnv) => {
     throw new GoogleTasksError(body?.error_description || "Google authorization has expired", response.status || 401);
   }
   return body.access_token;
+};
+
+export const getGoogleAccessToken = async (database: GoogleTasksDatabase, env: GoogleTasksEnv) => {
+  const stored = await connection(database);
+  if (!stored) throw new GoogleTasksError("Google is not connected", 401);
+  return accessToken(stored, env);
 };
 
 const listTaskLists = async (token: string) => {
@@ -480,6 +494,7 @@ WHERE id = ?`).bind(summary.taskListTitle, CONNECTION_ID);
 const startConnect = (request: Request, env: GoogleTasksEnv) => {
   if (!isGoogleTasksConfigured(env)) return json({ error: "Google Tasks integration is not configured" }, 503);
   const state = makeState();
+  const returnService = new URL(request.url).searchParams.get("return") === "calendar" ? "calendar" : "tasks";
   const params = new URLSearchParams({
     client_id: env.GOOGLE_CLIENT_ID || "",
     redirect_uri: redirectUri(request, env),
@@ -490,10 +505,10 @@ const startConnect = (request: Request, env: GoogleTasksEnv) => {
     include_granted_scopes: "true",
     state,
   });
-  return new Response(null, {
-    status: 302,
-    headers: { Location: `${GOOGLE_AUTH_URL}?${params}`, "Set-Cookie": stateCookie(state) },
-  });
+  const headers = new Headers({ Location: `${GOOGLE_AUTH_URL}?${params}` });
+  headers.append("Set-Cookie", stateCookie(state));
+  headers.append("Set-Cookie", returnCookie(returnService));
+  return new Response(null, { status: 302, headers });
 };
 
 const callback = async (request: Request, env: GoogleTasksEnv, database: GoogleTasksDatabase) => {
@@ -502,7 +517,9 @@ const callback = async (request: Request, env: GoogleTasksEnv, database: GoogleT
   const state = url.searchParams.get("state");
   const code = url.searchParams.get("code");
   const cookies = parseCookies(request.headers.get("Cookie"));
-  const headers = { "Set-Cookie": clearStateCookie() };
+  const headers = new Headers();
+  headers.append("Set-Cookie", clearStateCookie());
+  headers.append("Set-Cookie", clearReturnCookie());
   if (!state || !code || state !== cookies[STATE_COOKIE]) return new Response("Google authorization could not be verified", { status: 400, headers });
   const response = await fetch(GOOGLE_TOKEN_URL, {
     method: "POST",
@@ -521,7 +538,9 @@ const callback = async (request: Request, env: GoogleTasksEnv, database: GoogleT
   await database.prepare(`INSERT INTO google_tasks_connection (id, refresh_token)
 VALUES (?, ?)
 ON CONFLICT(id) DO UPDATE SET refresh_token = excluded.refresh_token, last_error = NULL, updated_at = CURRENT_TIMESTAMP`).bind(CONNECTION_ID, encryptedToken).run();
-  return new Response(null, { status: 303, headers: { ...headers, Location: "/?google=connected" } });
+  const returnService = cookies[RETURN_COOKIE] === "calendar" ? "calendar" : "tasks";
+  headers.set("Location", `/?google=connected&service=${returnService}`);
+  return new Response(null, { status: 303, headers });
 };
 
 const status = async (env: GoogleTasksEnv, database: GoogleTasksDatabase): Promise<Response> => {

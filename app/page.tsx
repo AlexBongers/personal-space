@@ -5,10 +5,13 @@ import { BlockEditor } from "./personal-space/BlockEditor";
 import { DatabaseView } from "./personal-space/DatabaseView";
 import { HomeOverview } from "./personal-space/HomeOverview";
 import { GoogleTasksDialog } from "./personal-space/GoogleTasksDialog";
+import { GoogleCalendarDialog } from "./personal-space/GoogleCalendarDialog";
 import {
   createEmptyDatabase,
   createEmptyPage,
+  createGoogleCalendarDatabase,
   descendantIds,
+  GOOGLE_CALENDAR_DATABASE_ID,
   isDatabase,
   isPage,
   STORAGE_KEYS,
@@ -35,6 +38,14 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [googleTasksOpen, setGoogleTasksOpen] = useState(false);
+  const [googleCalendarOpen, setGoogleCalendarOpen] = useState(false);
+
+  useEffect(() => {
+    if (!hydrated || items.some((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID)) return;
+    setItems((current) => current.some((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID)
+      ? current
+      : [...current, createGoogleCalendarDatabase()]);
+  }, [hydrated, items, setItems]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -52,7 +63,8 @@ export default function Home() {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
       if (params.get("google") === "connected" || params.get("google") === "error") {
-        setGoogleTasksOpen(true);
+        if (params.get("service") === "calendar") setGoogleCalendarOpen(true);
+        else setGoogleTasksOpen(true);
         window.history.replaceState({}, "", window.location.pathname);
       }
     }, 0);
@@ -73,6 +85,7 @@ export default function Home() {
         setSearchOpen(false);
         setSidebarOpen(false);
         setGoogleTasksOpen(false);
+        setGoogleCalendarOpen(false);
       }
       if (!event.metaKey && !event.ctrlKey && event.key.toLowerCase() === "h" && !isTypingTarget(event.target)) {
         setSelectedId("home");
@@ -195,10 +208,11 @@ export default function Home() {
         <header className="topbar">
           <div className="topbar-leading">
             <button className="mobile-menu" aria-label={t("nav.openNavigation")} onClick={() => setSidebarOpen(true)}>☰</button>
+            {selected?.id === "home" && <span className="compact-greeting">{t("overview.greeting")}</span>}
             {selected?.id !== "home" && <div className="breadcrumbs"><span>{t("top.workspace")}</span><span>›</span><strong>{selected?.title || t("nav.home")}</strong></div>}
           </div>
           <div className="topbar-actions">
-            <div className={`sync-indicator sync-${syncState}`} title={t(`sync.${syncState}`)}>
+            <div className={`sync-indicator sync-${syncState}`} role="status" aria-label={t(`sync.${syncState}`)}>
               <i /><span>{t(`sync.${syncState}`)}</span>
             </div>
             <button className="search-trigger" aria-label={t("top.search")} onClick={() => setSearchOpen(true)}>
@@ -206,6 +220,9 @@ export default function Home() {
             </button>
             <button className="tasks-trigger" aria-label={t("google.open")} onClick={() => setGoogleTasksOpen(true)}>
               <span>✓</span><span>{t("top.googleTasks")}</span>
+            </button>
+            <button className="tasks-trigger calendar-trigger" aria-label={t("calendar.title")} onClick={() => setGoogleCalendarOpen(true)}>
+              <span>◷</span><span>{t("top.googleCalendar")}</span>
             </button>
             <div className="language-switch" role="group" aria-label={t("language.label")}>
               <button type="button" className={language === "en" ? "active" : ""} aria-label={t("language.switchToEnglish")} aria-pressed={language === "en"} onClick={() => setLanguage("en")}>EN</button>
@@ -235,7 +252,7 @@ export default function Home() {
           ) : (
             <div className="page-view">
               <div className="page-heading">
-                <button className="page-icon" aria-label={t("top.changeIcon")} title={t("top.changeIcon")} onClick={() => selected && changeIcon(selected.id)}>
+                <button className="page-icon" aria-label={t("top.changeIcon")} onClick={() => selected && changeIcon(selected.id)}>
                   {selected?.icon || "⌂"}
                 </button>
                 <input
@@ -267,6 +284,15 @@ export default function Home() {
           onReplace={replaceItems}
           onOpenDatabase={() => { setGoogleTasksOpen(false); selectItem("google-tasks"); }}
           onClose={() => setGoogleTasksOpen(false)}
+        />
+      )}
+      {googleCalendarOpen && (
+        <GoogleCalendarDialog
+          items={items}
+          revision={revision}
+          onReplace={replaceItems}
+          onOpenDatabase={() => { setGoogleCalendarOpen(false); selectItem(GOOGLE_CALENDAR_DATABASE_ID); }}
+          onClose={() => setGoogleCalendarOpen(false)}
         />
       )}
     </main>

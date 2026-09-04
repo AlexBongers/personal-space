@@ -39,19 +39,8 @@ export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
     { id: "travel", title: t("overview.springRoute"), note: "", icon: "✈", tone: "amber" },
   ].filter((link) => items.some((item) => item.id === link.id));
 
-  const today = new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", { weekday: "long", day: "numeric", month: "long" }).format(todayDate);
-
   return (
     <section className="home-overview" aria-label={t("overview.aria")}>
-      <header className="landing-hero">
-        <div>
-          <h1>{t("overview.greeting")}</h1>
-        </div>
-        <div className="today-card">
-          <span>{t("overview.today")}</span>
-          <strong>{today}</strong>
-        </div>
-      </header>
       {dueTasks.length > 0 && (
         <section className="due-panel" aria-labelledby="due-tasks-heading">
           <div className="due-heading">

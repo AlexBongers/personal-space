@@ -2,6 +2,7 @@
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
 import { handleGoogleTasksApi } from "./google-tasks";
+import { handleGoogleCalendarApi } from "./google-calendar";
 import { handleSlashdotApi } from "./slashdot";
 import { isWorkspaceItems, loadWorkspace, MAX_WORKSPACE_BYTES, saveWorkspace } from "./workspace-store";
 import type { GoogleTasksDatabase } from "./google-tasks";
@@ -119,6 +120,21 @@ const worker = {
       } catch (error) {
         console.error("Google Tasks API failed", error);
         return json({ error: "Google Tasks is temporarily unavailable" }, 500);
+      }
+    }
+
+    if (url.pathname.startsWith("/api/google-calendar/")) {
+      try {
+        return await handleGoogleCalendarApi(request, {
+          DB: env.DB as unknown as GoogleTasksDatabase | undefined,
+          GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
+          GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
+          GOOGLE_REDIRECT_URI: env.GOOGLE_REDIRECT_URI,
+          GOOGLE_TOKEN_ENCRYPTION_KEY: env.GOOGLE_TOKEN_ENCRYPTION_KEY,
+        }, url) || new Response(null, { status: 404 });
+      } catch (error) {
+        console.error("Google Calendar API failed", error);
+        return json({ error: "Google Calendar is temporarily unavailable" }, 500);
       }
     }
 

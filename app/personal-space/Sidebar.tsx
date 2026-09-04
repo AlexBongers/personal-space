@@ -213,6 +213,11 @@ export function Sidebar({
               <span className="nav-glyph">✓</span> {t("nav.googleTasks")}
             </button>
           )}
+          {items.some((item) => item.id === "google-calendar") && (
+            <button className="nav-item" onClick={() => chooseItem("google-calendar")}>
+              <span className="nav-glyph">◷</span> {t("nav.googleCalendar")}
+            </button>
+          )}
           <a className="nav-item nav-external" href="https://slashdot.org/" target="_blank" rel="noreferrer">
             <span className="nav-glyph">↗</span> {t("nav.slashdot")} <span className="nav-external-arrow">↗</span>
           </a>

@@ -31,30 +31,30 @@ export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
     .slice(0, 6);
   return (
     <section className="home-overview" aria-label={t("overview.aria")}>
-      {dueTasks.length > 0 && (
-        <section className="due-panel" aria-labelledby="due-tasks-heading">
-          <div className="due-heading">
-            <h2 id="due-tasks-heading">{t("overview.dueTasks")}</h2>
-            <button type="button" className="small-button" onClick={() => onOpen(GOOGLE_TASKS_DATABASE_ID)}>{t("overview.openTasks")}</button>
-          </div>
-          <div className="due-list">
-            {dueTasks.map(({ row, due }) => {
-              const overdue = due < todayKey;
-              const dueLabel = overdue
-                ? `${t("overview.overdue")} · ${formatDueDate(due, language)}`
-                : due === todayKey ? t("overview.today") : formatDueDate(due, language);
-              return (
-                <button type="button" className={`due-row ${overdue ? "overdue" : ""}`} key={row.id} onClick={() => onOpen(GOOGLE_TASKS_DATABASE_ID, row.id)}>
-                  <span className="due-marker" aria-hidden="true" />
-                  <span className="due-copy"><strong>{row.title}</strong><time dateTime={due}>{dueLabel}</time></span>
-                  <span className="due-arrow">↗</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
-      <div className="landing-grid single-column">
+      <div className={`planner-home-grid ${dueTasks.length ? "has-deadlines" : "only-news"}`}>
+        {dueTasks.length > 0 && (
+          <section className="due-panel" aria-labelledby="due-tasks-heading">
+            <div className="due-heading">
+              <h2 id="due-tasks-heading">{t("overview.dueTasks")}</h2>
+              <button type="button" className="small-button" onClick={() => onOpen(GOOGLE_TASKS_DATABASE_ID)}>{t("overview.openTasks")}</button>
+            </div>
+            <div className="due-list">
+              {dueTasks.map(({ row, due }) => {
+                const overdue = due < todayKey;
+                const dueLabel = overdue
+                  ? `${t("overview.overdue")} · ${formatDueDate(due, language)}`
+                  : due === todayKey ? t("overview.today") : formatDueDate(due, language);
+                return (
+                  <button type="button" className={`due-row ${overdue ? "overdue" : ""}`} key={row.id} onClick={() => onOpen(GOOGLE_TASKS_DATABASE_ID, row.id)}>
+                    <span className="due-marker" aria-hidden="true" />
+                    <span className="due-copy"><strong>{row.title}</strong><time dateTime={due}>{dueLabel}</time></span>
+                    <span className="due-arrow">↗</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
         <SlashdotFeed />
       </div>
     </section>

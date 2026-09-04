@@ -14,12 +14,12 @@
   --green: #5c9b79;
   --red: #c96855;
   --shadow: 0 18px 44px rgba(93, 73, 51, .1);
-  --display: Georgia, "Times New Roman", serif;
+  --display: "Avenir Next", "Nunito Sans", Inter, ui-sans-serif, system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; }
 html, body { min-height: 100%; margin: 0; }
-body { background: var(--surface-warm); color: var(--ink); font-family: "Avenir Next", "Nunito Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 15px; line-height: 1.5; }
+body { background: var(--surface-warm); color: var(--ink); font-family: "Avenir Next", "Nunito Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 16px; line-height: 1.5; }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid rgba(32, 157, 215, .26); outline-offset: 1px; }
@@ -456,6 +456,23 @@ td { height: 76px; font-size: 15px; }
 .tasks-interface h1, .tasks-interface h2, .tasks-interface strong, .tasks-interface button, .tasks-interface .page-kicker,
 .calendar-interface h1, .calendar-interface h2, .calendar-interface strong, .calendar-interface button, .calendar-interface .page-kicker,
 .calendar-interface .calendar-weekday, .calendar-interface .calendar-day-number { font-weight: 500; }
+.planner-home-grid { display: grid; grid-template-columns: minmax(290px, .78fr) minmax(0, 1.65fr); align-items: start; gap: 20px; }
+.planner-home-grid.only-news { grid-template-columns: minmax(0, 1fr); }
+.planner-home-grid .due-panel { position: sticky; top: 20px; margin: 0; }
+.planner-home-grid .slashdot-panel { min-width: 0; }
+.app-shell h1, .app-shell h2, .app-shell h3, .app-shell strong { font-family: var(--display); font-weight: 650; }
+.page-title-input, .database-heading h1, .row-title-input { font-weight: 650; }
+.page-kicker, .eyebrow { font-family: var(--display); font-weight: 700; }
+.tasks-interface h1, .tasks-interface h2, .tasks-interface h3, .tasks-interface strong, .tasks-interface button, .tasks-interface .page-kicker,
+.calendar-interface h1, .calendar-interface h2, .calendar-interface h3, .calendar-interface strong, .calendar-interface button, .calendar-interface .page-kicker,
+.calendar-interface .calendar-weekday, .calendar-interface .calendar-day-number { font-weight: 500; }
+.task-group-heading h2, .calendar-navigation h2 { letter-spacing: -.02em; }
+.task-group-heading { border-bottom-color: color-mix(in srgb, var(--amber) 18%, var(--line)); }
+.task-list-dot { width: 10px; height: 10px; box-shadow: 0 0 0 5px rgba(236, 173, 10, .14); }
+.task-item:hover { background: color-mix(in srgb, var(--amber) 5%, var(--surface)); }
+.calendar-interface .calendar-grid { border-width: 1px; }
+.calendar-interface .calendar-day.is-today { box-shadow: inset 0 3px var(--amber); }
+.calendar-interface .calendar-event:hover { background: color-mix(in srgb, var(--amber) 15%, var(--surface)); }
 
 @media (max-width: 1000px) {
   .sidebar { width: 248px; flex-basis: 248px; }
@@ -540,6 +557,11 @@ td { height: 76px; font-size: 15px; }
   .filter-pill { width: 100%; overflow-x: auto; }
   .list-properties span:nth-child(n+2) { display: none; }
   .google-tasks-dialog { padding: 20px; }
+}
+
+@media (max-width: 720px) {
+  .planner-home-grid.has-deadlines { grid-template-columns: 1fr; }
+  .planner-home-grid .due-panel { position: static; }
 }
 
 @media (prefers-reduced-motion: reduce) {

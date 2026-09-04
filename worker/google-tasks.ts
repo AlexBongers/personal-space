@@ -206,10 +206,11 @@ const apiJson = async <T>(url: string, accessToken: string, init: RequestInit = 
   return parsed as T;
 };
 
-const accessToken = async (stored: StoredConnection, env: GoogleTasksEnv) => {
+const accessToken = async (stored: StoredConnection, env: GoogleTasksEnv, signal?: AbortSignal) => {
   const refreshToken = await decryptToken(stored.refresh_token, env);
   const response = await fetch(GOOGLE_TOKEN_URL, {
     method: "POST",
+    signal,
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       client_id: env.GOOGLE_CLIENT_ID || "",
@@ -225,10 +226,10 @@ const accessToken = async (stored: StoredConnection, env: GoogleTasksEnv) => {
   return body.access_token;
 };
 
-export const getGoogleAccessToken = async (database: GoogleTasksDatabase, env: GoogleTasksEnv) => {
+export const getGoogleAccessToken = async (database: GoogleTasksDatabase, env: GoogleTasksEnv, signal?: AbortSignal) => {
   const stored = await connection(database);
   if (!stored) throw new GoogleTasksError("Google is not connected", 401);
-  return accessToken(stored, env);
+  return accessToken(stored, env, signal);
 };
 
 const listTaskLists = async (token: string) => {

@@ -70,7 +70,7 @@ export async function handleGmailApi(request: Request, env: GoogleTasksEnv): Pro
   const pageToken = url.searchParams.get("pageToken") || "";
   if (pageToken.length > 2048) return json({ state: "unavailable", messages: [] }, 400);
   try {
-    const token = await getGoogleAccessToken(env.DB, env);
+    const token = await getGoogleAccessToken(env.DB, env, AbortSignal.timeout(15000));
     return json(await readGmailInbox(token, url.searchParams.get("limit") === "5" ? 5 : 20, pageToken));
   } catch (error) {
     if (error instanceof GmailError) return json({ state: error.state, messages: [] }, error.state === "unavailable" ? 503 : 200);

@@ -65,6 +65,26 @@ test("Gmail reads only INBOX, uses bounded requests and handles deleted messages
   assert.equal(maxActive, 4);
 });
 
+test("Gmail bounds the shared OAuth refresh and returns a safe timeout response", async (t) => {
+  const keyBytes = new Uint8Array(32);
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["encrypt"]);
+  const iv = new Uint8Array(12);
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode("test-refresh-token"));
+  const token = Buffer.concat([iv, Buffer.from(encrypted)]).toString("base64url");
+  const statement = { bind() { return this; }, async first<T>() { return { refresh_token: token } as T; }, async all<T>() { return { results: [] as T[] }; }, async run() {} };
+  t.mock.method(AbortSignal, "timeout", (duration: number) => {
+    assert.equal(duration, 15000);
+    return AbortSignal.abort(new DOMException("Timed out", "TimeoutError"));
+  });
+  t.mock.method(globalThis, "fetch", async (_input: string | URL | Request, init?: RequestInit) => {
+    assert.equal(init?.signal?.aborted, true);
+    throw init?.signal?.reason;
+  });
+  const response = await handleGmailApi(new Request("http://localhost/api/gmail/inbox"), { ...env, GOOGLE_TOKEN_ENCRYPTION_KEY: Buffer.from(keyBytes).toString("base64url"), DB: { prepare: () => statement, batch: async () => [] } });
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { state: "unavailable", messages: [] });
+});
+
 test("Gmail distinguishes missing permission, disabled API and expired authorization", async (t) => {
   for (const [status, reason, state] of [[403, "insufficientPermissions", "permission_required"], [403, "SERVICE_DISABLED", "api_disabled"], [401, "authError", "connect"], [429, "rateLimitExceeded", "unavailable"]] as const) {
     const mock = t.mock.method(globalThis, "fetch", async () => Response.json({ error: { details: [{ reason }] } }, { status }));

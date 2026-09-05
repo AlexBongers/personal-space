@@ -223,6 +223,8 @@ export function Sidebar({
           <button className="nav-item" aria-current={selectedId === "parro" ? "page" : undefined} onClick={() => chooseItem("parro")}><span className="nav-glyph"><InterfaceIcon name="mail" /></span>{t("nav.parro")}</button>
           <button className="nav-item" aria-current={selectedId === "news-slashdot" ? "page" : undefined} onClick={() => chooseItem("news-slashdot")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>Slashdot</button>
           <button className="nav-item" aria-current={selectedId === "news-tweakers" ? "page" : undefined} onClick={() => chooseItem("news-tweakers")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>Tweakers</button>
+          <button className="nav-item" aria-current={selectedId === "news-nos" ? "page" : undefined} onClick={() => chooseItem("news-nos")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>NOS</button>
+          <button className="nav-item" aria-current={selectedId === "news-bunniksnieuws" ? "page" : undefined} onClick={() => chooseItem("news-bunniksnieuws")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>Bunniks Nieuws</button>
         </div>
         <div className="sidebar-section">
           <div className="section-heading">

@@ -12,6 +12,7 @@ export function ParroInbox({ compact = false, onOpenParro }: Props) {
   const [inbox, setInbox] = useState<ParroMessagesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const requestRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
@@ -64,10 +65,32 @@ export function ParroInbox({ compact = false, onOpenParro }: Props) {
           const validDate = !Number.isNaN(date.getTime());
           const sameDay = validDate && date.toDateString() === new Date().toDateString();
           const context = message.sender || message.roomName || (message.kind === "announcement" ? t("parro.announcement") : t("parro.chatroom"));
-          const content = <>
-            <span className="parro-item-copy"><span className="parro-item-top"><span className="parro-item-context">{context}</span><time dateTime={message.publishedAt || undefined}>{validDate ? (sameDay ? timeFormat : dateFormat).format(date) : ""}</time></span><strong>{message.title}</strong>{message.body && <span className="parro-item-body">{message.body}</span>}</span>
-          </>;
-          return <li key={message.id}>{message.externalUrl ? <a className={`parro-item ${message.unread ? "is-unread" : ""}`} href={message.externalUrl} target="_blank" rel="noreferrer"><span className="parro-read-marker" aria-label={message.unread ? t("parro.unread") : ""} />{content}</a> : <article className={`parro-item ${message.unread ? "is-unread" : ""}`}><span className="parro-read-marker" aria-label={message.unread ? t("parro.unread") : ""} />{content}</article>}</li>;
+          const detailsId = `parro-details-${message.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+          const expanded = expandedId === message.id;
+          return <li key={message.id}>
+            <article className={`parro-entry ${message.unread ? "is-unread" : ""} ${expanded ? "details-open" : ""}`}>
+              <div className="parro-item">
+                <span className="parro-read-marker" aria-label={message.unread ? t("parro.unread") : ""} />
+                <span className="parro-item-copy">
+                  <span className="parro-item-top"><span className="parro-item-context">{context}</span><time dateTime={message.publishedAt || undefined}>{validDate ? (sameDay ? timeFormat : dateFormat).format(date) : ""}</time></span>
+                  <strong>{message.title}</strong>
+                  {message.body && <span className="parro-item-body">{message.body}</span>}
+                  <span className="parro-item-actions">
+                    <button type="button" className="parro-details-toggle" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpandedId(expanded ? null : message.id)}>{expanded ? t("parro.hideDetails") : t("parro.showDetails")}</button>
+                    {message.attachmentCount > 0 && <span>{t("parro.attachmentsCount", { count: message.attachmentCount })}</span>}
+                    {message.externalUrl && <a href={message.externalUrl} target="_blank" rel="noreferrer">{t("parro.openMessage")} ↗</a>}
+                  </span>
+                </span>
+              </div>
+              <div id={detailsId} className="parro-hover-details">
+                <p>{message.body || t("parro.noText")}</p>
+                <div className="parro-attachments">
+                  <span>{message.attachmentCount > 0 ? t("parro.attachmentsCount", { count: message.attachmentCount }) : t("parro.noAttachments")}</span>
+                  {message.attachmentNames.length > 0 && <ul>{message.attachmentNames.map((name) => <li key={name}>{name}</li>)}</ul>}
+                </div>
+              </div>
+            </article>
+          </li>;
         })}
       </ol>
       {!inbox.messages.length && <p className="parro-notice">{t("parro.empty")}</p>}

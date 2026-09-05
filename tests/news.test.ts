@@ -21,11 +21,18 @@ test("RSS rejects unsafe and wrong-source URLs and deduplicates stories", () => 
   assert.equal(decodeEntities("&#x20AC; &#99999999999; &#xD800; &amp;"), "€ � � &");
 });
 
+test("NOS and Bunniks Nieuws use their own trusted article hosts", () => {
+  assert.equal(parseNewsFeed(item("https://nos.nl/artikel/1"), "nos").stories[0].url, "https://nos.nl/artikel/1");
+  assert.equal(parseNewsFeed(item("https://www.bunniksnieuws.nl/lokaal/1"), "bunniksnieuws").stories[0].url, "https://www.bunniksnieuws.nl/lokaal/1");
+  assert.throws(() => parseNewsFeed(item("https://tweakers.net/nieuws/1"), "nos"), /No usable/);
+});
+
 test("news requests are read-only, coalesced and cached independently per source", async (t) => {
   let requests = 0;
   t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
     requests++;
-    const host = String(input).includes("tweakers") ? "tweakers.net" : "slashdot.org";
+    const inputUrl = String(input);
+    const host = inputUrl.includes("tweakers") ? "tweakers.net" : inputUrl.includes("nosnieuws") ? "nos.nl" : inputUrl.includes("bunniksnieuws") ? "bunniksnieuws.nl" : "slashdot.org";
     return new Response(item(`https://${host}/story/1`));
   });
   const request = new Request("https://personal.test/api/tweakers");
@@ -36,12 +43,15 @@ test("news requests are read-only, coalesced and cached independently per source
   assert.equal(requests, 1);
   await handleNewsApi(request, "slashdot");
   assert.equal(requests, 2);
+  await handleNewsApi(request, "nos");
+  await handleNewsApi(request, "bunniksnieuws");
+  assert.equal(requests, 4);
   assert.equal((await handleNewsApi(new Request(request, { method: "POST" }), "tweakers")).status, 405);
-  assert.equal(requests, 2);
+  assert.equal(requests, 4);
   t.mock.method(Date, "now", () => new Date("2100-01-01").getTime());
   t.mock.method(globalThis, "fetch", async () => { requests++; throw new Error("offline"); });
   const stale = await handleNewsApi(request, "tweakers");
   assert.equal((await stale.json()).stale, true);
   await handleNewsApi(request, "tweakers");
-  assert.equal(requests, 3, "failed refresh is backed off for fifteen minutes");
+  assert.equal(requests, 5, "failed refresh is backed off for fifteen minutes");
 });

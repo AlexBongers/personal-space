@@ -42,10 +42,18 @@ const formatFeedTime = (value: string, language: "en" | "nl") => {
   }).format(date);
 };
 
-export function SlashdotFeed({ source = "slashdot" }: { source?: "slashdot" | "tweakers" }) {
+type NewsSource = "slashdot" | "tweakers" | "nos" | "bunniksnieuws";
+
+const SOURCE_DETAILS: Record<NewsSource, { name: string; url: string }> = {
+  slashdot: { name: "Slashdot", url: "https://slashdot.org/" },
+  tweakers: { name: "Tweakers", url: "https://tweakers.net/" },
+  nos: { name: "NOS", url: "https://nos.nl/" },
+  bunniksnieuws: { name: "Bunniks Nieuws", url: "https://www.bunniksnieuws.nl/" },
+};
+
+export function SlashdotFeed({ source = "slashdot" }: { source?: NewsSource }) {
   const { language, t } = useLanguage();
-  const sourceName = source === "slashdot" ? "Slashdot" : "Tweakers";
-  const sourceUrl = source === "slashdot" ? "https://slashdot.org/" : "https://tweakers.net/";
+  const { name: sourceName, url: sourceUrl } = SOURCE_DETAILS[source];
   const [feed, setFeed] = useState<SlashdotFeedResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

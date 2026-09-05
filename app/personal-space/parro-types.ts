@@ -11,6 +11,8 @@ export type ParroMessage = {
   unread: boolean;
   unreadCount: number;
   externalUrl: string;
+  attachmentCount: number;
+  attachmentNames: string[];
 };
 
 export type ParroMessagesResponse = {

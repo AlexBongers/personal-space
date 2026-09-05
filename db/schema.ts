@@ -84,6 +84,8 @@ export const parroMessage = sqliteTable("parro_messages", {
   unread: integer("unread").notNull().default(0),
   unreadCount: integer("unread_count").notNull().default(0),
   externalUrl: text("external_url").notNull().default(""),
+  attachmentCount: integer("attachment_count").notNull().default(0),
+  attachmentNamesJson: text("attachment_names_json").notNull().default("[]"),
   syncedAt: text("synced_at").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),

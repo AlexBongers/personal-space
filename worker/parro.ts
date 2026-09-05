@@ -11,6 +11,8 @@ export type ParroMessage = {
   unread: boolean;
   unreadCount: number;
   externalUrl: string;
+  attachmentCount: number;
+  attachmentNames: string[];
 };
 
 export type ParroMessagesResponse = {
@@ -48,6 +50,8 @@ type IncomingMessage = {
   unread: boolean;
   unreadCount: number;
   externalUrl: string;
+  attachmentCount: number;
+  attachmentNames: string[];
 };
 
 type IncomingPayload = {
@@ -67,16 +71,20 @@ type StoredMessage = {
   unread: number;
   unread_count: number;
   external_url: string;
+  attachment_count: number;
+  attachment_names_json: string;
   synced_at: string;
 };
 
-const MAX_PAYLOAD_BYTES = 300_000;
+const MAX_PAYLOAD_BYTES = 1_250_000;
 const MAX_MESSAGES = 200;
 const MAX_TITLE_LENGTH = 240;
-const MAX_BODY_LENGTH = 1_600;
+const MAX_BODY_LENGTH = 20_000;
 const MAX_SENDER_LENGTH = 160;
 const MAX_ROOM_LENGTH = 240;
 const MAX_URL_LENGTH = 1_000;
+const MAX_ATTACHMENT_NAMES = 12;
+const MAX_ATTACHMENT_NAME_LENGTH = 160;
 const ID_PATTERN = /^[a-zA-Z0-9:_-]{1,240}$/;
 const PARRO_HOSTS = ["parro.com", "parnassys.net"];
 
@@ -107,11 +115,22 @@ const safeInteger = (value: unknown) => typeof value === "number" && Number.isIn
   ? Math.min(999, Math.max(0, value))
   : 0;
 
+const attachmentNames = (value: unknown) => {
+  if (!Array.isArray(value) || value.length > MAX_ATTACHMENT_NAMES) return [];
+  return [...new Set(value.map((name) => cleanText(name, MAX_ATTACHMENT_NAME_LENGTH)).filter(Boolean))];
+};
+
+const storedAttachmentNames = (value: string) => {
+  try { return attachmentNames(JSON.parse(value)); } catch { return []; }
+};
+
 const normalizeMessage = (value: unknown, syncedAt: string): IncomingMessage | null => {
   if (!isRecord(value) || typeof value.id !== "string" || !ID_PATTERN.test(value.id) || (value.kind !== "announcement" && value.kind !== "chatroom")) return null;
   const title = cleanText(value.title, MAX_TITLE_LENGTH);
   if (!title) return null;
   const unreadCount = safeInteger(value.unreadCount);
+  const names = attachmentNames(value.attachmentNames);
+  const count = Math.max(safeInteger(value.attachmentCount), names.length);
   return {
     id: value.id,
     kind: value.kind,
@@ -123,6 +142,8 @@ const normalizeMessage = (value: unknown, syncedAt: string): IncomingMessage | n
     unread: value.unread === true || unreadCount > 0,
     unreadCount,
     externalUrl: safeUrl(value.externalUrl),
+    attachmentCount: count,
+    attachmentNames: names,
   };
 };
 
@@ -145,11 +166,13 @@ const isLocalRequest = (request: Request) => {
 };
 
 const readMessages = async (database: ParroDatabase, limit: number): Promise<ParroMessagesResponse> => {
-  const rows = await database.prepare(`SELECT id, kind, title, body, sender, room_name, published_at, unread, unread_count, external_url, synced_at
+  const rows = await database.prepare(`SELECT id, kind, title, body, sender, room_name, published_at, unread, unread_count, external_url, attachment_count, attachment_names_json, synced_at
 FROM parro_messages
 ORDER BY published_at DESC, id DESC
 LIMIT ?`).bind(limit).all<StoredMessage>();
-  const messages = rows.results.map((row) => ({
+  const messages = rows.results.map((row) => {
+    const names = storedAttachmentNames(row.attachment_names_json);
+    return ({
     id: row.id,
     kind: row.kind === "chatroom" ? "chatroom" : "announcement",
     title: row.title,
@@ -160,7 +183,10 @@ LIMIT ?`).bind(limit).all<StoredMessage>();
     unread: Number(row.unread) > 0,
     unreadCount: Math.max(0, Number(row.unread_count) || 0),
     externalUrl: row.external_url,
-  } satisfies ParroMessage));
+    attachmentCount: Math.max(names.length, Math.max(0, Number(row.attachment_count) || 0)),
+    attachmentNames: names,
+  } satisfies ParroMessage);
+  });
   const unread = messages.reduce((total, message) => total + (message.unreadCount || (message.unread ? 1 : 0)), 0);
   const syncedAt = rows.results.reduce((latest, row) => row.synced_at > latest ? row.synced_at : latest, "");
   return { state: messages.length ? "connected" : "empty", messages, syncedAt: syncedAt || undefined, unread };
@@ -196,8 +222,8 @@ const handleSync = async (request: Request, env: ParroEnv) => {
   const payload = sanitizeParroPayload(parsed);
   if (!payload) return json({ error: "Invalid Parro payload" }, 400);
   const statements = payload.messages.map((message) => env.DB!.prepare(`INSERT INTO parro_messages
-(id, kind, title, body, sender, room_name, published_at, unread, unread_count, external_url, synced_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+(id, kind, title, body, sender, room_name, published_at, unread, unread_count, external_url, attachment_count, attachment_names_json, synced_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(id) DO UPDATE SET
 kind = excluded.kind,
 title = excluded.title,
@@ -208,6 +234,8 @@ published_at = excluded.published_at,
 unread = excluded.unread,
 unread_count = excluded.unread_count,
 external_url = excluded.external_url,
+attachment_count = excluded.attachment_count,
+attachment_names_json = excluded.attachment_names_json,
 synced_at = excluded.synced_at,
 updated_at = CURRENT_TIMESTAMP`).bind(
       message.id,
@@ -220,6 +248,8 @@ updated_at = CURRENT_TIMESTAMP`).bind(
       message.unread ? 1 : 0,
       message.unreadCount,
       message.externalUrl,
+      message.attachmentCount,
+      JSON.stringify(message.attachmentNames),
       payload.syncedAt,
     ));
   if (payload.replace) statements.push(env.DB.prepare("DELETE FROM parro_messages WHERE synced_at <> ?").bind(payload.syncedAt));

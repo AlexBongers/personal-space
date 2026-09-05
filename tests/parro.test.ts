@@ -13,6 +13,8 @@ const message = {
   unread: true,
   unreadCount: 1,
   externalUrl: "https://parro.com/announcement/one",
+  attachmentCount: 2,
+  attachmentNames: ["weekbrief.pdf", "foto.jpg"],
 };
 
 test("Parro payloads are bounded, normalized and limited to safe links", () => {
@@ -22,13 +24,15 @@ test("Parro payloads are bounded, normalized and limited to safe links", () => {
   assert.equal(payload.syncedAt, "2026-09-05T09:00:00.000Z");
   assert.equal(payload.messages[0].title, "A title");
   assert.equal(payload.messages[0].externalUrl, "");
+  assert.equal(payload.messages[0].attachmentCount, 2);
+  assert.deepEqual(payload.messages[0].attachmentNames, ["weekbrief.pdf", "foto.jpg"]);
   assert.equal(sanitizeParroPayload({ messages: [{ ...message, kind: "unknown" }] }), null);
   assert.equal(sanitizeParroPayload({ messages: Array.from({ length: 201 }, () => message) }), null);
 });
 
 test("hosted Parro reads require the Site visitor identity", async () => {
   const database: ParroDatabase = {
-    prepare: () => ({ bind() { return this; }, async all<T>() { return { results: [{ id: "announcement:one", kind: "announcement", title: "School update", body: "Read me", sender: "School", room_name: "Group 4", published_at: "2026-09-05T08:00:00.000Z", unread: 1, unread_count: 1, external_url: "", synced_at: "2026-09-05T09:00:00.000Z" }] as T[] }; }, async run() { return { meta: { changes: 0 } }; } }),
+    prepare: () => ({ bind() { return this; }, async all<T>() { return { results: [{ id: "announcement:one", kind: "announcement", title: "School update", body: "Read me", sender: "School", room_name: "Group 4", published_at: "2026-09-05T08:00:00.000Z", unread: 1, unread_count: 1, external_url: "", attachment_count: 2, attachment_names_json: '["weekbrief.pdf","foto.jpg"]', synced_at: "2026-09-05T09:00:00.000Z" }] as T[] }; }, async run() { return { meta: { changes: 0 } }; } }),
     batch: async () => [],
   };
   const env = { DB: database };
@@ -37,7 +41,7 @@ test("hosted Parro reads require the Site visitor identity", async () => {
   assert.equal((await unauthorized!.json()).state, "sign_in_required");
   const authorized = await handleParroApi(new Request("https://personal.test/api/parro/messages?limit=6", { headers: { "oai-authenticated-user-id": "owner" } }), env);
   assert.equal(authorized?.status, 200);
-  assert.deepEqual((await authorized!.json()).messages[0], { id: "announcement:one", kind: "announcement", title: "School update", body: "Read me", sender: "School", roomName: "Group 4", publishedAt: "2026-09-05T08:00:00.000Z", unread: true, unreadCount: 1, externalUrl: "" });
+  assert.deepEqual((await authorized!.json()).messages[0], { id: "announcement:one", kind: "announcement", title: "School update", body: "Read me", sender: "School", roomName: "Group 4", publishedAt: "2026-09-05T08:00:00.000Z", unread: true, unreadCount: 1, externalUrl: "", attachmentCount: 2, attachmentNames: ["weekbrief.pdf", "foto.jpg"] });
 });
 
 test("Parro sync requires the bearer token and writes an atomic snapshot", async () => {
@@ -67,5 +71,6 @@ test("Parro sync requires the bearer token and writes an atomic snapshot", async
   assert.equal(response?.status, 200);
   assert.deepEqual(await response!.json(), { ok: true, count: 1, syncedAt: "2026-09-05T09:00:00.000Z" });
   assert.equal(queries.filter((query) => query.includes("INSERT INTO parro_messages")).length, 1);
+  assert.ok(queries.some((query) => query.includes("attachment_names_json")));
   assert.equal(queries.filter((query) => query.includes("DELETE FROM parro_messages")).length, 1);
 });

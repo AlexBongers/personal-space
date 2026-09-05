@@ -586,19 +586,31 @@ td { height: 56px; font-size: .9375rem; }
 .parro-panel h2 .interface-icon { color: var(--blue); }
 .parro-meta { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 3px 12px; margin: 8px 0 12px; color: var(--muted); font-size: .8125rem; overflow-wrap: anywhere; }
 .parro-list { display: grid; margin: 0; padding: 0; list-style: none; }
-.parro-list li + li { border-top: 1px solid var(--line); }
+.parro-list > li + li { border-top: 1px solid var(--line); }
+.parro-entry { position: relative; }
 .parro-item { display: grid; grid-template-columns: 7px minmax(0, 1fr); align-items: start; gap: 9px; width: 100%; padding: 12px 0; color: var(--ink); text-align: left; }
-a.parro-item { text-decoration: none; }
-.parro-item:hover { background: var(--surface-soft); }
+.parro-entry:hover > .parro-item { background: var(--surface-soft); }
 .parro-item-copy { display: grid; min-width: 0; gap: 4px; }
 .parro-item-top { display: flex; justify-content: space-between; gap: 8px; min-width: 0; color: var(--muted); font-size: .8125rem; }
 .parro-item-top time { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .parro-item-context { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .parro-item strong { overflow-wrap: anywhere; font-size: 1rem; font-weight: 400; line-height: 1.4; }
-.parro-item.is-unread strong { font-weight: 500; }
+.parro-entry.is-unread strong { font-weight: 500; }
 .parro-read-marker { width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; }
-.parro-item.is-unread .parro-read-marker { background: var(--blue); }
+.parro-entry.is-unread .parro-read-marker { background: var(--blue); }
 .parro-item-body { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; color: var(--muted); font-size: .875rem; line-height: 1.45; }
+.parro-item-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 12px; color: var(--muted); font-size: .75rem; }
+.parro-item-actions a, .parro-details-toggle { padding: 0; border: 0; background: transparent; color: var(--ink); font: inherit; text-decoration: none; cursor: pointer; }
+.parro-item-actions a:hover, .parro-details-toggle:hover { text-decoration: underline; }
+.parro-hover-details { display: none; margin: 0 0 12px 16px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+.parro-entry.details-open .parro-hover-details { display: block; }
+.parro-hover-details p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .9375rem; line-height: 1.55; }
+.parro-attachments { display: grid; gap: 5px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: .8125rem; }
+.parro-attachments ul { display: grid; gap: 3px; margin: 0; padding-left: 18px; }
+.parro-attachments li { border: 0; overflow-wrap: anywhere; }
+@media (hover: hover) and (pointer: fine) {
+  .parro-entry:hover .parro-hover-details, .parro-entry:focus-within .parro-hover-details { position: absolute; z-index: 20; top: calc(100% - 8px); right: 0; left: 16px; display: block; max-height: min(55vh, 520px); overflow: auto; }
+}
 .parro-notice { color: var(--muted); font-size: .9375rem; line-height: 1.5; }
 .parro-panel .slashdot-footer { margin-top: 10px; flex-wrap: wrap; }
 .utility-page .parro-panel { max-width: 1100px; }

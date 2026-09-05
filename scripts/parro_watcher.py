@@ -32,6 +32,9 @@ STATE_PATH = Path(os.environ.get("PARRO_STATE_PATH", str(DEFAULT_STATE_PATH)))
 SYNC_ENV_PATH = Path(os.environ.get("PARRO_SYNC_ENV_FILE", str(PARRO_HOME / ".config" / "parro" / "personal-space-sync.env")))
 MAX_ANNOUNCEMENTS = 20
 MAX_CHATROOMS = 30
+MAX_BODY_LENGTH = 20_000
+MAX_ATTACHMENT_NAMES = 12
+ATTACHMENT_KEYS = {"attachment", "attachments", "file", "files", "document", "documents", "media"}
 
 
 def parse_dt(value: Any) -> datetime:
@@ -146,6 +149,53 @@ def display_name(value: Any) -> str:
     return ""
 
 
+def attachment_label(value: Any) -> str:
+    if isinstance(value, str):
+        parsed = urllib.parse.urlparse(value)
+        candidate = urllib.parse.unquote(Path(parsed.path).name) if parsed.scheme and parsed.netloc else value
+        return clean_text(candidate, 160)
+    if isinstance(value, dict):
+        for key in ("fileName", "filename", "displayName", "name", "title", "label"):
+            label = clean_text(value.get(key), 160)
+            if label:
+                return label
+        for key in ("url", "href", "downloadUrl"):
+            label = attachment_label(value.get(key))
+            if label:
+                return label
+    return ""
+
+
+def attachment_details(value: Any) -> tuple[int, List[str]]:
+    candidates: List[Any] = []
+
+    def visit(node: Any) -> None:
+        if not isinstance(node, dict):
+            return
+        for key, child in node.items():
+            normalized_key = "".join(character for character in key.lower() if character.isalpha())
+            if normalized_key in ATTACHMENT_KEYS or normalized_key.endswith("attachments"):
+                if isinstance(child, list):
+                    candidates.extend(child)
+                elif child not in (None, False, ""):
+                    candidates.append(child)
+            elif isinstance(child, dict):
+                visit(child)
+
+    visit(value)
+    names: List[str] = []
+    seen = set()
+    for candidate in candidates:
+        label = attachment_label(candidate)
+        identity = label.casefold() if label else json.dumps(candidate, ensure_ascii=False, sort_keys=True, default=str)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        if label and len(names) < MAX_ATTACHMENT_NAMES:
+            names.append(label)
+    return min(999, len(seen)), names
+
+
 def announcement_message(announcement: Dict[str, Any], synced_at: str) -> Optional[Dict[str, Any]]:
     title = clean_text(announcement.get("title"), 240)
     if not title:
@@ -153,17 +203,20 @@ def announcement_message(announcement: Dict[str, Any], synced_at: str) -> Option
     published = iso_date(announcement.get("sortDate") or announcement.get("createdAt"), synced_at)
     raw_id = source_id(announcement) or f"{title}:{published}"
     owner = display_name(announcement.get("owner"))
+    attachment_count, attachment_names = attachment_details(announcement)
     return {
         "id": stable_id("announcement", raw_id),
         "kind": "announcement",
         "title": title,
-        "body": clean_text(announcement.get("contents") or announcement.get("text"), 1600),
+        "body": clean_text(announcement.get("contents") or announcement.get("text"), MAX_BODY_LENGTH),
         "sender": owner,
         "roomName": clean_text(announcement.get("_group_name") or announcement.get("groupName"), 240),
         "publishedAt": published,
         "unread": announcement.get("read") is not True,
         "unreadCount": 0 if announcement.get("read") is True else 1,
         "externalUrl": announcement.get("url") or announcement.get("link") or "",
+        "attachmentCount": attachment_count,
+        "attachmentNames": attachment_names,
     }
 
 
@@ -188,17 +241,20 @@ def chatroom_message(room: Dict[str, Any], synced_at: str) -> Optional[Dict[str,
     message_date = latest.get("lastModifiedAt") or latest.get("createdAt")
     published = iso_date(message_date or room.get("sortDate") or room.get("lastModifiedAt"), synced_at)
     sender = display_name(latest.get("identity")) or display_name(latest.get("sender"))
+    attachment_count, attachment_names = attachment_details(latest)
     return {
         "id": stable_id("chatroom", room_id),
         "kind": "chatroom",
         "title": name,
-        "body": clean_text(latest.get("text") or latest.get("contents"), 1600),
+        "body": clean_text(latest.get("text") or latest.get("contents"), MAX_BODY_LENGTH),
         "sender": sender,
         "roomName": name,
         "publishedAt": published,
         "unread": True,
         "unreadCount": unread_count,
         "externalUrl": "",
+        "attachmentCount": attachment_count,
+        "attachmentNames": attachment_names,
     }
 
 

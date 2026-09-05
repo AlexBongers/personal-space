@@ -36,6 +36,13 @@
       "when": 1788596516656,
       "tag": "0004_optimal_shocker",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788616381666,
+      "tag": "0005_kind_blonde_phantom",
+      "breakpoints": true
     }
   ]
 }

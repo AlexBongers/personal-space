@@ -103,7 +103,7 @@ export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
           <HomeTasksPanel rows={taskSummary.previewRows} openCount={taskSummary.openRows.length} dueCount={taskSummary.dueCount} todayKey={todayKey} onOpen={(rowId) => onOpen(GOOGLE_TASKS_DATABASE_ID, rowId)} />
           <ParroInbox compact onOpenParro={() => onOpen("parro")} />
         </div>
-        <div className="home-news-grid"><SlashdotFeed /><SlashdotFeed source="tweakers" /></div>
+        <div className="home-news-grid"><SlashdotFeed /><SlashdotFeed source="tweakers" /><SlashdotFeed source="nos" /><SlashdotFeed source="bunniksnieuws" /></div>
       </div>
     </section>
   );

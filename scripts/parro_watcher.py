@@ -17,9 +17,19 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent
-PARRO_HOME = Path(os.environ.get("PARRO_HOME", os.environ.get("HOME", str(Path.home()))))
-WRAPPER = Path(os.environ.get("PARRO_WRAPPER", str(BASE_DIR / "parro.py")))
-STATE_PATH = Path(os.environ.get("PARRO_STATE_PATH", str(PARRO_HOME / ".config" / "parro" / "personal-space-state.json")))
+QNAP_HOME = Path("/opt/data/home")
+QNAP_WRAPPER = Path("/opt/data/skills/productivity/parro/scripts/parro.py")
+DEFAULT_PARRO_HOME = QNAP_HOME if QNAP_HOME.exists() else Path(os.environ.get("HOME", str(Path.home())))
+DEFAULT_WRAPPER = QNAP_WRAPPER if QNAP_WRAPPER.exists() else BASE_DIR / "parro.py"
+PARRO_HOME = Path(os.environ.get("PARRO_HOME", str(DEFAULT_PARRO_HOME)))
+WRAPPER = Path(os.environ.get("PARRO_WRAPPER", str(DEFAULT_WRAPPER)))
+DEFAULT_STATE_PATH = (
+    PARRO_HOME / "cron" / "parro_watcher_state.json"
+    if PARRO_HOME == QNAP_HOME
+    else PARRO_HOME / ".config" / "parro" / "personal-space-state.json"
+)
+STATE_PATH = Path(os.environ.get("PARRO_STATE_PATH", str(DEFAULT_STATE_PATH)))
+SYNC_ENV_PATH = Path(os.environ.get("PARRO_SYNC_ENV_FILE", str(PARRO_HOME / ".config" / "parro" / "personal-space-sync.env")))
 MAX_ANNOUNCEMENTS = 20
 MAX_CHATROOMS = 30
 
@@ -94,6 +104,20 @@ def save_state(state: Dict[str, Any]) -> None:
     temporary = STATE_PATH.with_suffix(f"{STATE_PATH.suffix}.tmp")
     temporary.write_text(json.dumps(state, indent=2, ensure_ascii=False, sort_keys=True))
     temporary.replace(STATE_PATH)
+
+
+def load_sync_env() -> None:
+    if not SYNC_ENV_PATH.exists():
+        return
+    try:
+        lines = SYNC_ENV_PATH.read_text().splitlines()
+    except OSError:
+        return
+    for line in lines:
+        key, separator, value = line.partition("=")
+        key = key.strip()
+        if separator and key in {"PARRO_SYNC_URL", "PARRO_SYNC_TOKEN"} and key not in os.environ:
+            os.environ[key] = value.strip().strip("\"'")
 
 
 def stable_id(prefix: str, value: str) -> str:
@@ -213,6 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    load_sync_env()
     arguments = build_parser().parse_args()
     state = load_state()
     previous_announcement_ts = parse_dt(state.get("announcement_ts"))

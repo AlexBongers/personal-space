@@ -115,6 +115,10 @@ PARRO_SYNC_TOKEN='use-the-same-private-token' \
 python3 scripts/parro_watcher.py
 ```
 
+For a cron job that cannot inherit a shell environment, place those two variables in the
+owner-only file `~/.config/parro/personal-space-sync.env`; the watcher loads that file
+automatically. Do not put Parro username/password or access tokens in this file.
+
 The watcher does not print message content. A successful run replaces the stored snapshot in one
 protected D1 batch so a failed Parro read cannot overwrite a working overview. The existing
 Hermes wrapper and authenticated Parro session are prerequisites for the first live sync.

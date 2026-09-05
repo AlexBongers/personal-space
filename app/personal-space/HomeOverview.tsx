@@ -5,6 +5,7 @@ import { getValue, GOOGLE_TASKS_DATABASE_ID, GOOGLE_TASK_PROPERTY_IDS, isDatabas
 import { useLanguage } from "./i18n";
 import { SlashdotFeed } from "./SlashdotFeed";
 import { GmailInbox } from "./GmailInbox";
+import { ParroInbox } from "./ParroInbox";
 import { InterfaceIcon } from "./InterfaceIcon";
 import type { Item, Row } from "./types";
 
@@ -100,6 +101,7 @@ export function HomeOverview({ items, onOpen }: HomeOverviewProps) {
         <div className="home-priority-rail">
           <GmailInbox compact onOpenInbox={() => onOpen("gmail")} />
           <HomeTasksPanel rows={taskSummary.previewRows} openCount={taskSummary.openRows.length} dueCount={taskSummary.dueCount} todayKey={todayKey} onOpen={(rowId) => onOpen(GOOGLE_TASKS_DATABASE_ID, rowId)} />
+          <ParroInbox compact onOpenParro={() => onOpen("parro")} />
         </div>
         <div className="home-news-grid"><SlashdotFeed /><SlashdotFeed source="tweakers" /></div>
       </div>

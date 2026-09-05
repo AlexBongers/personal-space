@@ -72,3 +72,21 @@ export const googleSyncCreates = sqliteTable("google_sync_creates", {
   resultJson: text("result_json"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({ service: index("idx_google_sync_creates_service").on(table.service) }));
+
+export const parroMessage = sqliteTable("parro_messages", {
+  id: text("id").primaryKey(),
+  kind: text("kind").notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull().default(""),
+  sender: text("sender").notNull().default(""),
+  roomName: text("room_name").notNull().default(""),
+  publishedAt: text("published_at").notNull(),
+  unread: integer("unread").notNull().default(0),
+  unreadCount: integer("unread_count").notNull().default(0),
+  externalUrl: text("external_url").notNull().default(""),
+  syncedAt: text("synced_at").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  published: index("idx_parro_messages_published_at").on(table.publishedAt),
+}));

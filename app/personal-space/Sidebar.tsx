@@ -220,6 +220,7 @@ export function Sidebar({
             </button>
           )}
           <button className="nav-item" aria-current={selectedId === "gmail" ? "page" : undefined} onClick={() => chooseItem("gmail")}><span className="nav-glyph"><InterfaceIcon name="mail" /></span>{t("gmail.title")}</button>
+          <button className="nav-item" aria-current={selectedId === "parro" ? "page" : undefined} onClick={() => chooseItem("parro")}><span className="nav-glyph"><InterfaceIcon name="mail" /></span>{t("nav.parro")}</button>
           <button className="nav-item" aria-current={selectedId === "news-slashdot" ? "page" : undefined} onClick={() => chooseItem("news-slashdot")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>Slashdot</button>
           <button className="nav-item" aria-current={selectedId === "news-tweakers" ? "page" : undefined} onClick={() => chooseItem("news-tweakers")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>Tweakers</button>
         </div>

@@ -20,6 +20,7 @@ import { SearchDialog } from "./personal-space/SearchDialog";
 import { Sidebar } from "./personal-space/Sidebar";
 import { InterfaceIcon } from "./personal-space/InterfaceIcon";
 import { GmailInbox } from "./personal-space/GmailInbox";
+import { ParroInbox } from "./personal-space/ParroInbox";
 import { SlashdotFeed } from "./personal-space/SlashdotFeed";
 import type { Block, Item, SearchResult, Theme } from "./personal-space/types";
 import { useLanguage } from "./personal-space/i18n";
@@ -112,8 +113,8 @@ export default function Home() {
   }, []);
 
   const selected = items.find((item) => item.id === selectedId) || items[0];
-  const utilityPage = selectedId === "gmail" || selectedId === "news-slashdot" || selectedId === "news-tweakers" ? selectedId : null;
-  const currentTitle = utilityPage === "gmail" ? t("gmail.title") : utilityPage === "news-slashdot" ? "Slashdot" : utilityPage === "news-tweakers" ? "Tweakers" : selected?.title || t("nav.home");
+  const utilityPage = selectedId === "gmail" || selectedId === "parro" || selectedId === "news-slashdot" || selectedId === "news-tweakers" ? selectedId : null;
+  const currentTitle = utilityPage === "gmail" ? t("gmail.title") : utilityPage === "parro" ? t("parro.title") : utilityPage === "news-slashdot" ? "Slashdot" : utilityPage === "news-tweakers" ? "Tweakers" : selected?.title || t("nav.home");
 
   const updateItem = (next: Item) => {
     setItems((current) => current.map((item) => item.id === next.id ? next : item));
@@ -256,7 +257,7 @@ export default function Home() {
           </div>
         </header>
         <div className="content-scroll">
-          {utilityPage ? <div className="page-view utility-page">{utilityPage === "gmail" ? <GmailInbox authorizationError={gmailAuthorizationError} /> : <SlashdotFeed key={utilityPage} source={utilityPage === "news-slashdot" ? "slashdot" : "tweakers"} />}</div> : isDatabase(selected) ? (
+          {utilityPage ? <div className="page-view utility-page">{utilityPage === "gmail" ? <GmailInbox authorizationError={gmailAuthorizationError} /> : utilityPage === "parro" ? <ParroInbox /> : <SlashdotFeed key={utilityPage} source={utilityPage === "news-slashdot" ? "slashdot" : "tweakers"} />}</div> : isDatabase(selected) ? (
             <DatabaseView
               key={`${selected.id}-${selectedRowId || "none"}`}
               database={selected}

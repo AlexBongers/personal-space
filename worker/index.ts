@@ -6,8 +6,10 @@ import { handleGoogleCalendarApi } from "./google-calendar";
 import { handleSlashdotApi } from "./slashdot";
 import { handleNewsApi } from "./news";
 import { handleGmailApi } from "./gmail";
+import { handleParroApi } from "./parro";
 import { isWorkspaceItems, loadWorkspace, MAX_WORKSPACE_BYTES, saveWorkspace } from "./workspace-store";
 import type { GoogleTasksDatabase } from "./google-tasks";
+import type { ParroDatabase } from "./parro";
 import type { WorkspaceDatabase } from "./workspace-store";
 
 interface Env {
@@ -17,6 +19,7 @@ interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   GOOGLE_REDIRECT_URI?: string;
   GOOGLE_TOKEN_ENCRYPTION_KEY?: string;
+  PARRO_SYNC_TOKEN?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -117,6 +120,18 @@ const worker = {
       GOOGLE_REDIRECT_URI: env.GOOGLE_REDIRECT_URI,
       GOOGLE_TOKEN_ENCRYPTION_KEY: env.GOOGLE_TOKEN_ENCRYPTION_KEY,
     });
+
+    if (url.pathname.startsWith("/api/parro/")) {
+      try {
+        return await handleParroApi(request, {
+          DB: env.DB as unknown as ParroDatabase | undefined,
+          PARRO_SYNC_TOKEN: env.PARRO_SYNC_TOKEN,
+        }, url) || new Response(null, { status: 404 });
+      } catch (error) {
+        console.error("Parro API failed", error);
+        return json({ error: "Parro is temporarily unavailable" }, 500);
+      }
+    }
 
     if (url.pathname.startsWith("/api/google-tasks/")) {
       try {

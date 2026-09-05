@@ -91,6 +91,34 @@ The server requests only envelope headers, snippets, dates and labels, not messa
 attachments. Mail previews are not stored in D1 or browser storage; API responses use `no-store`.
 Opening a message takes you to the connected account in Gmail. The site must remain owner-only.
 
+## Parro school messages
+
+Home and the sidebar include a private Parro panel. The adapted watcher in
+[`scripts/parro_watcher.py`](./scripts/parro_watcher.py) reads announcements and unread chatrooms
+locally through the Parro CLI, then sends only bounded message summaries to the protected
+`/api/parro/sync` endpoint. Parro credentials, cookies and raw API responses stay on the machine
+where the watcher runs. D1 stores the latest sanitized snapshot so the overview remains fast.
+Use the current Parro CLI with Python 3.11 or newer and `uvx` on the watcher host.
+
+Configure a strong `PARRO_SYNC_TOKEN` as a private Sites runtime secret and set the same value as
+an environment variable on the Hermes/QNAP host. Then set `PARRO_SYNC_URL` there to:
+
+```text
+https://personal-space.a-a-t-bongers.chatgpt.site/api/parro/sync
+```
+
+Run the watcher on a schedule, for example every 15 minutes:
+
+```bash
+PARRO_SYNC_URL='https://personal-space.a-a-t-bongers.chatgpt.site/api/parro/sync' \
+PARRO_SYNC_TOKEN='use-the-same-private-token' \
+python3 scripts/parro_watcher.py
+```
+
+The watcher does not print message content. A successful run replaces the stored snapshot in one
+protected D1 batch so a failed Parro read cannot overwrite a working overview. The existing
+Hermes wrapper and authenticated Parro session are prerequisites for the first live sync.
+
 See [REQUIREMENTS.md](./REQUIREMENTS.md) for the complete product contract and [AGENTS.md](./AGENTS.md)
 for repository conventions. The final hostile-use findings and accepted storage limitation are
 recorded in [docs/ADVERSARIAL_REVIEW.md](./docs/ADVERSARIAL_REVIEW.md).

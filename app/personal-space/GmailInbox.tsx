@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "./i18n";
 import { InterfaceIcon } from "./InterfaceIcon";
 import type { GmailInboxResponse } from "./gmail-types";
+import { useNearViewport } from "./useNearViewport";
 
 type Props = { compact?: boolean; onOpenInbox?: () => void; authorizationError?: boolean };
 
@@ -14,6 +15,7 @@ export function GmailInbox({ compact = false, onOpenInbox, authorizationError = 
   const [failed, setFailed] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
   const pagesRef = useRef(1);
+  const { ref: panelRef, active } = useNearViewport<HTMLElement>();
 
   const load = useCallback(async (pageToken = "") => {
     requestRef.current?.abort();
@@ -45,19 +47,21 @@ export function GmailInbox({ compact = false, onOpenInbox, authorizationError = 
   }, [compact]);
 
   useEffect(() => {
+    if (!active) return undefined;
     const initial = window.setTimeout(() => void load(), 0);
     const timer = window.setInterval(() => { if (!document.hidden && pagesRef.current === 1) void load(); }, 5 * 60 * 1000);
     return () => { window.clearTimeout(initial); window.clearInterval(timer); requestRef.current?.abort(); requestRef.current = null; };
-  }, [load]);
+  }, [active, load]);
 
   const connected = inbox?.state === "connected";
   const needsConsent = inbox?.state === "connect" || inbox?.state === "permission_required";
   const gmailUrl = inbox?.emailAddress ? `https://mail.google.com/mail/?authuser=${encodeURIComponent(inbox.emailAddress)}#inbox` : "https://mail.google.com/";
   const locale = language === "nl" ? "nl-NL" : "en-US";
-  const dateFormat = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" });
-  const timeFormat = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" });
+  const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }), [locale]);
+  const timeFormat = useMemo(() => new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }), [locale]);
+  const today = new Date().toDateString();
 
-  return <section className={`gmail-panel ${compact ? "gmail-compact" : ""}`} aria-labelledby="gmail-heading" aria-busy={loading}>
+  return <section ref={panelRef} className={`gmail-panel ${compact ? "gmail-compact" : ""}`} aria-labelledby="gmail-heading" aria-busy={loading}>
     <div className="slashdot-heading">
       <h2 id="gmail-heading"><InterfaceIcon name="mail" />{t("gmail.title")}{connected && <span className="inbox-count" aria-label={t("gmail.unreadCount", { count: inbox.unread || 0 })}>{inbox.unread || 0}</span>}</h2>
       <button type="button" className="feed-refresh" aria-label={t("gmail.refresh")} disabled={loading} onClick={() => void load()}><span className={loading ? "spin" : ""}>↻</span></button>
@@ -75,7 +79,7 @@ export function GmailInbox({ compact = false, onOpenInbox, authorizationError = 
         {inbox.messages.map((message) => {
           const date = new Date(message.receivedAt);
           const validDate = !Number.isNaN(date.getTime());
-          const sameDay = validDate && date.toDateString() === new Date().toDateString();
+          const sameDay = validDate && date.toDateString() === today;
           return <li key={message.id}>
             <a className={`inbox-message ${message.unread ? "is-unread" : ""}`} href={message.url} target="_blank" rel="noreferrer">
               <span className="inbox-read-marker" aria-label={message.unread ? t("gmail.unread") : t("gmail.read")} />

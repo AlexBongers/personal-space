@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import {
   GOOGLE_CALENDAR_PROPERTY_IDS,
   GOOGLE_TASK_PROPERTY_IDS,
@@ -35,11 +35,11 @@ const taskIsDone = (row: Row) => {
 
 const taskDueKey = (row: Row) => valueFor(row, GOOGLE_TASK_PROPERTY_IDS.due).slice(0, 10);
 
-function formatTaskDue(value: string, language: "en" | "nl") {
+function formatTaskDue(value: string, formatter: Intl.DateTimeFormat) {
   if (!value) return "";
   const date = new Date(`${value}T00:00:00`);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", { day: "numeric", month: "short", year: "numeric" }).format(date);
+  return formatter.format(date);
 }
 
 function taskDueTone(value: string) {
@@ -52,6 +52,8 @@ export function GoogleTasksInterface({ database, rows, onOpenRow, onUpdateCell, 
   const { language, t } = useLanguage();
   const [statusFilter, setStatusFilter] = useState<"open" | "all" | "done">("open");
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
+  const dueFormatter = useMemo(() => new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", { day: "numeric", month: "short", year: "numeric" }), [language]);
   const counts = useMemo(() => ({
     all: rows.length,
     done: rows.filter(taskIsDone).length,
@@ -59,7 +61,7 @@ export function GoogleTasksInterface({ database, rows, onOpenRow, onUpdateCell, 
   }), [rows]);
 
   const groupedRows = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery = deferredQuery.trim().toLowerCase();
     const filtered = rows
       .filter((row) => statusFilter === "all" || (statusFilter === "done" ? taskIsDone(row) : !taskIsDone(row)))
       .filter((row) => {
@@ -80,7 +82,7 @@ export function GoogleTasksInterface({ database, rows, onOpenRow, onUpdateCell, 
       else groups.set(list, [row]);
     });
     return [...groups.entries()];
-  }, [language, query, rows, statusFilter, t]);
+  }, [deferredQuery, language, rows, statusFilter, t]);
 
   const addTask = () => {
     const id = onAddRow({ [GOOGLE_TASK_PROPERTY_IDS.status]: "Open" });
@@ -133,7 +135,7 @@ export function GoogleTasksInterface({ database, rows, onOpenRow, onUpdateCell, 
                     <button type="button" className="task-main" onClick={() => onOpenRow(row.id)}>
                       <strong>{row.title || t("database.untitledRow")}</strong>
                       <span className="task-detail-line">
-                        {due && <time className={taskDueTone(due)} dateTime={due}>{formatTaskDue(due, language)}</time>}
+                        {due && <time className={taskDueTone(due)} dateTime={due}>{formatTaskDue(due, dueFormatter)}</time>}
                         {notes && <span className="task-notes-preview">{notes}</span>}
                       </span>
                     </button>
@@ -165,23 +167,25 @@ function calendarColor(value: string) {
   return colors[Math.abs(hash) % colors.length];
 }
 
-function formatCalendarTime(row: Row, language: "en" | "nl", allDayLabel: string) {
+function formatCalendarTime(row: Row, allDayLabel: string, formatter: Intl.DateTimeFormat) {
   if (valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.allDay) === "true" || !valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.start).includes("T")) return allDayLabel;
   const date = new Date(valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.start));
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", { hour: "2-digit", minute: "2-digit" }).format(date);
+  return formatter.format(date);
 }
 
 function CalendarAgenda({ rows, onOpenRow }: Pick<IntegrationViewProps, "rows" | "onOpenRow">) {
   const { language, t } = useLanguage();
   const locale = language === "nl" ? "nl-NL" : "en-US";
+  const dateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short" }), [locale]);
+  const timeFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }), [locale]);
   return <div className="calendar-agenda">
     {rows.map((row) => {
       const day = calendarRowDate(row);
       const date = new Date(`${day}T12:00:00`);
-      const label = Number.isNaN(date.getTime()) ? day : new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short" }).format(date);
+      const label = Number.isNaN(date.getTime()) ? day : dateFormatter.format(date);
       return <button type="button" className="agenda-event" key={row.id} onClick={() => onOpenRow(row.id)}>
-        <span className="agenda-date"><strong>{label}</strong><small>{formatCalendarTime(row, language, t("calendarView.allDay"))}</small></span>
+        <span className="agenda-date"><strong>{label}</strong><small>{formatCalendarTime(row, t("calendarView.allDay"), timeFormatter)}</small></span>
         <i style={{ background: calendarColor(valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.calendar)) }} />
         <span className="agenda-copy"><strong>{row.title || t("database.untitledRow")}</strong><small>{valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.calendar) || t("calendarView.defaultCalendar")}{valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.location) ? ` · ${valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.location)}` : ""}</small></span>
         <span className="agenda-arrow" aria-hidden="true">→</span>
@@ -199,6 +203,11 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
   const [agendaDay, setAgendaDay] = useState<string | null>(null);
   const locale = language === "nl" ? "nl-NL" : "en-US";
   const today = dateKey(new Date());
+  const monthFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }), [locale]);
+  const weekdayFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { weekday: "short" }), [locale]);
+  const fullDateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { dateStyle: "full" }), [locale]);
+  const selectedDateFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long" }), [locale]);
+  const timeFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }), [locale]);
 
   const eventsByDay = useMemo(() => {
     const grouped = new Map<string, Row[]>();
@@ -230,7 +239,7 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
     });
   }, [cursor]);
 
-  const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(cursor);
+  const monthLabel = monthFormatter.format(cursor);
   const monthKey = dateKey(cursor).slice(0, 7);
   const agendaRows = useMemo(() => [...rows]
     .filter((row) => agendaDay ? calendarRowDate(row) === agendaDay : calendarRowDate(row).startsWith(monthKey))
@@ -257,7 +266,7 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
     setSelectedDay(today);
     setAgendaDay(null);
   };
-  const weekdays = Array.from({ length: 7 }, (_, index) => new Intl.DateTimeFormat(locale, { weekday: "short" }).format(new Date(2024, 0, 1 + index)));
+  const weekdays = useMemo(() => Array.from({ length: 7 }, (_, index) => weekdayFormatter.format(new Date(2024, 0, 1 + index))), [weekdayFormatter]);
 
   return (
     <div className="integration-page calendar-interface">
@@ -284,10 +293,10 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
             const dayRows = eventsByDay.get(key) || [];
             return (
               <div className={`calendar-day ${inMonth ? "" : "outside-month"} ${key === today ? "is-today" : ""}`} role="gridcell" key={key}>
-                <button type="button" className="calendar-day-number" aria-label={new Intl.DateTimeFormat(locale, { dateStyle: "full" }).format(date)} aria-pressed={selectedDay === key} aria-current={key === today ? "date" : undefined} onClick={() => setSelectedDay(key)}>{date.getDate()}{key === today && <span>{t("calendarView.todayShort")}</span>}</button>
+                <button type="button" className="calendar-day-number" aria-label={fullDateFormatter.format(date)} aria-pressed={selectedDay === key} aria-current={key === today ? "date" : undefined} onClick={() => setSelectedDay(key)}>{date.getDate()}{key === today && <span>{t("calendarView.todayShort")}</span>}</button>
                 <span className="mobile-event-count" aria-hidden="true">{dayRows.length > 0 ? dayRows.length : ""}</span>
                 <div className="calendar-day-events">
-                  {dayRows.slice(0, 3).map((row) => <button type="button" className="calendar-event" key={row.id} onClick={() => onOpenRow(row.id)}><i style={{ background: calendarColor(valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.calendar)) }} /><span>{formatCalendarTime(row, language, t("calendarView.allDay"))}</span><strong>{row.title || t("database.untitledRow")}</strong></button>)}
+                  {dayRows.slice(0, 3).map((row) => <button type="button" className="calendar-event" key={row.id} onClick={() => onOpenRow(row.id)}><i style={{ background: calendarColor(valueFor(row, GOOGLE_CALENDAR_PROPERTY_IDS.calendar)) }} /><span>{formatCalendarTime(row, t("calendarView.allDay"), timeFormatter)}</span><strong>{row.title || t("database.untitledRow")}</strong></button>)}
                   {dayRows.length > 3 && <button type="button" className="calendar-more" onClick={() => { setAgendaDay(key); setSelectedDay(key); setMode("agenda"); }}>+{dayRows.length - 3} {t("calendarView.more")}</button>}
                 </div>
               </div>
@@ -295,7 +304,7 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
           })}
         </div>
         <section className="calendar-day-agenda" aria-label={t("calendarView.agenda")}>
-          <h2>{new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long" }).format(new Date(`${selectedDay}T12:00:00`))}</h2>
+          <h2>{selectedDateFormatter.format(new Date(`${selectedDay}T12:00:00`))}</h2>
           <CalendarAgenda rows={eventsByDay.get(selectedDay) || []} onOpenRow={onOpenRow} />
         </section></>
       ) : (

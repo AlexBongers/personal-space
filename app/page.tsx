@@ -1,11 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { BlockEditor } from "./personal-space/BlockEditor";
-import { DatabaseView } from "./personal-space/DatabaseView";
+import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { HomeOverview } from "./personal-space/HomeOverview";
-import { GoogleTasksDialog } from "./personal-space/GoogleTasksDialog";
-import { GoogleCalendarDialog } from "./personal-space/GoogleCalendarDialog";
 import {
   createEmptyDatabase,
   createEmptyPage,
@@ -16,7 +12,6 @@ import {
   isPage,
   STORAGE_KEYS,
 } from "./personal-space/model";
-import { SearchDialog } from "./personal-space/SearchDialog";
 import { Sidebar } from "./personal-space/Sidebar";
 import { InterfaceIcon } from "./personal-space/InterfaceIcon";
 import { GmailInbox } from "./personal-space/GmailInbox";
@@ -25,6 +20,12 @@ import { SlashdotFeed } from "./personal-space/SlashdotFeed";
 import type { Block, Item, SearchResult, Theme } from "./personal-space/types";
 import { useLanguage } from "./personal-space/i18n";
 import { useWorkspacePersistence } from "./personal-space/useWorkspacePersistence";
+
+const BlockEditor = lazy(() => import("./personal-space/BlockEditor").then((module) => ({ default: module.BlockEditor })));
+const DatabaseView = lazy(() => import("./personal-space/DatabaseView").then((module) => ({ default: module.DatabaseView })));
+const SearchDialog = lazy(() => import("./personal-space/SearchDialog").then((module) => ({ default: module.SearchDialog })));
+const GoogleTasksDialog = lazy(() => import("./personal-space/GoogleTasksDialog").then((module) => ({ default: module.GoogleTasksDialog })));
+const GoogleCalendarDialog = lazy(() => import("./personal-space/GoogleCalendarDialog").then((module) => ({ default: module.GoogleCalendarDialog })));
 
 const isTypingTarget = (target: EventTarget | null) => {
   const element = target as HTMLElement | null;
@@ -45,6 +46,7 @@ export default function Home() {
   const [googleTasksOpen, setGoogleTasksOpen] = useState(false);
   const [googleCalendarOpen, setGoogleCalendarOpen] = useState(false);
   const [gmailAuthorizationError, setGmailAuthorizationError] = useState(false);
+  const deferredQuery = useDeferredValue(query);
 
   useEffect(() => {
     if (!hydrated || items.some((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID)) return;
@@ -164,7 +166,7 @@ export default function Home() {
   };
 
   const searchResults = useMemo<SearchResult[]>(() => {
-    const needle = query.toLowerCase().trim();
+    const needle = deferredQuery.toLowerCase().trim();
     if (!needle) return [];
     return items.flatMap((item) => {
       const results: SearchResult[] = [];
@@ -192,7 +194,7 @@ export default function Home() {
       }
       return results;
     });
-  }, [items, query]);
+  }, [deferredQuery, items]);
 
   const updateSelectedBlocks = (blocks: Block[]) => {
     if (isPage(selected)) updateItem({ ...selected, blocks });
@@ -257,62 +259,64 @@ export default function Home() {
           </div>
         </header>
         <div className="content-scroll">
-          {utilityPage ? <div className="page-view utility-page">{utilityPage === "gmail" ? <GmailInbox authorizationError={gmailAuthorizationError} /> : utilityPage === "parro" ? <ParroInbox /> : <SlashdotFeed key={utilityPage} source={utilityPage === "news-slashdot" ? "slashdot" : utilityPage === "news-tweakers" ? "tweakers" : utilityPage === "news-nos" ? "nos" : "bunniksnieuws"} />}</div> : isDatabase(selected) ? (
-            <DatabaseView
-              key={`${selected.id}-${selectedRowId || "none"}`}
-              database={selected}
-              onUpdate={updateItem}
-              initialRowId={selectedRowId}
-            />
-          ) : selected?.id === "home" ? (
-            <div className="page-view home-page">
-              <HomeOverview items={items} onOpen={selectItem} />
-            </div>
-          ) : (
-            <div className="page-view">
-              <div className="page-heading">
-                <button className="page-icon" aria-label={t("top.changeIcon")} onClick={() => selected && changeIcon(selected.id)}>
-                  {selected?.icon || "⌂"}
-                </button>
-                <input
-                  className="page-title-input"
-                  value={selected?.title || ""}
-                  onChange={(event) => selected && renameItem(selected.id, event.target.value)}
-                  aria-label={t("top.pageTitle")}
-                />
-                {selected?.id !== "home" && <button className="page-menu" aria-label={t("top.deletePage")} onClick={() => selected && deleteItem(selected.id)}>•••</button>}
+          <Suspense fallback={<div className="view-loading" aria-hidden="true"><span /><span /><span /></div>}>
+            {utilityPage ? <div className="page-view utility-page">{utilityPage === "gmail" ? <GmailInbox authorizationError={gmailAuthorizationError} /> : utilityPage === "parro" ? <ParroInbox /> : <SlashdotFeed key={utilityPage} source={utilityPage === "news-slashdot" ? "slashdot" : utilityPage === "news-tweakers" ? "tweakers" : utilityPage === "news-nos" ? "nos" : "bunniksnieuws"} />}</div> : isDatabase(selected) ? (
+              <DatabaseView
+                key={`${selected.id}-${selectedRowId || "none"}`}
+                database={selected}
+                onUpdate={updateItem}
+                initialRowId={selectedRowId}
+              />
+            ) : selected?.id === "home" ? (
+              <div className="page-view home-page">
+                <HomeOverview items={items} onOpen={selectItem} />
               </div>
-              {selected && isPage(selected) && <BlockEditor item={selected} onChange={updateSelectedBlocks} />}
-            </div>
-          )}
+            ) : (
+              <div className="page-view">
+                <div className="page-heading">
+                  <button className="page-icon" aria-label={t("top.changeIcon")} onClick={() => selected && changeIcon(selected.id)}>
+                    {selected?.icon || "⌂"}
+                  </button>
+                  <input
+                    className="page-title-input"
+                    value={selected?.title || ""}
+                    onChange={(event) => selected && renameItem(selected.id, event.target.value)}
+                    aria-label={t("top.pageTitle")}
+                  />
+                  {selected?.id !== "home" && <button className="page-menu" aria-label={t("top.deletePage")} onClick={() => selected && deleteItem(selected.id)}>•••</button>}
+                </div>
+                {selected && isPage(selected) && <BlockEditor item={selected} onChange={updateSelectedBlocks} />}
+              </div>
+            )}
+          </Suspense>
         </div>
       </section>
       {searchOpen && (
-        <SearchDialog
-          query={query}
-          results={searchResults}
-          onQueryChange={setQuery}
-          onChoose={(result) => selectItem(result.id, result.rowId)}
-          onClose={() => setSearchOpen(false)}
-        />
+        <Suspense fallback={null}><SearchDialog
+            query={query}
+            results={searchResults}
+            onQueryChange={setQuery}
+            onChoose={(result) => selectItem(result.id, result.rowId)}
+            onClose={() => setSearchOpen(false)}
+          /></Suspense>
       )}
       {googleTasksOpen && (
-        <GoogleTasksDialog
-          items={items}
-          revision={revision}
-          onReplace={replaceItems}
-          onOpenDatabase={() => { setGoogleTasksOpen(false); selectItem("google-tasks"); }}
-          onClose={() => setGoogleTasksOpen(false)}
-        />
+        <Suspense fallback={null}><GoogleTasksDialog
+            items={items}
+            revision={revision}
+            onReplace={replaceItems}
+            onOpenDatabase={() => { setGoogleTasksOpen(false); selectItem("google-tasks"); }}
+            onClose={() => setGoogleTasksOpen(false)}
+          /></Suspense>
       )}
       {googleCalendarOpen && (
-        <GoogleCalendarDialog
-          items={items}
-          revision={revision}
-          onReplace={replaceItems}
-          onOpenDatabase={() => { setGoogleCalendarOpen(false); selectItem(GOOGLE_CALENDAR_DATABASE_ID); }}
-          onClose={() => setGoogleCalendarOpen(false)}
-        />
+        <Suspense fallback={null}><GoogleCalendarDialog
+            items={items}
+            revision={revision}
+            onReplace={replaceItems}
+            onOpenDatabase={() => { setGoogleCalendarOpen(false); selectItem(GOOGLE_CALENDAR_DATABASE_ID); }}
+            onClose={() => setGoogleCalendarOpen(false)}
+          /></Suspense>
       )}
     </main>
   );

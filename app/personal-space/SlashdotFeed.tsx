@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "./i18n";
+import { useNearViewport } from "./useNearViewport";
 
 type SlashdotStory = {
   id: string;
@@ -22,24 +23,16 @@ type SlashdotFeedResponse = {
 
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 
-const formatStoryTime = (value: string, language: "en" | "nl") => {
+const formatStoryTime = (value: string, formatter: Intl.DateTimeFormat) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return formatter.format(date);
 };
 
-const formatFeedTime = (value: string, language: "en" | "nl") => {
+const formatFeedTime = (value: string, formatter: Intl.DateTimeFormat) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return formatter.format(date);
 };
 
 type NewsSource = "slashdot" | "tweakers" | "nos" | "bunniksnieuws";
@@ -59,6 +52,10 @@ export function SlashdotFeed({ source = "slashdot" }: { source?: NewsSource }) {
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
+  const { ref: panelRef, active } = useNearViewport<HTMLElement>();
+  const locale = language === "nl" ? "nl-NL" : "en-US";
+  const storyTimeFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }), [locale]);
+  const feedTimeFormatter = useMemo(() => new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }), [locale]);
 
   const loadFeed = useCallback(async (manual = false) => {
     requestRef.current?.abort();
@@ -66,7 +63,7 @@ export function SlashdotFeed({ source = "slashdot" }: { source?: NewsSource }) {
     requestRef.current = controller;
     if (manual) setRefreshing(true);
     try {
-      const response = await fetch(`/api/${source}`, { cache: "no-store", signal: controller.signal });
+      const response = await fetch(`/api/${source}`, { cache: manual ? "reload" : "default", signal: controller.signal });
       const body = await response.json() as SlashdotFeedResponse;
       if (requestRef.current !== controller) return;
       if (!response.ok || !body.stories?.length) throw new Error(t("overview.newsUnavailable"));
@@ -86,6 +83,7 @@ export function SlashdotFeed({ source = "slashdot" }: { source?: NewsSource }) {
   }, [t, source]);
 
   useEffect(() => {
+    if (!active) return undefined;
     const initialLoad = window.setTimeout(() => void loadFeed(), 0);
     const timer = window.setInterval(() => { if (!document.hidden) void loadFeed(); }, REFRESH_INTERVAL_MS);
     return () => {
@@ -94,12 +92,12 @@ export function SlashdotFeed({ source = "slashdot" }: { source?: NewsSource }) {
       requestRef.current?.abort();
       requestRef.current = null;
     };
-  }, [loadFeed]);
+  }, [active, loadFeed]);
 
   const stories = useMemo(() => feed?.stories.slice(0, 10) || [], [feed]);
 
   return (
-    <section className="slashdot-panel" aria-labelledby={`${source}-heading`}>
+    <section ref={panelRef} className="slashdot-panel" aria-labelledby={`${source}-heading`}>
       <div className="slashdot-heading">
         <div>
           <h2 id={`${source}-heading`}>{sourceName}</h2>
@@ -116,7 +114,7 @@ export function SlashdotFeed({ source = "slashdot" }: { source?: NewsSource }) {
       </div>
       <div className="slashdot-meta">
         <span className={`live-dot ${error ? "feed-warning" : ""}`} aria-hidden="true" />
-        <span>{feed?.fetchedAt ? t("overview.newsUpdated", { time: formatFeedTime(feed.fetchedAt, language) }) : t("overview.newsLoading")}</span>
+        <span>{feed?.fetchedAt ? t("overview.newsUpdated", { time: formatFeedTime(feed.fetchedAt, feedTimeFormatter) }) : t("overview.newsLoading")}</span>
         <span className="meta-divider">·</span>
         <a href={sourceUrl} target="_blank" rel="noreferrer">{sourceName} ↗</a>
       </div>
@@ -142,7 +140,7 @@ export function SlashdotFeed({ source = "slashdot" }: { source?: NewsSource }) {
                 <span className="story-number">{String(index + 1).padStart(2, "0")}</span>
                 <span className="story-copy">
                   <strong>{story.title}</strong>
-                  <span className="story-meta">{story.section || t("overview.newsSection")} · {formatStoryTime(story.publishedAt, language)}</span>
+                  <span className="story-meta">{story.section || t("overview.newsSection")} · {formatStoryTime(story.publishedAt, storyTimeFormatter)}</span>
                   {story.description && <span className="story-description">{story.description}</span>}
                 </span>
                 <span className="story-arrow">↗</span>

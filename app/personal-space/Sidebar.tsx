@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "./i18n";
 import { InterfaceIcon } from "./InterfaceIcon";
 import type { Item } from "./types";
@@ -56,7 +56,16 @@ export function Sidebar({
   const sidebarNavHeightRef = useRef(SIDEBAR_NAV_DEFAULT_HEIGHT);
   const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const navResizeStartRef = useRef<{ startY: number; startHeight: number } | null>(null);
-  const childrenOf = (parentId: string | null) => items.filter((item) => item.parentId === parentId);
+  const childrenByParent = useMemo(() => {
+    const grouped = new Map<string | null, Item[]>();
+    items.forEach((item) => {
+      const children = grouped.get(item.parentId);
+      if (children) children.push(item);
+      else grouped.set(item.parentId, [item]);
+    });
+    return grouped;
+  }, [items]);
+  const childrenOf = (parentId: string | null) => childrenByParent.get(parentId) || [];
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

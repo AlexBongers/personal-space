@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "./i18n";
 import { InterfaceIcon } from "./InterfaceIcon";
 import type { ParroMessagesResponse } from "./parro-types";
+import { useNearViewport } from "./useNearViewport";
 
 type Props = { compact?: boolean; onOpenParro?: () => void };
 
@@ -14,6 +15,7 @@ export function ParroInbox({ compact = false, onOpenParro }: Props) {
   const [failed, setFailed] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+  const { ref: panelRef, active } = useNearViewport<HTMLElement>();
 
   const load = useCallback(async () => {
     requestRef.current?.abort();
@@ -36,19 +38,21 @@ export function ParroInbox({ compact = false, onOpenParro }: Props) {
   }, [compact]);
 
   useEffect(() => {
+    if (!active) return undefined;
     const initial = window.setTimeout(() => void load(), 0);
     const timer = window.setInterval(() => { if (!document.hidden) void load(); }, 15 * 60 * 1000);
     return () => { window.clearTimeout(initial); window.clearInterval(timer); requestRef.current?.abort(); requestRef.current = null; };
-  }, [load]);
+  }, [active, load]);
 
   const locale = language === "nl" ? "nl-NL" : "en-US";
-  const dateFormat = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" });
-  const timeFormat = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" });
+  const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }), [locale]);
+  const timeFormat = useMemo(() => new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }), [locale]);
+  const today = new Date().toDateString();
   const connected = inbox?.state === "connected" || inbox?.state === "empty";
   const signInRequired = inbox?.state === "sign_in_required";
   const unread = inbox?.unread || 0;
 
-  return <section className={`parro-panel ${compact ? "parro-compact" : ""}`} aria-labelledby="parro-heading" aria-busy={loading}>
+  return <section ref={panelRef} className={`parro-panel ${compact ? "parro-compact" : ""}`} aria-labelledby="parro-heading" aria-busy={loading}>
     <div className="slashdot-heading">
       <h2 id="parro-heading"><InterfaceIcon name="mail" />{t("parro.title")}{connected && unread > 0 && <span className="inbox-count" aria-label={t("parro.unreadCount", { count: unread })}>{unread}</span>}</h2>
       <button type="button" className="feed-refresh" aria-label={t("parro.refresh")} disabled={loading} onClick={() => void load()}><span className={loading ? "spin" : ""}>↻</span></button>
@@ -63,7 +67,7 @@ export function ParroInbox({ compact = false, onOpenParro }: Props) {
         {inbox.messages.map((message) => {
           const date = new Date(message.publishedAt);
           const validDate = !Number.isNaN(date.getTime());
-          const sameDay = validDate && date.toDateString() === new Date().toDateString();
+          const sameDay = validDate && date.toDateString() === today;
           const context = message.sender || message.roomName || (message.kind === "announcement" ? t("parro.announcement") : t("parro.chatroom"));
           const detailsId = `parro-details-${message.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
           const expanded = expandedId === message.id;

@@ -10,6 +10,7 @@ import {
   defaultFilterOperator,
   emptyView,
   GOOGLE_CALENDAR_DATABASE_ID,
+  GOOGLE_CALENDAR_DEFAULT_ATTENDEE,
   GOOGLE_CALENDAR_PROPERTY_IDS,
   GOOGLE_TASKS_DATABASE_ID,
   GOOGLE_TASK_PROPERTY_IDS,
@@ -361,7 +362,7 @@ const safeExternalUrl = (value: string) => {
   }
 };
 
-function CalendarEventPage({ database, row, onUpdate, onBack }: { database: Database; row: Row; onUpdate: (database: Database) => void; onBack: () => void }) {
+function CalendarEventPage({ database, row, onUpdate, onBack, onDelete }: { database: Database; row: Row; onUpdate: (database: Database) => void; onBack: () => void; onDelete: () => boolean }) {
   const { t } = useLanguage();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [calendars, setCalendars] = useState<Array<{ id: string; title: string; primary: boolean }>>([]);
@@ -446,6 +447,11 @@ function CalendarEventPage({ database, row, onUpdate, onBack }: { database: Data
           aria-label={t("calendarEditor.titleLabel")}
           onChange={(event) => updateTitle(event.target.value)}
         />
+        <div className="row-editor-actions">
+          <button type="button" className="quiet-danger-button row-editor-delete" onClick={() => { if (onDelete()) onBack(); }}>
+            × {t("calendarEditor.deleteEvent")}
+          </button>
+        </div>
       </div>
 
       <div className="calendar-event-editor">
@@ -485,6 +491,21 @@ function CalendarEventPage({ database, row, onUpdate, onBack }: { database: Data
             <label className="calendar-field">
               <span className="calendar-field-label">{t("calendarEditor.location")}</span>
               <input className="calendar-editor-input" value={valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.location)} placeholder={t("calendarEditor.locationPlaceholder")} aria-label={t("calendarEditor.location")} onChange={(event) => updateValue(GOOGLE_CALENDAR_PROPERTY_IDS.location, event.target.value)} />
+            </label>
+            <label className="calendar-field">
+              <span className="calendar-field-label calendar-field-label-with-help">
+                {t("calendarEditor.attendees")}
+                <ClickTooltip label={t("database.showHelp")} text={t("calendarEditor.attendeesHint")} />
+              </span>
+              <input
+                className="calendar-editor-input"
+                type="email"
+                multiple
+                value={valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.attendees)}
+                placeholder={t("calendarEditor.attendeesPlaceholder")}
+                aria-label={t("calendarEditor.attendees")}
+                onChange={(event) => updateValue(GOOGLE_CALENDAR_PROPERTY_IDS.attendees, event.target.value)}
+              />
             </label>
             <label className="calendar-field">
               <span className="calendar-field-label">{t("calendarEditor.notes")}</span>
@@ -557,7 +578,7 @@ function CalendarEventPage({ database, row, onUpdate, onBack }: { database: Data
   );
 }
 
-function GoogleTaskPage({ database, row, onUpdate, onBack }: { database: Database; row: Row; onUpdate: (database: Database) => void; onBack: () => void }) {
+function GoogleTaskPage({ database, row, onUpdate, onBack, onDelete }: { database: Database; row: Row; onUpdate: (database: Database) => void; onBack: () => void; onDelete: () => boolean }) {
   const { t } = useLanguage();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const valueFor = (propertyId: string) => valueText(getValue(row, propertyId));
@@ -587,6 +608,11 @@ function GoogleTaskPage({ database, row, onUpdate, onBack }: { database: Databas
           aria-label={t("taskEditor.titleLabel")}
           onChange={(event) => updateTitle(event.target.value)}
         />
+        <div className="row-editor-actions">
+          <button type="button" className="quiet-danger-button row-editor-delete" onClick={() => { if (onDelete()) onBack(); }}>
+            × {t("taskEditor.deleteTask")}
+          </button>
+        </div>
       </div>
 
       <div className="calendar-event-editor">
@@ -720,6 +746,7 @@ export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewP
             ...Object.fromEntries(
               database.properties.map((entry) => [entry.id, entry.type === "checkbox" ? false : entry.type === "multi-select" ? [] : ""]),
             ),
+            ...(database.id === GOOGLE_CALENDAR_DATABASE_ID ? { [GOOGLE_CALENDAR_PROPERTY_IDS.attendees]: GOOGLE_CALENDAR_DEFAULT_ATTENDEE } : {}),
             ...initialValues,
           },
           blocks: [createBlock("paragraph")],
@@ -729,10 +756,12 @@ export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewP
     return rowId;
   };
 
-  const deleteRow = (rowId: string) => {
-    if (window.confirm(t("database.deleteRow"))) {
+  const deleteRow = (rowId: string, confirmation = t("database.deleteRow")) => {
+    if (window.confirm(confirmation)) {
       onUpdate({ ...database, rows: database.rows.filter((row) => row.id !== rowId) });
+      return true;
     }
+    return false;
   };
 
   const addFilter = () => {
@@ -760,10 +789,10 @@ export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewP
   const openRow = openRowId ? database.rows.find((row) => row.id === openRowId) : undefined;
   if (openRow) {
     if (database.id === GOOGLE_CALENDAR_DATABASE_ID) {
-      return <CalendarEventPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} />;
+      return <CalendarEventPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} onDelete={() => deleteRow(openRow.id, t("calendarEditor.deleteConfirm"))} />;
     }
     if (database.id === GOOGLE_TASKS_DATABASE_ID) {
-      return <GoogleTaskPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} />;
+      return <GoogleTaskPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} onDelete={() => deleteRow(openRow.id, t("taskEditor.deleteConfirm"))} />;
     }
     return <RowPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} />;
   }

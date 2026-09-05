@@ -48,6 +48,24 @@ export const propertyLabels: Record<PropertyType, string> = {
   url: "URL",
 };
 
+export const GOOGLE_CALENDAR_DATABASE_ID = "google-calendar";
+export const GOOGLE_CALENDAR_DEFAULT_ATTENDEE = "laurademooij@gmail.com";
+export const GOOGLE_CALENDAR_PROPERTY_IDS = {
+  status: "calendar-status",
+  start: "calendar-start",
+  end: "calendar-end",
+  allDay: "calendar-all-day",
+  calendar: "calendar-name",
+  calendarId: "calendar-id",
+  location: "calendar-location",
+  attendees: "calendar-attendees",
+  notes: "calendar-notes",
+  link: "calendar-link",
+  id: "calendar-event-id",
+  etag: "calendar-etag",
+  updated: "calendar-updated",
+} as const;
+
 export const filterOperatorLabels: Record<FilterOperator, string> = {
   contains: "contains",
   is: "is",
@@ -138,8 +156,20 @@ export const normalizeItems = (rawItems: Item[]): Item[] =>
       board: normalizeView(item.views?.board || (active.mode === "board" ? active : undefined), "board"),
       list: normalizeView(item.views?.list || (active.mode === "list" ? active : undefined), "list"),
     };
+    const properties = item.id === GOOGLE_CALENDAR_DATABASE_ID && !item.properties.some((property) => property.id === GOOGLE_CALENDAR_PROPERTY_IDS.attendees)
+      ? (() => {
+          const locationIndex = item.properties.findIndex((property) => property.id === GOOGLE_CALENDAR_PROPERTY_IDS.location);
+          const insertAt = locationIndex >= 0 ? locationIndex + 1 : item.properties.length;
+          return [
+            ...item.properties.slice(0, insertAt),
+            { id: GOOGLE_CALENDAR_PROPERTY_IDS.attendees, name: "Attendees", type: "text" as const },
+            ...item.properties.slice(insertAt),
+          ];
+        })()
+      : item.properties;
     return {
       ...item,
+      properties,
       rows: item.rows.map((row) => ({ ...row, blocks: row.blocks.map(migrateBlockCopy) })),
       view: active,
       views,
@@ -493,22 +523,6 @@ export const createGoogleTasksDatabase = (): Database => {
   };
 };
 
-export const GOOGLE_CALENDAR_DATABASE_ID = "google-calendar";
-export const GOOGLE_CALENDAR_PROPERTY_IDS = {
-  status: "calendar-status",
-  start: "calendar-start",
-  end: "calendar-end",
-  allDay: "calendar-all-day",
-  calendar: "calendar-name",
-  calendarId: "calendar-id",
-  location: "calendar-location",
-  notes: "calendar-notes",
-  link: "calendar-link",
-  id: "calendar-event-id",
-  etag: "calendar-etag",
-  updated: "calendar-updated",
-} as const;
-
 export const createGoogleCalendarDatabase = (): Database => {
   const properties: Property[] = [
     {
@@ -527,6 +541,7 @@ export const createGoogleCalendarDatabase = (): Database => {
     { id: GOOGLE_CALENDAR_PROPERTY_IDS.calendar, name: "Calendar", type: "text" },
     { id: GOOGLE_CALENDAR_PROPERTY_IDS.calendarId, name: "Calendar ID", type: "text" },
     { id: GOOGLE_CALENDAR_PROPERTY_IDS.location, name: "Location", type: "text" },
+    { id: GOOGLE_CALENDAR_PROPERTY_IDS.attendees, name: "Attendees", type: "text" },
     { id: GOOGLE_CALENDAR_PROPERTY_IDS.notes, name: "Notes", type: "text" },
     { id: GOOGLE_CALENDAR_PROPERTY_IDS.link, name: "Google link", type: "url" },
     { id: GOOGLE_CALENDAR_PROPERTY_IDS.id, name: "Google ID", type: "text" },

@@ -39,6 +39,7 @@ type GoogleCalendarEvent = {
   htmlLink?: string;
   etag?: string;
   updated?: string;
+  attendees?: Array<{ email?: string }>;
   start?: { date?: string; dateTime?: string; timeZone?: string };
   end?: { date?: string; dateTime?: string; timeZone?: string };
 };
@@ -204,8 +205,24 @@ type GoogleCalendarPayload = {
   summary: string;
   description?: string;
   location?: string;
+  attendees?: Array<{ email: string }>;
   start: { date: string } | { dateTime: string };
   end: { date: string } | { dateTime: string };
+};
+
+const attendeeValues = (value: string) => {
+  const seen = new Set<string>();
+  return value
+    .split(/[,;\n]+/)
+    .map((email) => email.trim())
+    .filter((email) => {
+      if (!email) return false;
+      const normalized = email.toLowerCase();
+      if (seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    })
+    .map((email) => ({ email }));
 };
 
 export const googleCalendarPayload = (row: Row): GoogleCalendarPayload | null => {
@@ -218,10 +235,12 @@ export const googleCalendarPayload = (row: Row): GoogleCalendarPayload | null =>
   if (!startValue || !endValue) return null;
   const description = textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.notes).trim();
   const location = textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.location).trim();
+  const attendees = attendeeValues(textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.attendees));
   return {
     summary: row.title.trim() || "Untitled event",
     ...(description ? { description } : {}),
     ...(location ? { location } : {}),
+    ...(attendees.length ? { attendees } : {}),
     start: allDay ? { date: startValue } : { dateTime: startValue },
     end: allDay ? { date: endValue } : { dateTime: endValue },
   };
@@ -243,6 +262,7 @@ export const googleCalendarToRow = (event: GoogleCalendarEvent, calendar: Google
       [GOOGLE_CALENDAR_PROPERTY_IDS.calendar]: calendar.summary || calendar.id,
       [GOOGLE_CALENDAR_PROPERTY_IDS.calendarId]: calendar.id,
       [GOOGLE_CALENDAR_PROPERTY_IDS.location]: event.location || "",
+      [GOOGLE_CALENDAR_PROPERTY_IDS.attendees]: event.attendees?.map((attendee) => attendee.email?.trim()).filter((email): email is string => Boolean(email)).join(", ") || "",
       [GOOGLE_CALENDAR_PROPERTY_IDS.notes]: event.description || "",
       [GOOGLE_CALENDAR_PROPERTY_IDS.link]: event.htmlLink || "",
       [GOOGLE_CALENDAR_PROPERTY_IDS.id]: event.id,
@@ -254,13 +274,13 @@ export const googleCalendarToRow = (event: GoogleCalendarEvent, calendar: Google
 };
 
 const insertEvent = (token: string, calendarId: string, payload: GoogleCalendarPayload) => apiJson<GoogleCalendarEvent>(
-  `${CALENDAR_API_URL}/calendars/${encodeURIComponent(calendarId)}/events`,
+  `${CALENDAR_API_URL}/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all`,
   token,
   { method: "POST", body: JSON.stringify(payload) },
 );
 
 const updateEvent = (token: string, calendarId: string, eventId: string, payload: GoogleCalendarPayload) => apiJson<GoogleCalendarEvent>(
-  `${CALENDAR_API_URL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+  `${CALENDAR_API_URL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?sendUpdates=all`,
   token,
   { method: "PUT", body: JSON.stringify(payload) },
 );

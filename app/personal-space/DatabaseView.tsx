@@ -10,6 +10,7 @@ import {
   defaultFilterOperator,
   emptyView,
   GOOGLE_CALENDAR_DATABASE_ID,
+  GOOGLE_CALENDAR_PROPERTY_IDS,
   GOOGLE_TASKS_DATABASE_ID,
   GOOGLE_TASK_PROPERTY_IDS,
   getValue,
@@ -318,6 +319,199 @@ function RowPage({ database, row, onUpdate, onBack }: { database: Database; row:
   );
 }
 
+const isUntitledRow = (title: string) => title === "Untitled row" || title === "Rij zonder titel";
+
+function calendarDateParts(value: string) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return { date: value, time: "" };
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return {
+      date: /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : "",
+      time: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) ? value.slice(11, 16) : "",
+    };
+  }
+  const date = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+  return { date, time: value.includes("T") ? `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}` : "" };
+}
+
+const calendarDateTimeInput = (value: string) => {
+  const parts = calendarDateParts(value);
+  return parts.date && parts.time ? `${parts.date}T${parts.time}` : "";
+};
+
+const calendarDateTimeValue = (value: string) => {
+  if (!value) return "";
+  const parsed = new Date(`${value}:00`);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+};
+
+const shiftCalendarDate = (value: string, amount: number) => {
+  const date = new Date(`${value}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) return "";
+  date.setUTCDate(date.getUTCDate() + amount);
+  return date.toISOString().slice(0, 10);
+};
+
+const safeExternalUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+};
+
+function CalendarEventPage({ database, row, onUpdate, onBack }: { database: Database; row: Row; onUpdate: (database: Database) => void; onBack: () => void }) {
+  const { t } = useLanguage();
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const valueFor = (propertyId: string) => valueText(getValue(row, propertyId));
+  const allDay = Boolean(getValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.allDay));
+  const startValue = valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.start);
+  const endValue = valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.end);
+  const startParts = calendarDateParts(startValue);
+  const endParts = calendarDateParts(endValue);
+  const inclusiveEnd = allDay && endParts.date ? shiftCalendarDate(endParts.date, -1) : endParts.date;
+  const statusProperty = database.properties.find((property) => property.id === GOOGLE_CALENDAR_PROPERTY_IDS.status);
+  const link = safeExternalUrl(valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.link));
+
+  const updateValues = (values: Record<string, CellValue>) => onUpdate({
+    ...database,
+    rows: database.rows.map((entry) => entry.id === row.id ? { ...entry, values: { ...entry.values, ...values } } : entry),
+  });
+  const updateValue = (propertyId: string, value: CellValue) => updateValues({ [propertyId]: value });
+  const updateTitle = (title: string) => onUpdate({
+    ...database,
+    rows: database.rows.map((entry) => entry.id === row.id ? { ...entry, title } : entry),
+  });
+  const toggleAllDay = (nextAllDay: boolean) => {
+    if (nextAllDay) {
+      const date = startParts.date || new Date().toISOString().slice(0, 10);
+      updateValues({
+        [GOOGLE_CALENDAR_PROPERTY_IDS.allDay]: true,
+        [GOOGLE_CALENDAR_PROPERTY_IDS.start]: date,
+        [GOOGLE_CALENDAR_PROPERTY_IDS.end]: shiftCalendarDate(endParts.date || date, 1),
+      });
+      return;
+    }
+    const date = startParts.date || new Date().toISOString().slice(0, 10);
+    const startTime = startParts.time || "09:00";
+    const endDate = endParts.date || date;
+    const endTime = endParts.time || "10:00";
+    updateValues({
+      [GOOGLE_CALENDAR_PROPERTY_IDS.allDay]: false,
+      [GOOGLE_CALENDAR_PROPERTY_IDS.start]: calendarDateTimeValue(`${date}T${startTime}`),
+      [GOOGLE_CALENDAR_PROPERTY_IDS.end]: calendarDateTimeValue(`${endDate}T${endTime}`),
+    });
+  };
+
+  return (
+    <div className="row-page calendar-event-page">
+      <button className="back-link" onClick={onBack}>← {t("database.backTo", { title: database.title })}</button>
+      <div className="row-page-heading calendar-event-heading">
+        <span className="page-kicker">{t("calendarEditor.eyebrow")}</span>
+        <input
+          className="row-title-input"
+          value={isUntitledRow(row.title) ? "" : row.title}
+          placeholder={t("calendarEditor.titlePlaceholder")}
+          aria-label={t("calendarEditor.titleLabel")}
+          onChange={(event) => updateTitle(event.target.value)}
+        />
+      </div>
+
+      <div className="calendar-event-editor">
+        <section className="calendar-event-card">
+          <div className="calendar-editor-section-heading">
+            <span className="page-kicker">{t("calendarEditor.details")}</span>
+            <h2>{t("calendarEditor.when")}</h2>
+          </div>
+          <div className="calendar-event-fields">
+            <label className="calendar-all-day-toggle">
+              <input type="checkbox" checked={allDay} onChange={(event) => toggleAllDay(event.target.checked)} />
+              <span><strong>{t("calendarEditor.allDay")}</strong><small>{t("calendarEditor.allDayHint")}</small></span>
+            </label>
+            {allDay ? (
+              <div className="calendar-event-datetime-grid">
+                <label className="calendar-field">
+                  <span className="calendar-field-label">{t("calendarEditor.starts")}</span>
+                  <input type="date" value={startParts.date} aria-label={t("calendarEditor.starts")} onChange={(event) => updateValue(GOOGLE_CALENDAR_PROPERTY_IDS.start, event.target.value)} />
+                </label>
+                <label className="calendar-field">
+                  <span className="calendar-field-label">{t("calendarEditor.ends")}</span>
+                  <input type="date" value={inclusiveEnd} min={startParts.date || undefined} aria-label={t("calendarEditor.ends")} onChange={(event) => updateValue(GOOGLE_CALENDAR_PROPERTY_IDS.end, event.target.value ? shiftCalendarDate(event.target.value, 1) : "")} />
+                </label>
+              </div>
+            ) : (
+              <div className="calendar-event-datetime-grid">
+                <label className="calendar-field">
+                  <span className="calendar-field-label">{t("calendarEditor.starts")}</span>
+                  <input type="datetime-local" value={calendarDateTimeInput(startValue)} aria-label={t("calendarEditor.starts")} onChange={(event) => updateValue(GOOGLE_CALENDAR_PROPERTY_IDS.start, calendarDateTimeValue(event.target.value))} />
+                </label>
+                <label className="calendar-field">
+                  <span className="calendar-field-label">{t("calendarEditor.ends")}</span>
+                  <input type="datetime-local" value={calendarDateTimeInput(endValue)} min={calendarDateTimeInput(startValue) || undefined} aria-label={t("calendarEditor.ends")} onChange={(event) => updateValue(GOOGLE_CALENDAR_PROPERTY_IDS.end, calendarDateTimeValue(event.target.value))} />
+                </label>
+              </div>
+            )}
+            <label className="calendar-field">
+              <span className="calendar-field-label">{t("calendarEditor.location")}</span>
+              <input className="calendar-editor-input" value={valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.location)} placeholder={t("calendarEditor.locationPlaceholder")} aria-label={t("calendarEditor.location")} onChange={(event) => updateValue(GOOGLE_CALENDAR_PROPERTY_IDS.location, event.target.value)} />
+            </label>
+            <label className="calendar-field">
+              <span className="calendar-field-label">{t("calendarEditor.notes")}</span>
+              <textarea className="calendar-editor-input calendar-editor-notes" rows={5} value={valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.notes)} placeholder={t("calendarEditor.notesPlaceholder")} aria-label={t("calendarEditor.notes")} onChange={(event) => updateValue(GOOGLE_CALENDAR_PROPERTY_IDS.notes, event.target.value)} />
+            </label>
+          </div>
+        </section>
+
+        <section className="calendar-event-card calendar-target-card">
+          <div className="calendar-editor-section-heading">
+            <span className="page-kicker">{t("calendarEditor.destination")}</span>
+            <h2>{t("calendarEditor.calendar")}</h2>
+          </div>
+          <label className="calendar-field">
+            <span className="calendar-field-label calendar-field-label-with-help">
+              {t("calendarEditor.calendar")}
+              <ClickTooltip label={t("database.showHelp")} text={t("calendarEditor.calendarHint")} />
+            </span>
+            <input className="calendar-editor-input" value={valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.calendar)} placeholder={t("calendarEditor.calendarPlaceholder")} aria-label={t("calendarEditor.calendar")} onChange={(event) => updateValue(GOOGLE_CALENDAR_PROPERTY_IDS.calendar, event.target.value)} />
+          </label>
+          <p className="calendar-editor-help">{t("calendarEditor.calendarHint")}</p>
+        </section>
+
+        <section className="calendar-event-advanced">
+          <button type="button" className="calendar-advanced-toggle" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((open) => !open)}>
+            <span>{advancedOpen ? "⌄" : "›"}</span>
+            <span><strong>{t("calendarEditor.advanced")}</strong><small>{t("calendarEditor.advancedHint")}</small></span>
+          </button>
+          {advancedOpen && (
+            <div className="calendar-advanced-content">
+              {statusProperty && (
+                <div className="calendar-editor-status">
+                  <span className="calendar-field-label">{t("calendarEditor.status")}</span>
+                  <PropertyCell property={statusProperty} value={getValue(row, statusProperty.id)} onChange={(value) => updateValue(statusProperty.id, value)} />
+                </div>
+              )}
+              <label className="calendar-field">
+                <span className="calendar-field-label">{t("calendarEditor.calendarId")}</span>
+                <input className="calendar-editor-input" value={valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.calendarId)} placeholder={t("calendarEditor.notAvailable")} aria-label={t("calendarEditor.calendarId")} onChange={(event) => updateValue(GOOGLE_CALENDAR_PROPERTY_IDS.calendarId, event.target.value)} />
+              </label>
+              <div className="calendar-readonly-grid">
+                <div><span className="calendar-field-label">{t("calendarEditor.eventId")}</span><code>{valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.id) || t("calendarEditor.notAvailable")}</code></div>
+                <div><span className="calendar-field-label">{t("calendarEditor.updated")}</span><code>{valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.updated) || t("calendarEditor.notAvailable")}</code></div>
+              </div>
+              {link && <a className="calendar-event-link" href={link} target="_blank" rel="noreferrer">{t("calendarEditor.openGoogleEvent")} ↗</a>}
+            </div>
+          )}
+        </section>
+      </div>
+      <BlockEditor item={row} onChange={(blocks) => onUpdate({
+        ...database,
+        rows: database.rows.map((entry) => entry.id === row.id ? { ...entry, blocks } : entry),
+      })} />
+    </div>
+  );
+}
+
 export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewProps) {
   const { t } = useLanguage();
   const [openRowId, setOpenRowId] = useState<string | null>(initialRowId || null);
@@ -417,6 +611,9 @@ export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewP
 
   const openRow = openRowId ? database.rows.find((row) => row.id === openRowId) : undefined;
   if (openRow) {
+    if (database.id === GOOGLE_CALENDAR_DATABASE_ID) {
+      return <CalendarEventPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} />;
+    }
     return <RowPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} />;
   }
 

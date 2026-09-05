@@ -73,7 +73,7 @@ async function fixture(t: TestContext, service: "tasks" | "calendar") {
       if (behavior.loseResponse) throw new TypeError("Simulated lost response");
       return Response.json(result);
     }
-    if (url.pathname.endsWith("/tasks") || url.pathname.endsWith("/events")) return Response.json({ items: behavior.hideFromList ? [] : [...remote.values()] });
+    if (url.pathname.endsWith("/tasks") || url.pathname.endsWith("/events")) return Response.json({ items: behavior.hideFromList ? [] : [...remote.values()].filter((value) => !value.hiddenFromList) });
     const id = decodeURIComponent(url.pathname.split("/").at(-1)!);
     if (method === "DELETE") { remote.delete(id); return new Response(null, { status: 204 }); }
     const existing = remote.get(id);
@@ -221,6 +221,33 @@ test("calendar: an edited event outside the list window is updated, never recrea
   assert.equal(f.creates(), 0);
   assert.equal(f.remote.get("existing")?.summary, "Edited old event");
   assert.equal(result.body.workspace.items[0].rows.length, 1);
+});
+
+test("calendar: recurring instances inherit the recurrence rule from their series", async (t) => {
+  const f = await fixture(t, "calendar");
+  f.integration.rows = [];
+  f.remote.set("instance-1", {
+    id: "instance-1",
+    recurringEventId: "series-1",
+    summary: "Weekly planning",
+    start: { date: "2026-09-07" },
+    end: { date: "2026-09-08" },
+    etag: "instance-etag",
+    updated: "2026-09-04T12:00:00Z",
+  });
+  f.remote.set("series-1", {
+    id: "series-1",
+    recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO"],
+    attendees: [{ email: "laurademooij@gmail.com" }, { email: "guest@example.com" }],
+    hiddenFromList: true,
+  });
+
+  const result = await f.run();
+  assert.equal(result.status, 200);
+  const row = result.body.workspace.items[0].rows[0];
+  assert.equal(row.values[GOOGLE_CALENDAR_PROPERTY_IDS.recurrence], "RRULE:FREQ=WEEKLY;BYDAY=MO");
+  assert.equal(row.values[GOOGLE_CALENDAR_PROPERTY_IDS.attendees], "laurademooij@gmail.com, guest@example.com");
+  assert.ok(f.requests.some((request) => request.method === "GET" && request.path.endsWith("/events/series-1")));
 });
 
 test("an expired sync lease cannot resume writing after another sync owns the lock", async () => {

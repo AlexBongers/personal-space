@@ -41,6 +41,7 @@ type GoogleCalendarEvent = {
   updated?: string;
   attendees?: Array<{ email?: string }>;
   recurrence?: string[];
+  recurringEventId?: string;
   start?: { date?: string; dateTime?: string; timeZone?: string };
   end?: { date?: string; dateTime?: string; timeZone?: string };
 };
@@ -158,6 +159,56 @@ const listCalendars = async (token: string) => {
   return calendars;
 };
 
+const mapConcurrent = async <T, R>(values: T[], mapper: (value: T) => Promise<R>, concurrency = 6) => {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= values.length) return;
+      results[index] = await mapper(values[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, worker));
+  return results;
+};
+
+const hydrateRecurringEvents = async (token: string, calendarId: string, events: GoogleCalendarEvent[]) => {
+  const masterIds = [...new Set(events
+    .map((event) => event.recurringEventId)
+    .filter((eventId): eventId is string => Boolean(eventId)))];
+  if (!masterIds.length) return events;
+
+  const masters = await mapConcurrent(masterIds, async (eventId) => {
+    try {
+      return await apiJson<GoogleCalendarEvent>(
+        `${CALENDAR_API_URL}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?fields=id,recurrence,attendees`,
+        token,
+      );
+    } catch (error) {
+      // A deleted series can still leave an instance in the expansion window.
+      // Keep that instance usable instead of failing the complete calendar sync.
+      if (error instanceof GoogleCalendarError && (error.status === 404 || error.status === 410)) return null;
+      throw error;
+    }
+  });
+  const masterById = new Map(
+    masters
+      .filter((master): master is GoogleCalendarEvent => Boolean(master?.id && (master.recurrence?.length || master.attendees !== undefined)))
+      .map((master) => [master.id, master] as const),
+  );
+
+  return events.map((event) => {
+    const master = event.recurringEventId ? masterById.get(event.recurringEventId) : undefined;
+    if (!master) return event;
+    return {
+      ...event,
+      ...(event.recurrence?.length ? {} : master.recurrence?.length ? { recurrence: master.recurrence } : {}),
+      ...(event.attendees === undefined && master.attendees ? { attendees: master.attendees } : {}),
+    };
+  });
+};
+
 const listEvents = async (token: string, calendarId: string) => {
   const events: GoogleCalendarEvent[] = [];
   let pageToken = "";
@@ -178,7 +229,7 @@ const listEvents = async (token: string, calendarId: string) => {
     events.push(...(result.items || []));
     pageToken = result.nextPageToken || "";
   } while (pageToken);
-  return events;
+  return hydrateRecurringEvents(token, calendarId, events);
 };
 
 const textValue = (row: Row, id: string) => {

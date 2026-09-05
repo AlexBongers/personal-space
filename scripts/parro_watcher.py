@@ -116,7 +116,7 @@ def load_sync_env() -> None:
     for line in lines:
         key, separator, value = line.partition("=")
         key = key.strip()
-        if separator and key in {"PARRO_SYNC_URL", "PARRO_SYNC_TOKEN"} and key not in os.environ:
+        if separator and key in {"PARRO_SYNC_URL", "PARRO_SYNC_TOKEN", "PARRO_SITE_BYPASS_TOKEN"} and key not in os.environ:
             os.environ[key] = value.strip().strip("\"'")
 
 
@@ -207,18 +207,27 @@ def sync_url_is_safe(value: str) -> bool:
     return parsed.scheme == "https" or (parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"})
 
 
-def send_snapshot(url: str, token: str, messages: List[Dict[str, Any]], synced_at: str) -> None:
+def send_snapshot(
+    url: str,
+    token: str,
+    messages: List[Dict[str, Any]],
+    synced_at: str,
+    site_bypass_token: str = "",
+) -> None:
     if not sync_url_is_safe(url):
         raise RuntimeError("PARRO_SYNC_URL must use HTTPS")
     payload = json.dumps({"replace": True, "syncedAt": synced_at, "messages": messages}, ensure_ascii=False).encode("utf-8")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "User-Agent": "Personal-Space-Parro-Sync/1.0",
+    }
+    if site_bypass_token:
+        headers["OAI-Sites-Authorization"] = f"Bearer {site_bypass_token}"
     request = urllib.request.Request(
         url,
         data=payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "User-Agent": "Personal-Space-Parro-Sync/1.0",
-        },
+        headers=headers,
         method="POST",
     )
     try:
@@ -233,6 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Sync Parro announcements and unread chatrooms to Personal Space.")
     parser.add_argument("--sync-url", default=os.environ.get("PARRO_SYNC_URL", ""))
     parser.add_argument("--sync-token", default=os.environ.get("PARRO_SYNC_TOKEN", ""))
+    parser.add_argument("--site-bypass-token", default=os.environ.get("PARRO_SITE_BYPASS_TOKEN", ""))
     return parser
 
 
@@ -281,7 +291,7 @@ def main() -> int:
     if arguments.sync_url:
         if not arguments.sync_token:
             raise RuntimeError("PARRO_SYNC_TOKEN is required when PARRO_SYNC_URL is set")
-        send_snapshot(arguments.sync_url, arguments.sync_token, messages, synced_at)
+        send_snapshot(arguments.sync_url, arguments.sync_token, messages, synced_at, arguments.site_bypass_token)
 
     announcement_ts = "" if newest_announcement == datetime.min.replace(tzinfo=timezone.utc) else newest_announcement.isoformat().replace("+00:00", "Z")
     save_state({"announcement_ts": announcement_ts, "chatrooms": next_chatroom_state})

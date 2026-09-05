@@ -101,7 +101,9 @@ where the watcher runs. D1 stores the latest sanitized snapshot so the overview 
 Use the current Parro CLI with Python 3.11 or newer and `uvx` on the watcher host.
 
 Configure a strong `PARRO_SYNC_TOKEN` as a private Sites runtime secret and set the same value as
-an environment variable on the Hermes/QNAP host. Then set `PARRO_SYNC_URL` there to:
+an environment variable on the Hermes/QNAP host. Because the site is owner-only, also set the
+Sites-generated `PARRO_SITE_BYPASS_TOKEN` there. This is a Sites gateway credential, not a Parro
+credential. Then set `PARRO_SYNC_URL` there to:
 
 ```text
 https://personal-space.a-a-t-bongers.chatgpt.site/api/parro/sync
@@ -112,12 +114,14 @@ Run the watcher on a schedule, for example every 15 minutes:
 ```bash
 PARRO_SYNC_URL='https://personal-space.a-a-t-bongers.chatgpt.site/api/parro/sync' \
 PARRO_SYNC_TOKEN='use-the-same-private-token' \
+PARRO_SITE_BYPASS_TOKEN='use-the-sites-gateway-token' \
 python3 scripts/parro_watcher.py
 ```
 
-For a cron job that cannot inherit a shell environment, place those two variables in the
+For a cron job that cannot inherit a shell environment, place these three variables in the
 owner-only file `~/.config/parro/personal-space-sync.env`; the watcher loads that file
-automatically. Do not put Parro username/password or access tokens in this file.
+automatically. Do not put Parro username/password, Parro access tokens or other Parro session
+data in this file.
 
 The watcher does not print message content. A successful run replaces the stored snapshot in one
 protected D1 batch so a failed Parro read cannot overwrite a working overview. The existing

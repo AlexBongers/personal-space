@@ -40,6 +40,7 @@ type GoogleCalendarEvent = {
   etag?: string;
   updated?: string;
   attendees?: Array<{ email?: string }>;
+  recurrence?: string[];
   start?: { date?: string; dateTime?: string; timeZone?: string };
   end?: { date?: string; dateTime?: string; timeZone?: string };
 };
@@ -206,6 +207,7 @@ type GoogleCalendarPayload = {
   description?: string;
   location?: string;
   attendees?: Array<{ email: string }>;
+  recurrence?: string[];
   start: { date: string } | { dateTime: string };
   end: { date: string } | { dateTime: string };
 };
@@ -225,6 +227,11 @@ const attendeeValues = (value: string) => {
     .map((email) => ({ email }));
 };
 
+const recurrenceValues = (value: string) => value
+  .split(/\r?\n/)
+  .map((entry) => entry.trim())
+  .filter(Boolean);
+
 export const googleCalendarPayload = (row: Row): GoogleCalendarPayload | null => {
   const start = textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.start).trim();
   const end = textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.end).trim();
@@ -236,11 +243,13 @@ export const googleCalendarPayload = (row: Row): GoogleCalendarPayload | null =>
   const description = textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.notes).trim();
   const location = textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.location).trim();
   const attendees = attendeeValues(textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.attendees));
+  const recurrence = recurrenceValues(textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.recurrence));
   return {
     summary: row.title.trim() || "Untitled event",
     ...(description ? { description } : {}),
     ...(location ? { location } : {}),
     ...(attendees.length ? { attendees } : {}),
+    ...(recurrence.length ? { recurrence } : {}),
     start: allDay ? { date: startValue } : { dateTime: startValue },
     end: allDay ? { date: endValue } : { dateTime: endValue },
   };
@@ -263,6 +272,7 @@ export const googleCalendarToRow = (event: GoogleCalendarEvent, calendar: Google
       [GOOGLE_CALENDAR_PROPERTY_IDS.calendarId]: calendar.id,
       [GOOGLE_CALENDAR_PROPERTY_IDS.location]: event.location || "",
       [GOOGLE_CALENDAR_PROPERTY_IDS.attendees]: event.attendees?.map((attendee) => attendee.email?.trim()).filter((email): email is string => Boolean(email)).join(", ") || "",
+      [GOOGLE_CALENDAR_PROPERTY_IDS.recurrence]: event.recurrence?.join("\n") || "",
       [GOOGLE_CALENDAR_PROPERTY_IDS.notes]: event.description || "",
       [GOOGLE_CALENDAR_PROPERTY_IDS.link]: event.htmlLink || "",
       [GOOGLE_CALENDAR_PROPERTY_IDS.id]: event.id,

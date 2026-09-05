@@ -59,6 +59,7 @@ export const GOOGLE_CALENDAR_PROPERTY_IDS = {
   calendarId: "calendar-id",
   location: "calendar-location",
   attendees: "calendar-attendees",
+  recurrence: "calendar-recurrence",
   notes: "calendar-notes",
   link: "calendar-link",
   id: "calendar-event-id",
@@ -156,15 +157,21 @@ export const normalizeItems = (rawItems: Item[]): Item[] =>
       board: normalizeView(item.views?.board || (active.mode === "board" ? active : undefined), "board"),
       list: normalizeView(item.views?.list || (active.mode === "list" ? active : undefined), "list"),
     };
-    const properties = item.id === GOOGLE_CALENDAR_DATABASE_ID && !item.properties.some((property) => property.id === GOOGLE_CALENDAR_PROPERTY_IDS.attendees)
+    const calendarProperties = item.id === GOOGLE_CALENDAR_DATABASE_ID
+      ? [
+          ...(!item.properties.some((property) => property.id === GOOGLE_CALENDAR_PROPERTY_IDS.attendees)
+            ? [{ id: GOOGLE_CALENDAR_PROPERTY_IDS.attendees, name: "Attendees", type: "text" as const }]
+            : []),
+          ...(!item.properties.some((property) => property.id === GOOGLE_CALENDAR_PROPERTY_IDS.recurrence)
+            ? [{ id: GOOGLE_CALENDAR_PROPERTY_IDS.recurrence, name: "Repeat", type: "text" as const }]
+            : []),
+        ]
+      : [];
+    const properties = calendarProperties.length
       ? (() => {
           const locationIndex = item.properties.findIndex((property) => property.id === GOOGLE_CALENDAR_PROPERTY_IDS.location);
           const insertAt = locationIndex >= 0 ? locationIndex + 1 : item.properties.length;
-          return [
-            ...item.properties.slice(0, insertAt),
-            { id: GOOGLE_CALENDAR_PROPERTY_IDS.attendees, name: "Attendees", type: "text" as const },
-            ...item.properties.slice(insertAt),
-          ];
+          return [...item.properties.slice(0, insertAt), ...calendarProperties, ...item.properties.slice(insertAt)];
         })()
       : item.properties;
     return {
@@ -542,6 +549,7 @@ export const createGoogleCalendarDatabase = (): Database => {
     { id: GOOGLE_CALENDAR_PROPERTY_IDS.calendarId, name: "Calendar ID", type: "text" },
     { id: GOOGLE_CALENDAR_PROPERTY_IDS.location, name: "Location", type: "text" },
     { id: GOOGLE_CALENDAR_PROPERTY_IDS.attendees, name: "Attendees", type: "text" },
+    { id: GOOGLE_CALENDAR_PROPERTY_IDS.recurrence, name: "Repeat", type: "text" },
     { id: GOOGLE_CALENDAR_PROPERTY_IDS.notes, name: "Notes", type: "text" },
     { id: GOOGLE_CALENDAR_PROPERTY_IDS.link, name: "Google link", type: "url" },
     { id: GOOGLE_CALENDAR_PROPERTY_IDS.id, name: "Google ID", type: "text" },

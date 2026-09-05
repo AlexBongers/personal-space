@@ -319,7 +319,7 @@ function RowPage({ database, row, onUpdate, onBack }: { database: Database; row:
   );
 }
 
-const isUntitledRow = (title: string) => title === "Untitled row" || title === "Rij zonder titel";
+const isUntitledRow = (title: string) => ["Untitled row", "Rij zonder titel", "Untitled task", "Naamloze taak", "Untitled event", "Naamloze afspraak"].includes(title);
 
 function calendarDateParts(value: string) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return { date: value, time: "" };
@@ -512,6 +512,109 @@ function CalendarEventPage({ database, row, onUpdate, onBack }: { database: Data
   );
 }
 
+function GoogleTaskPage({ database, row, onUpdate, onBack }: { database: Database; row: Row; onUpdate: (database: Database) => void; onBack: () => void }) {
+  const { t } = useLanguage();
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const valueFor = (propertyId: string) => valueText(getValue(row, propertyId));
+  const statusProperty = database.properties.find((property) => property.id === GOOGLE_TASK_PROPERTY_IDS.status);
+  const link = safeExternalUrl(valueFor(GOOGLE_TASK_PROPERTY_IDS.link));
+  const taskLists = [...new Set(database.rows.map((entry) => valueText(getValue(entry, GOOGLE_TASK_PROPERTY_IDS.list)).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+  const updateValues = (values: Record<string, CellValue>) => onUpdate({
+    ...database,
+    rows: database.rows.map((entry) => entry.id === row.id ? { ...entry, values: { ...entry.values, ...values } } : entry),
+  });
+  const updateValue = (propertyId: string, value: CellValue) => updateValues({ [propertyId]: value });
+  const updateTitle = (title: string) => onUpdate({
+    ...database,
+    rows: database.rows.map((entry) => entry.id === row.id ? { ...entry, title } : entry),
+  });
+
+  return (
+    <div className="row-page task-editor-page">
+      <button className="back-link" onClick={onBack}>← {t("database.backTo", { title: database.title })}</button>
+      <div className="row-page-heading task-editor-heading">
+        <span className="page-kicker">{t("taskEditor.eyebrow")}</span>
+        <input
+          className="row-title-input"
+          value={isUntitledRow(row.title) ? "" : row.title}
+          placeholder={t("taskEditor.titlePlaceholder")}
+          aria-label={t("taskEditor.titleLabel")}
+          onChange={(event) => updateTitle(event.target.value)}
+        />
+      </div>
+
+      <div className="calendar-event-editor">
+        <section className="calendar-event-card task-editor-card">
+          <div className="calendar-editor-section-heading">
+            <span className="page-kicker">{t("taskEditor.details")}</span>
+            <h2>{t("taskEditor.task")}</h2>
+          </div>
+          <div className="calendar-event-fields">
+            <div className="task-editor-status-row">
+              <span className="calendar-field-label calendar-field-label-with-help">
+                {t("taskEditor.status")}
+                <ClickTooltip label={t("database.showHelp")} text={t("database.googleStatusHelp")} />
+              </span>
+              {statusProperty && <PropertyCell property={statusProperty} value={getValue(row, statusProperty.id)} onChange={(value) => updateValue(statusProperty.id, value)} />}
+            </div>
+            <label className="calendar-field">
+              <span className="calendar-field-label">{t("taskEditor.due")}</span>
+              <input className="calendar-editor-input" type="date" value={valueFor(GOOGLE_TASK_PROPERTY_IDS.due)} aria-label={t("taskEditor.due")} onChange={(event) => updateValue(GOOGLE_TASK_PROPERTY_IDS.due, event.target.value)} />
+            </label>
+            <label className="calendar-field">
+              <span className="calendar-field-label">{t("taskEditor.notes")}</span>
+              <textarea className="calendar-editor-input calendar-editor-notes" rows={5} value={valueFor(GOOGLE_TASK_PROPERTY_IDS.notes)} placeholder={t("taskEditor.notesPlaceholder")} aria-label={t("taskEditor.notes")} onChange={(event) => updateValue(GOOGLE_TASK_PROPERTY_IDS.notes, event.target.value)} />
+            </label>
+          </div>
+        </section>
+
+        <section className="calendar-event-card task-target-card">
+          <div className="calendar-editor-section-heading">
+            <span className="page-kicker">{t("taskEditor.destination")}</span>
+            <h2>{t("taskEditor.list")}</h2>
+          </div>
+          <label className="calendar-field">
+            <span className="calendar-field-label calendar-field-label-with-help">
+              {t("taskEditor.list")}
+              <ClickTooltip label={t("database.showHelp")} text={t("database.googleListHelp")} />
+            </span>
+            <input className="calendar-editor-input" list={`google-task-lists-${row.id}`} value={valueFor(GOOGLE_TASK_PROPERTY_IDS.list)} placeholder={t("taskEditor.listPlaceholder")} aria-label={t("taskEditor.list")} onChange={(event) => updateValue(GOOGLE_TASK_PROPERTY_IDS.list, event.target.value)} />
+            <datalist id={`google-task-lists-${row.id}`}>
+              {taskLists.map((list) => <option value={list} key={list} />)}
+            </datalist>
+          </label>
+          <p className="calendar-editor-help">{t("taskEditor.listHint")}</p>
+        </section>
+
+        <section className="calendar-event-advanced">
+          <button type="button" className="calendar-advanced-toggle" aria-expanded={advancedOpen} onClick={() => setAdvancedOpen((open) => !open)}>
+            <span>{advancedOpen ? "⌄" : "›"}</span>
+            <span><strong>{t("taskEditor.advanced")}</strong><small>{t("taskEditor.advancedHint")}</small></span>
+          </button>
+          {advancedOpen && (
+            <div className="calendar-advanced-content">
+              <div className="calendar-readonly-grid">
+                <div><span className="calendar-field-label">{t("taskEditor.googleId")}</span><code>{valueFor(GOOGLE_TASK_PROPERTY_IDS.id) || t("taskEditor.notAvailable")}</code></div>
+                <div><span className="calendar-field-label">{t("taskEditor.position")}</span><code>{valueFor(GOOGLE_TASK_PROPERTY_IDS.position) || t("taskEditor.notAvailable")}</code></div>
+              </div>
+              <div className="calendar-readonly-grid">
+                <div><span className="calendar-field-label calendar-field-label-with-help">{t("taskEditor.parent") }<ClickTooltip label={t("database.showHelp")} text={t("database.googleParentHelp")} /></span><code>{valueFor(GOOGLE_TASK_PROPERTY_IDS.parent) || t("taskEditor.notAvailable")}</code></div>
+                <div><span className="calendar-field-label">{t("taskEditor.syncState")}</span><code>{t("taskEditor.syncStateValue")}</code></div>
+              </div>
+              {link && <a className="calendar-event-link" href={link} target="_blank" rel="noreferrer">{t("taskEditor.openGoogleTask")} ↗</a>}
+            </div>
+          )}
+        </section>
+      </div>
+      <BlockEditor item={row} onChange={(blocks) => onUpdate({
+        ...database,
+        rows: database.rows.map((entry) => entry.id === row.id ? { ...entry, blocks } : entry),
+      })} />
+    </div>
+  );
+}
+
 export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewProps) {
   const { t } = useLanguage();
   const [openRowId, setOpenRowId] = useState<string | null>(initialRowId || null);
@@ -613,6 +716,9 @@ export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewP
   if (openRow) {
     if (database.id === GOOGLE_CALENDAR_DATABASE_ID) {
       return <CalendarEventPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} />;
+    }
+    if (database.id === GOOGLE_TASKS_DATABASE_ID) {
+      return <GoogleTaskPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} />;
     }
     return <RowPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} />;
   }

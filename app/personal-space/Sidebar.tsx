@@ -6,11 +6,16 @@ import { InterfaceIcon } from "./InterfaceIcon";
 import type { Item } from "./types";
 
 const SIDEBAR_WIDTH_KEY = "personal-space-sidebar-width";
+const SIDEBAR_NAV_HEIGHT_KEY = "personal-space-sidebar-nav-height";
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 420;
 const SIDEBAR_DEFAULT_WIDTH = 272;
+const SIDEBAR_NAV_MIN_HEIGHT = 180;
+const SIDEBAR_NAV_MAX_HEIGHT = 620;
+const SIDEBAR_NAV_DEFAULT_HEIGHT = 472;
 
 const clampSidebarWidth = (width: number) => Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
+const clampSidebarNavHeight = (height: number) => Math.min(SIDEBAR_NAV_MAX_HEIGHT, Math.max(SIDEBAR_NAV_MIN_HEIGHT, height));
 
 type SidebarProps = {
   items: Item[];
@@ -44,9 +49,13 @@ export function Sidebar({
   const [editingValue, setEditingValue] = useState("");
   const [workspaceOpen, setWorkspaceOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+  const [sidebarNavHeight, setSidebarNavHeight] = useState(SIDEBAR_NAV_DEFAULT_HEIGHT);
   const [isResizing, setIsResizing] = useState(false);
+  const [isResizingNav, setIsResizingNav] = useState(false);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
+  const sidebarNavHeightRef = useRef(SIDEBAR_NAV_DEFAULT_HEIGHT);
   const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const navResizeStartRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const childrenOf = (parentId: string | null) => items.filter((item) => item.parentId === parentId);
 
   useEffect(() => {
@@ -59,8 +68,16 @@ export function Sidebar({
           sidebarWidthRef.current = nextWidth;
           setSidebarWidth(nextWidth);
         }
+
+        const storedNavHeightValue = window.localStorage.getItem(SIDEBAR_NAV_HEIGHT_KEY);
+        const storedNavHeight = storedNavHeightValue === null ? Number.NaN : Number(storedNavHeightValue);
+        if (Number.isFinite(storedNavHeight)) {
+          const nextNavHeight = clampSidebarNavHeight(storedNavHeight);
+          sidebarNavHeightRef.current = nextNavHeight;
+          setSidebarNavHeight(nextNavHeight);
+        }
       } catch {
-        // Keep the default width when browser preferences are unavailable.
+        // Keep the defaults when browser preferences are unavailable.
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -69,19 +86,36 @@ export function Sidebar({
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       const start = resizeStartRef.current;
-      if (!start) return;
-      const nextWidth = clampSidebarWidth(start.startWidth + event.clientX - start.startX);
-      sidebarWidthRef.current = nextWidth;
-      setSidebarWidth(nextWidth);
+      if (start) {
+        const nextWidth = clampSidebarWidth(start.startWidth + event.clientX - start.startX);
+        sidebarWidthRef.current = nextWidth;
+        setSidebarWidth(nextWidth);
+      }
+
+      const navStart = navResizeStartRef.current;
+      if (navStart) {
+        const nextNavHeight = clampSidebarNavHeight(navStart.startHeight + event.clientY - navStart.startY);
+        sidebarNavHeightRef.current = nextNavHeight;
+        setSidebarNavHeight(nextNavHeight);
+      }
     };
     const finishResize = () => {
-      if (!resizeStartRef.current) return;
+      const wasResizingWidth = resizeStartRef.current !== null;
+      const wasResizingNav = navResizeStartRef.current !== null;
+      if (!wasResizingWidth && !wasResizingNav) return;
       resizeStartRef.current = null;
+      navResizeStartRef.current = null;
       setIsResizing(false);
+      setIsResizingNav(false);
       try {
-        window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidthRef.current));
+        if (wasResizingWidth) {
+          window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidthRef.current));
+        }
+        if (wasResizingNav) {
+          window.localStorage.setItem(SIDEBAR_NAV_HEIGHT_KEY, String(sidebarNavHeightRef.current));
+        }
       } catch {
-        // The resized width remains active for this session.
+        // The resized dimensions remain active for this session.
       }
     };
 
@@ -103,6 +137,17 @@ export function Sidebar({
       window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clampedWidth));
     } catch {
       // The resized width remains active for this session.
+    }
+  };
+
+  const resizeNavWithKeyboard = (nextHeight: number) => {
+    const clampedHeight = clampSidebarNavHeight(nextHeight);
+    sidebarNavHeightRef.current = clampedHeight;
+    setSidebarNavHeight(clampedHeight);
+    try {
+      window.localStorage.setItem(SIDEBAR_NAV_HEIGHT_KEY, String(clampedHeight));
+    } catch {
+      // The resized navigation height remains active for this session.
     }
   };
 
@@ -197,8 +242,8 @@ export function Sidebar({
         onClick={onDismiss}
       />
       <aside
-        className={`sidebar ${mobileOpen ? "mobile-open" : ""} ${isResizing ? "sidebar-resizing" : ""}`}
-        style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
+        className={`sidebar ${mobileOpen ? "mobile-open" : ""} ${isResizing ? "sidebar-resizing" : ""} ${isResizingNav ? "sidebar-nav-resizing" : ""}`}
+        style={{ "--sidebar-width": `${sidebarWidth}px`, "--sidebar-nav-height": `${sidebarNavHeight}px` } as React.CSSProperties}
         aria-label={t("nav.workspaceNavigation")}
       >
         <button className="sidebar-close" aria-label={t("nav.closeNavigation")} onClick={onDismiss}>×</button>
@@ -226,6 +271,40 @@ export function Sidebar({
           <button className="nav-item" aria-current={selectedId === "news-nos" ? "page" : undefined} onClick={() => chooseItem("news-nos")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>NOS</button>
           <button className="nav-item" aria-current={selectedId === "news-bunniksnieuws" ? "page" : undefined} onClick={() => chooseItem("news-bunniksnieuws")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>Bunniks Nieuws</button>
         </div>
+        <div
+          className="sidebar-section-resize"
+          role="separator"
+          aria-orientation="horizontal"
+          tabIndex={0}
+          aria-label={t("nav.resizeSidebarNav")}
+          aria-valuemin={SIDEBAR_NAV_MIN_HEIGHT}
+          aria-valuemax={SIDEBAR_NAV_MAX_HEIGHT}
+          aria-valuenow={sidebarNavHeight}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            navResizeStartRef.current = { startY: event.clientY, startHeight: sidebarNavHeightRef.current };
+            setIsResizingNav(true);
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowUp") {
+              event.preventDefault();
+              resizeNavWithKeyboard(sidebarNavHeight - 16);
+            }
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              resizeNavWithKeyboard(sidebarNavHeight + 16);
+            }
+            if (event.key === "Home") {
+              event.preventDefault();
+              resizeNavWithKeyboard(SIDEBAR_NAV_MIN_HEIGHT);
+            }
+            if (event.key === "End") {
+              event.preventDefault();
+              resizeNavWithKeyboard(SIDEBAR_NAV_MAX_HEIGHT);
+            }
+          }}
+        />
         <div className="sidebar-section">
           <div className="section-heading">
             <button

@@ -33,7 +33,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 .sidebar { position: sticky; z-index: 12; top: 0; width: var(--sidebar-width, 272px); height: 100vh; flex: 0 0 var(--sidebar-width, 272px); display: flex; flex-direction: column; min-height: 0; background: var(--surface); border-right: 1px solid var(--line); }
 .sidebar-close, .sidebar-scrim, .mobile-menu { display: none; }
-.sidebar-nav { display: grid; gap: 3px; padding: 10px 12px 12px; border-bottom: 1px solid var(--line); }
+.sidebar-nav { display: grid; flex: 0 0 var(--sidebar-nav-height, auto); height: var(--sidebar-nav-height, auto); min-height: 0; gap: 3px; overflow: auto; padding: 10px 12px 12px; }
 .nav-item { display: flex; align-items: center; gap: 11px; min-height: 40px; padding: 0 11px; border: 0; border-radius: 8px; color: var(--muted); background: transparent; font-size: 14px; text-align: left; }
 .nav-item { text-decoration: none; }
 .nav-item:hover { color: var(--ink); background: var(--surface-soft); }
@@ -73,6 +73,11 @@ kbd { padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; color
 .sidebar-resize::after { content: ""; position: absolute; inset: 0 4px; background: transparent; transition: background .15s ease; }
 .sidebar-resize:hover::after, .sidebar-resize:focus-visible::after, .sidebar-resizing .sidebar-resize::after { background: var(--blue); opacity: .72; }
 .sidebar-resizing, .sidebar-resizing * { cursor: col-resize !important; user-select: none; }
+.sidebar-section-resize { position: relative; z-index: 13; flex: 0 0 10px; height: 10px; margin: -5px 0; cursor: row-resize; touch-action: none; }
+.sidebar-section-resize::before { content: ""; position: absolute; inset: 4px 0 5px; background: var(--line); }
+.sidebar-section-resize::after { content: ""; position: absolute; inset: 3px 0 4px; background: transparent; transition: background .15s ease; }
+.sidebar-section-resize:hover::after, .sidebar-section-resize:focus-visible::after, .sidebar-nav-resizing .sidebar-section-resize::after { background: var(--blue); opacity: .72; }
+.sidebar-nav-resizing, .sidebar-nav-resizing * { cursor: row-resize !important; user-select: none; }
 
 .main-area { min-width: 0; flex: 1; min-height: 100vh; }
 .topbar { display: flex; align-items: center; justify-content: space-between; position: sticky; z-index: 8; top: 0; height: 72px; padding: 0 36px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--surface-warm) 94%, transparent); backdrop-filter: blur(14px); }

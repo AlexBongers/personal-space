@@ -25,6 +25,7 @@ test("renders the Personal Space workspace shell", async () => {
   assert.match(html, />NL<|>NL<\/button>/);
   assert.match(html, /role="separator"/);
   assert.match(html, /Zijbalk aanpassen/);
+  assert.match(html, /Hoogte van navigatie aanpassen/);
   assert.match(html, /og\.png/);
   assert.doesNotMatch(html, /Make room for|what matters\./i);
   assert.match(html, /Verbinden met D1/);

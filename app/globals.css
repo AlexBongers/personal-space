@@ -352,6 +352,8 @@ tbody tr:hover td { background: color-mix(in srgb, var(--surface-soft) 60%, tran
 .calendar-field-label-with-help { justify-content: flex-start; }
 .calendar-editor-input, .calendar-field > input:not([type="checkbox"]), .calendar-field > textarea { width: 100%; min-height: 44px; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--control-radius); color: var(--ink); background: var(--surface); font-size: .9375rem; }
 .calendar-editor-input::placeholder { color: var(--faint); opacity: 1; }
+.calendar-editor-select { appearance: auto; cursor: pointer; }
+.calendar-editor-select:disabled { cursor: wait; opacity: .7; }
 .calendar-field > input[type="date"], .calendar-field > input[type="datetime-local"] { color-scheme: light; }
 .theme-dark .calendar-field > input[type="date"], .theme-dark .calendar-field > input[type="datetime-local"] { color-scheme: dark; }
 .calendar-field > input:focus, .calendar-field > textarea:focus { border-color: var(--ink); outline: 0; }

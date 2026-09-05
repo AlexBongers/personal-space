@@ -364,6 +364,8 @@ const safeExternalUrl = (value: string) => {
 function CalendarEventPage({ database, row, onUpdate, onBack }: { database: Database; row: Row; onUpdate: (database: Database) => void; onBack: () => void }) {
   const { t } = useLanguage();
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [calendars, setCalendars] = useState<Array<{ id: string; title: string; primary: boolean }>>([]);
+  const [calendarOptionsState, setCalendarOptionsState] = useState<"loading" | "ready" | "error">("loading");
   const valueFor = (propertyId: string) => valueText(getValue(row, propertyId));
   const allDay = Boolean(getValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.allDay));
   const startValue = valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.start);
@@ -373,6 +375,34 @@ function CalendarEventPage({ database, row, onUpdate, onBack }: { database: Data
   const inclusiveEnd = allDay && endParts.date ? shiftCalendarDate(endParts.date, -1) : endParts.date;
   const statusProperty = database.properties.find((property) => property.id === GOOGLE_CALENDAR_PROPERTY_IDS.status);
   const link = safeExternalUrl(valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.link));
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/google-calendar/status", { cache: "no-store" })
+      .then(async (response) => {
+        const body = await response.json() as { calendars?: unknown };
+        if (!response.ok || !Array.isArray(body.calendars)) throw new Error("calendar-options-unavailable");
+        const nextCalendars = body.calendars.filter((entry): entry is { id: string; title: string; primary?: boolean } => (
+          typeof entry === "object" && entry !== null && typeof entry.id === "string" && typeof entry.title === "string"
+        )).map((calendar) => ({ id: calendar.id, title: calendar.title, primary: Boolean(calendar.primary) }));
+        if (active) {
+          setCalendars(nextCalendars);
+          setCalendarOptionsState("ready");
+        }
+      })
+      .catch(() => {
+        if (active) setCalendarOptionsState("error");
+      });
+    return () => { active = false; };
+  }, []);
+
+  const currentCalendarId = valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.calendarId);
+  const currentCalendarName = valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.calendar);
+  const matchingCalendar = calendars.find((calendar) => calendar.title === currentCalendarName);
+  const selectedCalendarId = currentCalendarId || matchingCalendar?.id || "";
+  const visibleCalendars = currentCalendarId && !calendars.some((calendar) => calendar.id === currentCalendarId)
+    ? [{ id: currentCalendarId, title: currentCalendarName || currentCalendarId, primary: false }, ...calendars]
+    : calendars;
 
   const updateValues = (values: Record<string, CellValue>) => onUpdate({
     ...database,
@@ -473,9 +503,24 @@ function CalendarEventPage({ database, row, onUpdate, onBack }: { database: Data
               {t("calendarEditor.calendar")}
               <ClickTooltip label={t("database.showHelp")} text={t("calendarEditor.calendarHint")} />
             </span>
-            <input className="calendar-editor-input" value={valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.calendar)} placeholder={t("calendarEditor.calendarPlaceholder")} aria-label={t("calendarEditor.calendar")} onChange={(event) => updateValue(GOOGLE_CALENDAR_PROPERTY_IDS.calendar, event.target.value)} />
+            <select
+              className="calendar-editor-input calendar-editor-select"
+              value={selectedCalendarId}
+              aria-label={t("calendarEditor.calendar")}
+              disabled={calendarOptionsState === "loading" || calendarOptionsState === "error"}
+              onChange={(event) => {
+                const selected = visibleCalendars.find((calendar) => calendar.id === event.target.value);
+                updateValues({
+                  [GOOGLE_CALENDAR_PROPERTY_IDS.calendar]: selected?.title || "",
+                  [GOOGLE_CALENDAR_PROPERTY_IDS.calendarId]: selected?.id || "",
+                });
+              }}
+            >
+              <option value="">{calendarOptionsState === "loading" ? t("calendarEditor.calendarLoading") : t("calendarEditor.calendarDefaultOption")}</option>
+              {visibleCalendars.map((calendar) => <option value={calendar.id} key={calendar.id}>{calendar.title}{calendar.primary ? ` · ${t("calendar.primary")}` : ""}</option>)}
+            </select>
           </label>
-          <p className="calendar-editor-help">{t("calendarEditor.calendarHint")}</p>
+          <p className="calendar-editor-help">{calendarOptionsState === "error" ? t("calendarEditor.calendarLoadError") : t("calendarEditor.calendarHint")}</p>
         </section>
 
         <section className="calendar-event-advanced">

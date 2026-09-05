@@ -524,11 +524,18 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
         continue;
       }
       const localChanged = mapping ? calendarRowFingerprint(existing) !== mapping.local_fingerprint : false;
-      const remoteChanged = mapping ? event.updated !== mapping.remote_updated || event.etag !== mapping.remote_etag : true;
+      const nextRemoteRow = googleCalendarToRow(event, calendar, existing);
+      // Some Google fields (notably recurrence and inherited attendees) are
+      // hydrated from the series master and may not change the occurrence's
+      // etag. Compare the synced payload as well so old local rows are repaired.
+      const remoteDataChanged = calendarRowFingerprint(existing) !== calendarRowFingerprint(nextRemoteRow);
+      const remoteChanged = mapping
+        ? event.updated !== mapping.remote_updated || event.etag !== mapping.remote_etag || remoteDataChanged
+        : true;
       if (localChanged) {
         await pushLocal(existing, event, remoteChanged);
       } else {
-        const nextRow = remoteChanged ? googleCalendarToRow(event, calendar, existing) : existing;
+        const nextRow = remoteChanged ? nextRemoteRow : existing;
         rows.set(existing.id, nextRow);
         saveMapping(nextRow, event);
         if (remoteChanged && mapping) summary.updated += 1;

@@ -22,6 +22,7 @@ import { SlashdotFeed, type NewsSource } from "./SlashdotFeed";
 import { GmailInbox } from "./GmailInbox";
 import { ParroInbox } from "./ParroInbox";
 import { InterfaceIcon } from "./InterfaceIcon";
+import { activeRows } from "./workspace-trash.ts";
 import type { Item, Row } from "./types";
 
 export type HomeQuickAddKind = "task" | "note";
@@ -144,10 +145,10 @@ function TasksList({ rows, todayKey, emptyLabel, language, onOpen }: TasksListPr
 
 function HomeToday({ items, now, onOpen }: { items: Item[]; now: Date; onOpen: (id: string, rowId?: string) => void }) {
   const { language, t } = useLanguage();
-  const taskDatabase = items.find((item) => item.id === GOOGLE_TASKS_DATABASE_ID);
-  const calendarDatabase = items.find((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID);
-  const tasks = useMemo(() => selectHomeTasks(isDatabase(taskDatabase) ? taskDatabase.rows : [], now), [now, taskDatabase]);
-  const calendar = useMemo(() => selectHomeCalendar(isDatabase(calendarDatabase) ? calendarDatabase.rows : [], now), [now, calendarDatabase]);
+  const taskDatabase = items.find((item) => item.id === GOOGLE_TASKS_DATABASE_ID && !item.trash);
+  const calendarDatabase = items.find((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID && !item.trash);
+  const tasks = useMemo(() => selectHomeTasks(isDatabase(taskDatabase) ? activeRows(taskDatabase) : [], now), [now, taskDatabase]);
+  const calendar = useMemo(() => selectHomeCalendar(isDatabase(calendarDatabase) ? activeRows(calendarDatabase) : [], now), [now, calendarDatabase]);
   const dateText = formatDate(now, language);
   const allTodayEvents = calendar.today;
   const formatEvent = (event: typeof allTodayEvents[number]) => {
@@ -295,8 +296,8 @@ function HomeNews() {
 export function HomeOverview({ items, onOpen, onQuickAdd, quickAddDisabled, quickAddStatus }: HomeOverviewProps) {
   const { t } = useLanguage();
   const [now, setNow] = useState(() => new Date());
-  const taskDatabase = items.find((item) => item.id === GOOGLE_TASKS_DATABASE_ID);
-  const tasks = useMemo(() => selectHomeTasks(isDatabase(taskDatabase) ? taskDatabase.rows : [], now), [now, taskDatabase]);
+  const taskDatabase = items.find((item) => item.id === GOOGLE_TASKS_DATABASE_ID && !item.trash);
+  const tasks = useMemo(() => selectHomeTasks(isDatabase(taskDatabase) ? activeRows(taskDatabase) : [], now), [now, taskDatabase]);
   useEffect(() => {
     const refresh = () => setNow(new Date());
     const interval = window.setInterval(refresh, 60_000);

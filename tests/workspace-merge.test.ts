@@ -66,3 +66,11 @@ test("merged tree requires a root Home page and valid parents", () => {
   assert.equal(validateWorkspaceTree(base).valid, true);
   assert.equal(validateWorkspaceTree(base.filter((item) => item.id !== "home")).valid, false);
 });
+
+test("merged tree rejects an active child below a trashed parent", () => {
+  const remote = base.map((item) => item.id === "work"
+    ? { ...item, trash: { deletedAt: "2026-09-05T12:00:00.000Z", batchId: "batch-1", rootId: "work" } }
+    : item);
+  assert.equal(validateWorkspaceTree(remote).valid, false);
+  assert.equal(mergeWorkspace(base, base, remote).ok, false);
+});

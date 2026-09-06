@@ -29,7 +29,7 @@ const readResponse = async (response: Response): Promise<WorkspaceResponse> => {
 const putWorkspace = (items: Item[], baseRevision: number) => fetch("/api/workspace", {
   method: "PUT",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ items, baseRevision }),
+  body: JSON.stringify({ items, baseRevision, protocolVersion: 2, capabilities: ["trash"] }),
 });
 
 const transport = {
@@ -103,6 +103,10 @@ export function useWorkspacePersistence() {
 
   return {
     items: snapshot.items,
+    // The controller keeps this as the last confirmed server snapshot. It is
+    // useful for recovery exports and is deliberately read-only here.
+    confirmedItems: snapshot.baseItems,
+    containsUnconfirmedChanges: !snapshot.backendReady || snapshot.editGeneration > snapshot.confirmedGeneration,
     setItems,
     replaceItems,
     revision: snapshot.revision,

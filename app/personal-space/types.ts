@@ -38,6 +38,13 @@ export type ViewSettings = {
   sortDir: "asc" | "desc";
 };
 
+/** Metadata for a record that is kept in the workspace while it is in trash. */
+export type TrashMetadata = {
+  deletedAt: string;
+  batchId: string;
+  rootId: string;
+};
+
 export type Page = {
   id: string;
   kind: "page";
@@ -45,6 +52,7 @@ export type Page = {
   icon: string;
   parentId: string | null;
   blocks: Block[];
+  trash?: TrashMetadata;
 };
 
 export type Row = {
@@ -52,6 +60,7 @@ export type Row = {
   title: string;
   values: Record<string, CellValue>;
   blocks: Block[];
+  trash?: TrashMetadata;
 };
 
 export type Database = {
@@ -64,6 +73,7 @@ export type Database = {
   rows: Row[];
   view: ViewSettings;
   views?: Partial<Record<ViewMode, ViewSettings>>;
+  trash?: TrashMetadata;
 };
 
 export type Item = Page | Database;

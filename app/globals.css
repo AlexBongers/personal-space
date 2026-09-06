@@ -337,6 +337,19 @@ tbody tr:hover td { background: color-mix(in srgb, var(--surface-soft) 60%, tran
 .calendar-day-events { display: grid; gap: 4px; margin-top: 5px; }
 .calendar-event { display: grid; grid-template-columns: 5px minmax(0, 1fr); grid-template-areas: "dot time" "dot title"; gap: 1px 6px; min-width: 0; padding: 5px 6px; border: 0; border-radius: 6px; color: var(--ink); background: var(--surface-soft); text-align: left; }.calendar-event:hover { background: color-mix(in srgb, var(--blue) 11%, var(--surface)); }.calendar-event i { grid-area: dot; width: 5px; height: 100%; min-height: 21px; border-radius: 5px; }.calendar-event span { grid-area: time; overflow: hidden; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }.calendar-event strong { grid-area: title; overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 750; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }.calendar-more { width: 100%; padding: 2px 5px; border: 0; color: var(--blue); background: transparent; font-size: 11px; font-weight: 750; text-align: left; }
 .calendar-agenda { display: grid; overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); }.agenda-event { display: grid; grid-template-columns: minmax(170px, .35fr) 7px minmax(0, 1fr) 22px; align-items: center; gap: 16px; min-height: 78px; padding: 11px 18px; border: 0; border-bottom: 1px solid var(--line); color: var(--ink); background: var(--surface); text-align: left; }.agenda-event:last-child { border-bottom: 0; }.agenda-event:hover { background: var(--surface-soft); }.agenda-date, .agenda-copy { display: grid; min-width: 0; gap: 4px; }.agenda-date strong { color: var(--ink); font-size: 14px; text-transform: capitalize; }.agenda-date small, .agenda-copy small { overflow: hidden; color: var(--muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }.agenda-event > i { width: 7px; height: 36px; border-radius: 6px; }.agenda-copy strong { overflow: hidden; color: var(--ink); font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }.agenda-arrow { color: var(--faint); font-size: 20px; }
+.calendar-week-view { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); }
+.calendar-week-day { min-width: 0; min-height: 300px; border-right: 1px solid var(--line); background: var(--surface); }
+.calendar-week-day:last-child { border-right: 0; }
+.calendar-week-day.is-today { background: color-mix(in srgb, var(--blue) 5%, var(--surface)); }
+.calendar-week-day-heading { display: flex; align-items: baseline; justify-content: space-between; width: 100%; min-height: 52px; padding: 10px; border: 0; border-bottom: 1px solid var(--line); color: var(--muted); background: var(--surface-soft); text-align: left; }
+.calendar-week-day-heading:hover { color: var(--ink); background: color-mix(in srgb, var(--blue) 9%, var(--surface-soft)); }
+.calendar-week-day-heading[aria-pressed="true"] { box-shadow: inset 0 -2px 0 var(--blue); color: var(--ink); }
+.calendar-week-day-heading strong { font-size: .75rem; font-weight: 500; text-transform: capitalize; }
+.calendar-week-day-heading span { font-size: 1rem; font-variant-numeric: tabular-nums; }
+.calendar-week-all-day, .calendar-week-timed { display: grid; gap: 4px; padding: 7px; }
+.calendar-week-timed { border-top: 1px dashed var(--line); }
+.calendar-week-day .calendar-event { min-width: 0; }
+.calendar-event.is-continuation { opacity: .78; }
 .back-link { min-height: 36px; margin-bottom: 32px; padding: 0 2px; border: 0; color: var(--blue); background: transparent; font-size: 13px; }
 .row-page { width: min(100%, 940px); }
 .row-page-heading { display: block; }.row-title-input { display: block; width: 100%; padding: 0; border: 0; color: var(--ink); outline: 0; background: transparent; font-size: 35px; font-weight: 800; letter-spacing: -.05em; }.row-page .page-kicker { margin-bottom: 9px; }.row-properties { display: grid; gap: 0; width: 100%; max-width: 900px; margin: 34px 0 50px; padding: 13px 26px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow); }.row-property { display: grid; grid-template-columns: minmax(145px, 180px) minmax(0, 1fr); align-items: start; gap: 24px; min-width: 0; padding: 9px 0; color: var(--muted); font-size: 13px; }.row-property + .row-property { border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }.row-property-label { display: flex; align-items: center; gap: 8px; min-height: 36px; padding-top: 1px; }.row-property-control { min-width: 0; }.row-properties .cell-input, .row-properties .cell-select { border-bottom: 1px solid var(--line); }.row-property-control > .cell-input, .row-property-control > .select-cell-shell { width: 100%; min-width: 0; }.row-property-control .select-cell-shell { min-height: 36px; }.row-property-control .cell-select { width: 100%; max-width: none; min-width: 0; }.row-property-control .cell-input { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.row-property-control .row-notes-input { min-height: 112px; max-height: 360px; padding: 10px 0; overflow: auto; resize: vertical; line-height: 1.55; white-space: pre-wrap; }
@@ -395,6 +408,21 @@ tbody tr:hover td { background: color-mix(in srgb, var(--surface-soft) 60%, tran
 .tasks-trigger:hover { color: var(--ink); border-color: color-mix(in srgb, var(--blue) 40%, var(--line)); background: var(--surface-soft); }
 .tasks-trigger > span:first-child { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; color: var(--green); background: rgba(53, 167, 124, .13); font-size: 13px; }
 .calendar-trigger > span:first-child { color: var(--blue); background: rgba(32, 157, 215, .12); }
+.workspace-actions { position: relative; flex: 0 0 auto; }
+.workspace-actions-trigger { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); background: var(--surface); font-size: 12px; font-weight: 750; letter-spacing: .04em; }
+.workspace-actions-trigger:hover, .workspace-actions-trigger[aria-expanded="true"] { color: var(--ink); border-color: color-mix(in srgb, var(--blue) 40%, var(--line)); background: var(--surface-soft); }
+.workspace-actions-trigger > span:first-child { color: var(--blue); letter-spacing: 3px; }
+.workspace-actions-menu { display: grid; position: absolute; z-index: 18; top: calc(100% + 8px); right: 0; min-width: 210px; gap: 2px; padding: 6px; border: 1px solid var(--line); border-radius: 11px; box-shadow: var(--shadow); background: var(--surface); }
+.workspace-actions-menu button { min-height: 38px; padding: 0 10px; border: 0; border-radius: 7px; color: var(--ink); background: transparent; font-size: 13px; text-align: left; }
+.workspace-actions-menu button:hover { background: var(--surface-soft); }
+.workspace-actions-message { margin: 5px 7px 4px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.trash-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.trash-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.trash-row-copy { display: grid; min-width: 0; gap: 3px; }
+.trash-row-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trash-row-copy small { color: var(--muted); font-size: 11px; }
+.trash-row-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.trash-dialog { max-height: min(680px, calc(100dvh - 30px)); overflow: auto; }
 .google-tasks-overlay { display: grid; place-items: start center; position: fixed; z-index: 21; inset: 0; padding-top: 15vh; background: rgba(13, 20, 24, .42); backdrop-filter: blur(4px); }
 .google-tasks-dialog { width: min(520px, calc(100vw - 30px)); padding: 25px; border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); background: var(--surface); }
 .google-tasks-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
@@ -786,6 +814,11 @@ td { height: 56px; font-size: .9375rem; }
   .calendar-day-number { justify-content: center; width: 100%; min-height: 42px; border-radius: 7px; font-size: .875rem; }
   .calendar-day-number span, .calendar-day-events { display: none; }
   .mobile-event-count { display: block; min-height: 20px; color: var(--muted); font-size: .75rem; }
+  .calendar-week-view { grid-template-columns: minmax(0, 1fr); }
+  .calendar-week-day { min-height: 0; border-right: 0; border-bottom: 1px solid var(--line); }
+  .calendar-week-day:last-child { border-bottom: 0; }
+  .calendar-week-day-heading { min-height: 48px; }
+  .calendar-week-all-day, .calendar-week-timed { padding: 8px 10px; }
   .agenda-event { grid-template-columns: 88px 3px minmax(0, 1fr) 14px; gap: 8px; padding: 12px; }
   .agenda-date strong, .agenda-date small { font-size: .8125rem; }
   .agenda-copy small { white-space: normal; }
@@ -814,6 +847,8 @@ td { height: 56px; font-size: .9375rem; }
   .topbar-leading { flex: 1 1 auto; min-width: 36px; }
   .topbar-actions { width: auto; flex: 0 0 auto; justify-content: flex-end; gap: 4px; }
   .tasks-trigger { display: none; }
+  .workspace-actions-trigger { width: 40px; justify-content: center; padding-inline: 0; }
+  .workspace-actions-trigger-label { display: none; }
   .search-trigger { min-height: 40px; width: 40px; margin-right: 0; }
   .theme-switch, .language-switch { min-height: 40px; padding: 3px; }
   .theme-switch button { width: 32px; height: 32px; }

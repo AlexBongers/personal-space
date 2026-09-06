@@ -1,8 +1,10 @@
-import { makeSeed, normalizeItems } from "../app/personal-space/model.ts";
+import { isTrashMetadata as isModelTrashMetadata, makeSeed, normalizeItems } from "../app/personal-space/model.ts";
 import type { Block, CellValue, Filter, Item, Property, Row, ViewSettings } from "../app/personal-space/types.ts";
 
 export const WORKSPACE_ID = "primary";
 export const MAX_WORKSPACE_BYTES = 2_000_000;
+export const WORKSPACE_PROTOCOL_VERSION = 2;
+export const WORKSPACE_TRASH_CAPABILITY = "trash";
 const MAX_ITEMS = 2_500;
 const blockTypes = new Set(["paragraph", "heading1", "heading2", "heading3", "bulleted", "numbered", "todo", "quote", "divider", "code", "callout"]);
 const propertyTypes = new Set(["text", "number", "select", "multi-select", "date", "checkbox", "url"]);
@@ -56,6 +58,24 @@ export const ensureWorkspaceSchema = async (database: WorkspaceDatabase) => {
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const isString = (value: unknown): value is string => typeof value === "string";
 
+export const isTrashMetadata = isModelTrashMetadata;
+
+export const hasTrashMetadata = (items: Item[]): boolean => items.some((item) => Boolean(item.trash)
+  || (item.kind === "database" && item.rows.some((row) => Boolean(row.trash))));
+
+export type WorkspaceWriter = {
+  protocolVersion?: unknown;
+  capabilities?: unknown;
+};
+
+export const supportsTrash = (writer: WorkspaceWriter | undefined): boolean =>
+  Number(writer?.protocolVersion) >= WORKSPACE_PROTOCOL_VERSION
+  && Array.isArray(writer?.capabilities)
+  && writer.capabilities.includes(WORKSPACE_TRASH_CAPABILITY);
+
+export const requiresTrashSupport = (current: Item[], incoming: Item[], writer?: WorkspaceWriter): boolean =>
+  (hasTrashMetadata(current) || hasTrashMetadata(incoming)) && !supportsTrash(writer);
+
 const isBlock = (value: unknown): value is Block => {
   if (!isRecord(value)) return false;
   return isString(value.id) && isString(value.text) && blockTypes.has(String(value.type))
@@ -90,6 +110,7 @@ const isView = (value: unknown): value is ViewSettings => isRecord(value)
 
 const isRow = (value: unknown): value is Row => {
   if (!isRecord(value) || !isString(value.id) || !isString(value.title) || !isRecord(value.values)) return false;
+  if (value.trash !== undefined && !isTrashMetadata(value.trash)) return false;
   return Object.values(value.values).every(isCellValue)
     && Array.isArray(value.blocks)
     && value.blocks.length <= 5_000
@@ -98,11 +119,15 @@ const isRow = (value: unknown): value is Row => {
 
 export const isWorkspaceItems = (value: unknown): value is Item[] => {
   if (!Array.isArray(value) || value.length > MAX_ITEMS) return false;
-  return value.every((item) => {
+  const ids = new Set<string>();
+  const validShape = value.every((item) => {
     if (!isRecord(item)) return false;
     const candidate = item as Partial<Item> & Record<string, unknown>;
     if (typeof candidate.id !== "string" || typeof candidate.title !== "string" || typeof candidate.icon !== "string") return false;
+    if (ids.has(candidate.id)) return false;
+    ids.add(candidate.id);
     if (candidate.parentId !== null && typeof candidate.parentId !== "string") return false;
+    if (candidate.trash !== undefined && !isTrashMetadata(candidate.trash)) return false;
     if (candidate.kind === "page") {
       return Array.isArray(candidate.blocks) && candidate.blocks.length <= 5_000 && candidate.blocks.every(isBlock);
     }
@@ -118,6 +143,30 @@ export const isWorkspaceItems = (value: unknown): value is Item[] => {
     if (!isRecord(candidate.views)) return false;
     return Object.values(candidate.views).every((view) => view === undefined || isView(view));
   });
+  if (!validShape) return false;
+  const byId = new Map(value.map((item) => [item.id, item]));
+  for (const item of value) {
+    if (item.parentId !== null && !byId.has(item.parentId)) return false;
+    const visited = new Set<string>();
+    let parentId = item.parentId;
+    while (parentId) {
+      if (visited.has(parentId)) return false;
+      visited.add(parentId);
+      const parent = byId.get(parentId);
+      if (!parent) return false;
+      if (!item.trash && parent.trash) return false;
+      parentId = parent.parentId;
+    }
+    if (item.kind === "database") {
+      const rowIds = new Set<string>();
+      for (const row of item.rows) {
+        if (rowIds.has(row.id)) return false;
+        rowIds.add(row.id);
+        if (item.trash && !row.trash) return false;
+      }
+    }
+  }
+  return true;
 };
 
 const decodeWorkspace = (row: StoredWorkspace): WorkspaceEnvelope => {

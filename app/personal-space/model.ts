@@ -11,6 +11,7 @@ import type {
   PropertyType,
   Row,
   SelectOption,
+  TrashMetadata,
   ViewMode,
   ViewSettings,
 } from "./types";
@@ -112,6 +113,14 @@ export const emptyView = (mode: ViewMode): ViewSettings => ({
 
 export const isDatabase = (item: Item | undefined): item is Database => item?.kind === "database";
 export const isPage = (item: Item | undefined): item is Page => item?.kind === "page";
+export const isTrashMetadata = (value: unknown): value is TrashMetadata => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.deletedAt !== "string" || typeof candidate.batchId !== "string" || typeof candidate.rootId !== "string") return false;
+  if (!candidate.batchId || !candidate.rootId || candidate.batchId.length > 200 || candidate.rootId.length > 200) return false;
+  if (Object.keys(candidate).some((key) => key !== "deletedAt" && key !== "batchId" && key !== "rootId")) return false;
+  return candidate.deletedAt.length <= 100 && Number.isFinite(Date.parse(candidate.deletedAt));
+};
 export const getValue = (row: Row, propertyId: string): CellValue => row.values[propertyId] ?? null;
 export const valueText = (value: CellValue): string =>
   Array.isArray(value) ? value.join(", ") : value === null || value === undefined ? "" : String(value);

@@ -9,7 +9,7 @@
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run build && node --experimental-test-coverage --test-coverage-include=app/personal-space/model.ts --test-coverage-include=worker/workspace-store.ts --test-coverage-lines=80 --test tests/model.test.ts tests/home-model.test.ts tests/workspace-store.test.ts tests/workspace-merge.test.ts tests/workspace-recovery.test.ts tests/workspace-persistence-controller.test.ts tests/google-tasks.test.ts tests/google-calendar.test.ts tests/google-sync.test.ts tests/slashdot.test.ts tests/news.test.ts tests/gmail.test.ts tests/parro.test.ts tests/rendered-html.test.mjs tests/performance.test.mjs",
+    "test": "npm run build && node --experimental-test-coverage --test-coverage-include=app/personal-space/model.ts --test-coverage-include=worker/workspace-store.ts --test-coverage-lines=80 --test tests/model.test.ts tests/home-model.test.ts tests/calendar-model.test.ts tests/workspace-store.test.ts tests/workspace-trash.test.ts tests/workspace-export.test.ts tests/workspace-merge.test.ts tests/workspace-recovery.test.ts tests/workspace-persistence-controller.test.ts tests/google-tasks.test.ts tests/google-calendar.test.ts tests/google-sync.test.ts tests/slashdot.test.ts tests/news.test.ts tests/gmail.test.ts tests/parro.test.ts tests/rendered-html.test.mjs tests/performance.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

@@ -8,7 +8,7 @@ import {
   type GoogleTask,
   type GoogleTaskPayload,
 } from "./google-tasks-sync.ts";
-import { isWorkspaceItems, loadWorkspace, saveWorkspace, type D1RunResult } from "./workspace-store.ts";
+import { isWorkspaceItems, loadWorkspace, requiresTrashSupport, saveWorkspace, type D1RunResult } from "./workspace-store.ts";
 import { createRemoteOnce, GoogleSyncSafetyError, readCreateReceipts, withGoogleSyncLock, type SyncGuard } from "./google-sync-guard.ts";
 
 const CONNECTION_ID = "primary";
@@ -341,6 +341,13 @@ const syncWorkspace = async (
 ) => {
   const current = await loadWorkspace(database);
   if (current.revision !== baseRevision) return { conflict: current } as const;
+  const requestedDatabase = items.find((item): item is Database => item.id === GOOGLE_TASKS_DATABASE_ID && item.kind === "database");
+  if (requestedDatabase?.trash) {
+    return {
+      workspace: current,
+      summary: { imported: 0, exported: 0, updated: 0, removed: 0, conflicts: 0, taskListTitle: "", taskListCount: 0 },
+    } as const;
+  }
   const stored = await connection(database);
   if (!stored) throw new GoogleTasksError("Google Tasks is not connected", 401);
   const token = await accessToken(stored, env);
@@ -364,9 +371,9 @@ const syncWorkspace = async (
   const mappingByLocal = new Map(storedMappings.map((entry) => [entry.local_row_id, entry]));
   let nextItems = [...items];
   let taskDatabase = nextItems.find((item): item is Database => item.id === GOOGLE_TASKS_DATABASE_ID && item.kind === "database");
+  const integrationMissing = !taskDatabase;
   if (!taskDatabase) {
     taskDatabase = createGoogleTasksDatabase();
-    nextItems = [...nextItems, taskDatabase];
   }
   const rows = new Map(taskDatabase.rows.map((row) => [row.id, row]));
   for (const receipt of await readCreateReceipts(database, "tasks")) {
@@ -391,6 +398,7 @@ const syncWorkspace = async (
       await database.batch([deleteMapping(database, receipt.local_row_id), database.prepare("DELETE FROM google_sync_creates WHERE operation_key = ?").bind(receipt.operation_key)]);
       continue;
     }
+    if (row.trash) continue;
     if (mappingByLocal.has(row.id) || googleTaskId(row) !== receipt.replaces_id) continue;
     const mapping: StoredMapping = { local_row_id: row.id, task_list_id: receipt.container_id, remote_task_id: task.id, remote_etag: task.etag || "", remote_updated: task.updated || "", local_fingerprint: googleRowFingerprint(googleTaskToRow(task, "", row)) };
     await upsertMapping(mapping, database).run();
@@ -475,6 +483,7 @@ const syncWorkspace = async (
     for (const task of tasks) {
       const mapping = listMappingByRemote.get(remoteKey(list.id, task.id));
       const existing = (mapping && rows.get(mapping.local_row_id)) || rowByRemote.get(remoteKey(list.id, task.id));
+      if (existing?.trash) continue;
       if (mapping && !existing) {
         if (!task.deleted) { await guard.check(); await deleteTask(token, list.id, task.id); }
         mappingStatements.push(deleteMapping(database, mapping.local_row_id));
@@ -483,17 +492,11 @@ const syncWorkspace = async (
       }
       if (task.deleted) {
         if (!existing) continue;
-        const localChanged = mapping ? googleRowFingerprint(existing) !== mapping.local_fingerprint : true;
-        if (localChanged) {
-          await pushLocal(existing, undefined, true);
-        } else {
-          rows.delete(existing.id);
-          mappingStatements.push(deleteMapping(database, existing.id));
-          summary.removed += 1;
-        }
+        summary.conflicts += 1;
         continue;
       }
       if (!existing) {
+        if (integrationMissing) continue;
         const imported = googleTaskToRow(task, list.title);
         rows.set(imported.id, imported);
         saveMapping(imported, task);
@@ -513,13 +516,10 @@ const syncWorkspace = async (
     }
 
     for (const row of localRows) {
+      if (row.trash) continue;
       const mapping = mappingByLocal.get(row.id);
       if (mapping && mapping.task_list_id === list.id && !remoteById.has(mapping.remote_task_id)) {
-        await guard.check();
-        await deleteTask(token, list.id, mapping.remote_task_id);
-        rows.delete(row.id);
-        mappingStatements.push(deleteMapping(database, row.id));
-        summary.removed += 1;
+        summary.conflicts += 1;
         continue;
       }
       if (!mapping && !googleTaskId(row)) await pushLocal(row, undefined, false);
@@ -527,10 +527,10 @@ const syncWorkspace = async (
   }
 
   const updatedDatabase = { ...taskDatabase, rows: [...rows.values()] };
-  nextItems = replaceDatabase(nextItems, updatedDatabase);
+  if (!integrationMissing) nextItems = replaceDatabase(nextItems, updatedDatabase);
   await guard.check();
   const saved = await saveWorkspace(database, nextItems, baseRevision);
-  if (!saved.ok) return { conflict: saved.current } as const;
+  if (saved.ok === false) return { conflict: saved.current } as const;
   const connectionUpdate = database.prepare(`UPDATE google_tasks_connection
 SET task_list_id = NULL, task_list_title = ?, last_sync_at = CURRENT_TIMESTAMP, last_error = NULL, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?`).bind(summary.taskListTitle, CONNECTION_ID);
@@ -631,9 +631,13 @@ export const handleGoogleTasksApi = async (request: Request, env: GoogleTasksEnv
     }
     if (url.pathname === "/api/google-tasks/sync" && request.method === "POST") {
       if (!isGoogleTasksConfigured(env)) return json({ error: "Google Tasks integration is not configured" }, 503);
-      const body = await request.json().catch(() => null) as { items?: unknown; baseRevision?: unknown } | null;
+      const body = await request.json().catch(() => null) as { items?: unknown; baseRevision?: unknown; protocolVersion?: unknown; capabilities?: unknown } | null;
       if (!body || !isWorkspaceItems(body.items) || !Number.isInteger(body.baseRevision) || Number(body.baseRevision) < 1) {
         return json({ error: "Invalid Google Tasks sync payload" }, 400);
+      }
+      const current = await loadWorkspace(database);
+      if (requiresTrashSupport(current.items, body.items, body)) {
+        return json({ error: "Vernieuw de pagina", code: "workspace_protocol_mismatch" }, 409);
       }
       const result = await withGoogleSyncLock(database, (guard) => syncWorkspace(database, body.items as Item[], Number(body.baseRevision), env, guard));
       if ("conflict" in result) return json({ error: "Workspace changed in another tab", workspace: result.conflict }, 409);

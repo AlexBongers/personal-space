@@ -1,4 +1,5 @@
 import type { Item } from "./types";
+import { isTrashMetadata } from "./model.ts";
 import { stableSerialize } from "./workspace-merge.ts";
 
 export const RECOVERY_SCHEMA_VERSION = 1;
@@ -55,13 +56,14 @@ export type RecoveryStore = {
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 const isItems = (value: unknown): value is Item[] => Array.isArray(value) && value.every((item) => {
   if (!isRecord(item) || typeof item.id !== "string" || typeof item.kind !== "string") return false;
+  if (item.trash !== undefined && !isTrashMetadata(item.trash)) return false;
   if (item.kind === "page") {
     return Array.isArray(item.blocks) && item.blocks.every((block) => isRecord(block) && typeof block.id === "string");
   }
   if (item.kind !== "database") return false;
   if (!Array.isArray(item.properties) || !Array.isArray(item.rows) || !isRecord(item.view)) return false;
   return item.properties.every((property) => isRecord(property) && typeof property.id === "string")
-    && item.rows.every((row) => isRecord(row) && typeof row.id === "string" && Array.isArray(row.blocks)
+    && item.rows.every((row) => isRecord(row) && typeof row.id === "string" && (row.trash === undefined || isTrashMetadata(row.trash)) && Array.isArray(row.blocks)
       && row.blocks.every((block) => isRecord(block) && typeof block.id === "string"));
 });
 

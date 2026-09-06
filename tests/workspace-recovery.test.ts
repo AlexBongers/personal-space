@@ -71,3 +71,12 @@ test("legacy browser workspace corruption is reported without being uploaded", (
   assert.equal(result.invalid, true);
   assert.equal(result.record, null);
 });
+
+test("recovery preserves valid trash metadata and rejects malformed metadata", () => {
+  const items = makeSeed().map((item) => item.id === "work"
+    ? { ...item, trash: { deletedAt: "2026-09-05T12:00:00.000Z", batchId: "batch-1", rootId: "work" } }
+    : item);
+  const record = createRecoveryRecord({ draftId: "tab-a", baseRevision: 3, baseItems: items, draftItems: items, editGeneration: 2 });
+  assert.equal(isWorkspaceRecoveryRecord(record), true);
+  assert.equal(isWorkspaceRecoveryRecord({ ...record, draftItems: items.map((item) => item.id === "work" ? { ...item, trash: { deletedAt: "invalid", batchId: "batch-1", rootId: "work" } } : item) }), false);
+});

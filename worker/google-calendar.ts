@@ -12,7 +12,7 @@ import {
   type GoogleTasksEnv,
   type GoogleTasksStatement,
 } from "./google-tasks.ts";
-import { isWorkspaceItems, loadWorkspace, saveWorkspace } from "./workspace-store.ts";
+import { isWorkspaceItems, loadWorkspace, requiresTrashSupport, saveWorkspace } from "./workspace-store.ts";
 import { createRemoteOnce, GoogleSyncSafetyError, readCreateReceipts, withGoogleSyncLock, type SyncGuard } from "./google-sync-guard.ts";
 
 const STATE_ID = "primary";
@@ -386,6 +386,13 @@ const calendarForRow = (row: Row, calendars: GoogleCalendar[], mapping?: StoredM
 const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], baseRevision: number, env: GoogleCalendarEnv, guard: SyncGuard) => {
   const current = await loadWorkspace(database);
   if (current.revision !== baseRevision) return { conflict: current } as const;
+  const requestedDatabase = items.find((item): item is Database => item.id === GOOGLE_CALENDAR_DATABASE_ID && item.kind === "database");
+  if (requestedDatabase?.trash) {
+    return {
+      workspace: current,
+      summary: { imported: 0, exported: 0, updated: 0, removed: 0, conflicts: 0, calendarCount: 0 },
+    } as const;
+  }
   const token = await getGoogleAccessToken(database, env);
   const calendars = (await listCalendars(token)).filter(isCalendarWriter);
   if (!calendars.length) throw new GoogleCalendarError("No writable Google calendars were found", 400);
@@ -394,9 +401,9 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
   const mappingByLocal = new Map(storedMappings.map((entry) => [entry.local_row_id, entry]));
   let nextItems = [...items];
   let calendarDatabase = nextItems.find((item): item is Database => item.id === GOOGLE_CALENDAR_DATABASE_ID && item.kind === "database");
+  const integrationMissing = !calendarDatabase;
   if (!calendarDatabase) {
     calendarDatabase = createGoogleCalendarDatabase();
-    nextItems = [...nextItems, calendarDatabase];
   }
   const rows = new Map(calendarDatabase.rows.map((row) => [row.id, row]));
   for (const receipt of await readCreateReceipts(database, "calendar")) {
@@ -421,6 +428,7 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
       await database.batch([deleteMapping(database, receipt.local_row_id), database.prepare("DELETE FROM google_sync_creates WHERE operation_key = ?").bind(receipt.operation_key)]);
       continue;
     }
+    if (row.trash) continue;
     if (mappingByLocal.has(row.id) || textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.id) !== receipt.replaces_id) continue;
     const mapping: StoredMapping = { local_row_id: row.id, calendar_id: receipt.container_id, remote_event_id: event.id, remote_etag: event.etag || "", remote_updated: event.updated || "", local_fingerprint: calendarRowFingerprint(googleCalendarToRow(event, { id: receipt.container_id }, row)) };
     await upsertMapping(mapping, database).run();
@@ -499,6 +507,7 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
     for (const event of events) {
       const mapping = mappingsByRemote.get(remoteKey(calendar.id, event.id));
       const existing = (mapping && rows.get(mapping.local_row_id)) || rowByRemote.get(remoteKey(calendar.id, event.id));
+      if (existing?.trash) continue;
       if (mapping && !existing) {
         if (event.status !== "cancelled") { await guard.check(); await deleteEvent(token, calendar.id, event.id); }
         absentRemotes.add(remoteKey(calendar.id, event.id));
@@ -508,15 +517,11 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
       }
       if (event.status === "cancelled") {
         if (!existing) continue;
-        const localChanged = mapping ? calendarRowFingerprint(existing) !== mapping.local_fingerprint : true;
-        if (localChanged && await pushLocal(existing, undefined, true)) continue;
-        rows.delete(existing.id);
-        absentRemotes.add(remoteKey(calendar.id, event.id));
-        statements.push(deleteMapping(database, existing.id));
-        summary.removed += 1;
+        summary.conflicts += 1;
         continue;
       }
       if (!existing) {
+        if (integrationMissing) continue;
         const imported = googleCalendarToRow(event, calendar);
         rows.set(imported.id, imported);
         saveMapping(imported, event);
@@ -543,14 +548,10 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
     }
 
     for (const row of localRows) {
+      if (row.trash) continue;
       const mapping = mappingByLocal.get(row.id);
       if (mapping && mapping.calendar_id === calendar.id && !remoteById.has(mapping.remote_event_id)) {
-        const localChanged = calendarRowFingerprint(row) !== mapping.local_fingerprint;
-        if (localChanged && await pushLocal(row, undefined, true)) continue;
-        rows.delete(row.id);
-        absentRemotes.add(remoteKey(mapping.calendar_id, mapping.remote_event_id));
-        statements.push(deleteMapping(database, row.id));
-        summary.removed += 1;
+        summary.conflicts += 1;
       } else if (!mapping && !textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.id)) {
         await pushLocal(row, undefined, false);
       }
@@ -570,10 +571,10 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
   }
 
   const updatedDatabase = { ...calendarDatabase, rows: [...rows.values()] };
-  nextItems = replaceDatabase(nextItems, updatedDatabase);
+  if (!integrationMissing) nextItems = replaceDatabase(nextItems, updatedDatabase);
   await guard.check();
   const saved = await saveWorkspace(database, nextItems, baseRevision);
-  if (!saved.ok) return { conflict: saved.current } as const;
+  if (saved.ok === false) return { conflict: saved.current } as const;
   statements.push(updateState(database, new Date().toISOString(), null));
   statements.push(database.prepare("DELETE FROM google_sync_creates WHERE service = 'calendar' AND result_json IS NOT NULL"));
   await database.batch(statements);
@@ -618,9 +619,13 @@ export const handleGoogleCalendarApi = async (request: Request, env: GoogleCalen
     }
     if (url.pathname === "/api/google-calendar/sync" && request.method === "POST") {
       if (!isGoogleTasksConfigured(env)) return json({ error: "Google Calendar integration is not configured" }, 503);
-      const body = await request.json().catch(() => null) as { items?: unknown; baseRevision?: unknown } | null;
+      const body = await request.json().catch(() => null) as { items?: unknown; baseRevision?: unknown; protocolVersion?: unknown; capabilities?: unknown } | null;
       if (!body || !isWorkspaceItems(body.items) || !Number.isInteger(body.baseRevision) || Number(body.baseRevision) < 1) {
         return json({ error: "Invalid Google Calendar sync payload" }, 400);
+      }
+      const current = await loadWorkspace(database);
+      if (requiresTrashSupport(current.items, body.items, body)) {
+        return json({ error: "Vernieuw de pagina", code: "workspace_protocol_mismatch" }, 409);
       }
       const result = await withGoogleSyncLock(database, (guard) => syncWorkspace(database, body.items as Item[], Number(body.baseRevision), env, guard));
       if ("conflict" in result) return json({ error: "Workspace changed in another tab", workspace: result.conflict }, 409);

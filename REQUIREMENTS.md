@@ -86,6 +86,56 @@ Just enough direction to keep things on track — specific choices are left to t
 - Keep the implementation simple and conventional. Library, data and structure choices are the
   Coding Agent's call, as long as the requirements and success criteria are met.
 
+## Item 7 — Calendar, trash and workspace export
+
+This section records the later item-7 scope. It supersedes the earlier “Not in scope” bullets for
+trash and export while preserving the original requirements above.
+
+### Calendar
+
+- Calendar dates, labels and navigation use `Europe/Amsterdam`, independent of the browser locale.
+- An all-day event includes its start date and excludes its end date. A timed event appears on every
+  Amsterdam calendar day overlapped by its half-open `[start, end)` interval. Invalid starts are
+  excluded; an invalid or missing end shows only the valid start day.
+- Month and agenda retain their existing behavior, and a Monday-through-Sunday week view is added.
+  Switching modes preserves the selected date. Multi-day events appear on every affected day,
+  including during daylight-saving transitions, without expanding an unbounded range.
+- Cancelled events and trashed rows are excluded from active calendar views. Opening an event from
+  Home, month, week or agenda opens the same stored row.
+
+### Trash
+
+- Deleting a page or database keeps the original item, descendants, rows, blocks, properties,
+  views and Google references with stable IDs, marking one subtree batch with deletion metadata.
+  Deleting a row marks only that row. Home cannot be deleted.
+- Active sidebar, search, Home and database views exclude trashed items and rows. The trash groups
+  batches and shows title, kind, original location, deletion time and affected descendants.
+- Restore removes only the selected batch metadata and retains IDs. Permanently deleting a batch is
+  available from trash only, requires confirmation with the affected count, and removes its stored
+  records. All mutations use the workspace persistence controller, CAS/revisions and its recovery
+  rules.
+- Trashing does not write to Google or reimport remote changes. Google Tasks and Calendar writers
+  must declare protocol version 2 and the `trash` capability; stale writers are rejected while
+  trash metadata exists. Purge and explicit sync retain the existing retry, receipt and conflict
+  safeguards.
+
+### JSON export
+
+- A workspace action menu offers trash and export. Export is lazy loaded and downloads UTF-8 JSON
+  in version 1 format:
+  `{ format: "personal-space", schemaVersion: 1, exportedAt, timeZone: "Europe/Amsterdam", sourceRevision, containsUnconfirmedChanges, items }`.
+- The snapshot includes the full validated workspace allowlist: tree, trash metadata, rows, blocks,
+  properties, view settings and Google references. It excludes OAuth tokens, site authentication,
+  runtime secrets, sync locks and external caches. The snapshot is immutable after clicking export,
+  and its filename contains only a generated date/time.
+- `sourceRevision` is the confirmed base revision. Offline or dirty snapshots are marked with
+  `containsUnconfirmedChanges`. A normal export is blocked while conflicts remain; recovery export
+  material keeps separate base, local and remote versions plus the conflict list and is clearly
+  labelled as recovery material rather than a merged workspace.
+- Export validates before download, uses the correct JSON MIME type, revokes its object URL, and
+  reports failures visibly. There is no import, ZIP, CSV, Markdown, ICS or automatic backup in
+  this scope.
+
 ## Not in scope
 
 Deliberately left out to keep this buildable in one pass. Do not build these:

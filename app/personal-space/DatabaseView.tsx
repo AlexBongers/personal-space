@@ -38,6 +38,7 @@ type DatabaseViewProps = {
   database: Database;
   onUpdate: (database: Database) => void;
   initialRowId?: string | null;
+  onTrashRow?: (databaseId: string, rowId: string) => boolean;
 };
 
 function ClickTooltip({ label, text }: { label: string; text: string }) {
@@ -712,7 +713,7 @@ function GoogleTaskPage({ database, row, onUpdate, onBack, onSave, onDelete }: {
   );
 }
 
-export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewProps) {
+export function DatabaseView({ database, onUpdate, initialRowId, onTrashRow }: DatabaseViewProps) {
   const { t } = useLanguage();
   const [openRowId, setOpenRowId] = useState<string | null>(initialRowId || null);
   const activeView = database.views?.[database.view.mode] || database.view;
@@ -740,7 +741,7 @@ export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewP
   });
 
   const visibleRows = useMemo(() => {
-    let rows = database.rows.filter((row) => activeView.filters.every((filter) => {
+    let rows = database.rows.filter((row) => !row.trash && activeView.filters.every((filter) => {
       const property = database.properties.find((entry) => entry.id === filter.propertyId);
       return property ? matchesFilter(row, property, filter) : true;
     }));
@@ -784,6 +785,7 @@ export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewP
 
   const deleteRow = (rowId: string, confirmation = t("database.deleteRow")) => {
     if (window.confirm(confirmation)) {
+      if (onTrashRow) return onTrashRow(database.id, rowId);
       onUpdate({ ...database, rows: database.rows.filter((row) => row.id !== rowId) });
       return true;
     }
@@ -812,7 +814,7 @@ export function DatabaseView({ database, onUpdate, initialRowId }: DatabaseViewP
     updateView({ filters: nextFilters });
   };
 
-  const openRow = openRowId ? database.rows.find((row) => row.id === openRowId) : undefined;
+  const openRow = openRowId ? database.rows.find((row) => row.id === openRowId && !row.trash) : undefined;
   if (openRow) {
     if (database.id === GOOGLE_CALENDAR_DATABASE_ID) {
       return <CalendarEventPage database={database} row={openRow} onUpdate={onUpdate} onBack={() => setOpenRowId(null)} onSave={() => setOpenRowId(null)} onDelete={() => deleteRow(openRow.id, t("calendarEditor.deleteConfirm"))} />;

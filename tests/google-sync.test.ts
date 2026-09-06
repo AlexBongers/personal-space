@@ -86,9 +86,9 @@ async function fixture(t: TestContext, service: "tasks" | "calendar") {
     return Response.json(existing);
   });
   const env = { DB: database, GOOGLE_CLIENT_ID: "test", GOOGLE_CLIENT_SECRET: "test", GOOGLE_TOKEN_ENCRYPTION_KEY: Buffer.from(keyBytes).toString("base64url") };
-  const run = async (items: Item[] = [integration], revision?: number) => {
+  const run = async (items: Item[] = [integration], revision?: number, writer = true) => {
     const current = database.sqlite.prepare("SELECT revision FROM workspace_state").get()!;
-    const request = new Request(`https://personal.test/api/google-${service}/sync`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, baseRevision: revision ?? current.revision }) });
+    const request = new Request(`https://personal.test/api/google-${service}/sync`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items, baseRevision: revision ?? current.revision, ...(writer ? { protocolVersion: 2, capabilities: ["trash"] } : {}) }) });
     const handler = service === "tasks" ? handleGoogleTasksApi : handleGoogleCalendarApi;
     const response = (await handler(request, env, new URL(request.url)))!;
     return { status: response.status, body: await response.json() };
@@ -208,6 +208,59 @@ for (const service of ["tasks", "calendar"] as const) {
     assert.equal(result.status, 200);
     assert.equal(result.body.workspace.items[0].rows.length, 1);
     assert.equal(f.creates(), 1);
+  });
+
+  test(`${service}: trash preserves the local copy and performs no Google write`, async (t) => {
+    const f = await fixture(t, service);
+    const row = f.installMapping("existing");
+    row.trash = { deletedAt: "2026-09-05T12:00:00.000Z", batchId: "batch-1", rootId: row.id };
+    const before = JSON.stringify(row);
+    const remoteBefore = JSON.stringify(f.remote.get("existing"));
+    const result = await f.run();
+    assert.equal(result.status, 200);
+    assert.equal(JSON.stringify(result.body.workspace.items[0].rows[0]), before);
+    assert.equal(JSON.stringify(f.remote.get("existing")), remoteBefore);
+    assert.equal(f.requests.filter((request) => ["POST", "PATCH", "PUT", "DELETE"].includes(request.method) && !request.path.endsWith("/token")).length, 0);
+  });
+
+  test(`${service}: a legacy writer is rejected while trash exists`, async (t) => {
+    const f = await fixture(t, service);
+    const row = f.installMapping("existing");
+    row.trash = { deletedAt: "2026-09-05T12:00:00.000Z", batchId: "batch-1", rootId: row.id };
+    const result = await f.run(undefined, undefined, false);
+    assert.equal(result.status, 409);
+    assert.equal(result.body.code, "workspace_protocol_mismatch");
+    assert.equal(f.requests.length, 0);
+  });
+
+  test(`${service}: purged integration database uses retained mappings for one explicit remote delete`, async (t) => {
+    const f = await fixture(t, service);
+    f.installMapping("existing");
+    const result = await f.run([]);
+    assert.equal(result.status, 200);
+    assert.equal(result.body.workspace.items.length, 0);
+    assert.equal(f.remote.size, 0);
+    assert.equal(f.requests.filter((request) => request.method === "DELETE").length, 1);
+    const retried = await f.run(result.body.workspace.items, result.body.workspace.revision);
+    assert.equal(retried.status, 200);
+    assert.equal(f.requests.filter((request) => request.method === "DELETE").length, 1);
+  });
+
+  test(`${service}: remote deletion after restore is surfaced as a conflict without silent recreation`, async (t) => {
+    const f = await fixture(t, service);
+    const row = f.installMapping("existing");
+    row.trash = { deletedAt: "2026-09-05T12:00:00.000Z", batchId: "batch-1", rootId: row.id };
+    const trashed = await f.run();
+    f.remote.clear();
+    const restoredItems = trashed.body.workspace.items.map((item: Item) => item.kind === "database"
+      ? { ...item, rows: item.rows.map((entry) => { const { trash: _trash, ...rest } = entry; void _trash; return rest; }) }
+      : item);
+    const result = await f.run(restoredItems, trashed.body.workspace.revision);
+    assert.equal(result.status, 200);
+    assert.equal(result.body.sync.conflicts, 1);
+    assert.equal(result.body.workspace.items[0].rows.length, 1);
+    assert.equal(f.creates(), 0);
+    assert.equal(f.requests.filter((request) => request.method === "DELETE").length, 0);
   });
 }
 

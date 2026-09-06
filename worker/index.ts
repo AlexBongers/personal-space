@@ -7,7 +7,7 @@ import { handleSlashdotApi } from "./slashdot";
 import { handleNewsApi } from "./news";
 import { handleGmailApi } from "./gmail";
 import { handleParroApi } from "./parro";
-import { isWorkspaceItems, loadWorkspace, MAX_WORKSPACE_BYTES, saveWorkspace } from "./workspace-store";
+import { isWorkspaceItems, loadWorkspace, MAX_WORKSPACE_BYTES, requiresTrashSupport, saveWorkspace, type WorkspaceWriter } from "./workspace-store";
 import type { GoogleTasksDatabase } from "./google-tasks";
 import type { ParroDatabase } from "./parro";
 import type { WorkspaceDatabase } from "./workspace-store";
@@ -59,14 +59,18 @@ const handleWorkspaceApi = async (request: Request, env: Env, url: URL) => {
   const declaredLength = Number(request.headers.get("Content-Length") || 0);
   if (declaredLength > MAX_WORKSPACE_BYTES) return json({ error: "Workspace exceeds the storage limit" }, 413);
 
-  const body = await request.json().catch(() => null) as { items?: unknown; baseRevision?: unknown } | null;
+  const body = await request.json().catch(() => null) as ({ items?: unknown; baseRevision?: unknown } & WorkspaceWriter) | null;
   if (!body || !isWorkspaceItems(body.items) || !Number.isInteger(body.baseRevision) || Number(body.baseRevision) < 1) {
     return json({ error: "Invalid workspace payload" }, 400);
   }
 
   try {
+    const current = await loadWorkspace(database);
+    if (requiresTrashSupport(current.items, body.items, body)) {
+      return json({ error: "Vernieuw de pagina", code: "workspace_protocol_mismatch" }, 409);
+    }
     const result = await saveWorkspace(database, body.items, Number(body.baseRevision));
-    if (!result.ok) return json({ error: "Workspace changed in another tab", ...result.current }, 409);
+    if (result.ok === false) return json({ error: "Workspace changed in another tab", ...result.current }, 409);
     return json(result.workspace);
   } catch (error) {
     if (error instanceof RangeError) return json({ error: error.message }, 413);

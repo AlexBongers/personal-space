@@ -1,3 +1,4 @@
+import { isTrashMetadata } from "./model.ts";
 import type { Item } from "./types";
 
 /**
@@ -38,6 +39,16 @@ export const validateWorkspaceTree = (items: Item[]): WorkspaceTreeValidation =>
   const byId = new Map<string, Item>();
   for (const item of items) {
     if (!item.id || byId.has(item.id)) return { valid: false, reason: "Duplicate workspace item id", ids: [item.id] };
+    if (item.trash !== undefined && !isTrashMetadata(item.trash)) return { valid: false, reason: "Workspace contains invalid trash metadata", ids: [item.id] };
+    if (item.kind === "database") {
+      const rowIds = new Set<string>();
+      for (const row of item.rows) {
+        if (rowIds.has(row.id)) return { valid: false, reason: "Duplicate database row id", ids: [item.id, row.id] };
+        rowIds.add(row.id);
+        if (row.trash !== undefined && !isTrashMetadata(row.trash)) return { valid: false, reason: "Workspace contains invalid row trash metadata", ids: [item.id, row.id] };
+        if (item.trash && !row.trash) return { valid: false, reason: "A trashed database contains an active row", ids: [item.id, row.id] };
+      }
+    }
     byId.set(item.id, item);
   }
   const home = byId.get("home");
@@ -47,6 +58,9 @@ export const validateWorkspaceTree = (items: Item[]): WorkspaceTreeValidation =>
   for (const item of items) {
     if (item.parentId !== null && !byId.has(item.parentId)) {
       return { valid: false, reason: "Workspace contains an item whose parent is missing", ids: [item.id, item.parentId] };
+    }
+    if (item.parentId && !item.trash && byId.get(item.parentId)?.trash) {
+      return { valid: false, reason: "An active item has a trashed parent", ids: [item.id, item.parentId] };
     }
   }
   const visiting = new Set<string>();
@@ -133,7 +147,7 @@ export const mergeWorkspace = (base: Item[], local: Item[], remote: Item[]): Wor
   }
 
   const tree = validateWorkspaceTree(items);
-  if (!tree.valid) {
+  if (tree.valid === false) {
     return {
       ok: false,
       conflicts: [{ id: "workspace", reason: tree.reason }],

@@ -22,6 +22,7 @@ import { SlashdotFeed } from "./personal-space/SlashdotFeed";
 import type { Block, Item, SearchResult, Theme } from "./personal-space/types";
 import { useLanguage } from "./personal-space/i18n";
 import { useWorkspacePersistence } from "./personal-space/useWorkspacePersistence";
+import { markItemSubtreeTrashed, markRowTrashed, purgeTrashBatch, restoreTrashBatch } from "./personal-space/workspace-trash";
 
 const BlockEditor = lazy(() => import("./personal-space/BlockEditor").then((module) => ({ default: module.BlockEditor })));
 const DatabaseView = lazy(() => import("./personal-space/DatabaseView").then((module) => ({ default: module.DatabaseView })));
@@ -29,6 +30,8 @@ const HomeOverview = lazy(() => import("./personal-space/HomeOverview").then((mo
 const SearchDialog = lazy(() => import("./personal-space/SearchDialog").then((module) => ({ default: module.SearchDialog })));
 const GoogleTasksDialog = lazy(() => import("./personal-space/GoogleTasksDialog").then((module) => ({ default: module.GoogleTasksDialog })));
 const GoogleCalendarDialog = lazy(() => import("./personal-space/GoogleCalendarDialog").then((module) => ({ default: module.GoogleCalendarDialog })));
+const WorkspaceActionsMenu = lazy(() => import("./personal-space/WorkspaceActionsMenu").then((module) => ({ default: module.WorkspaceActionsMenu })));
+const TrashDialog = lazy(() => import("./personal-space/TrashDialog").then((module) => ({ default: module.TrashDialog })));
 
 const isTypingTarget = (target: EventTarget | null) => {
   const element = target as HTMLElement | null;
@@ -38,6 +41,8 @@ const isTypingTarget = (target: EventTarget | null) => {
 export default function Home() {
   const {
     items,
+    confirmedItems,
+    containsUnconfirmedChanges,
     setItems,
     replaceItems,
     revision,
@@ -67,6 +72,7 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [googleTasksOpen, setGoogleTasksOpen] = useState(false);
   const [googleCalendarOpen, setGoogleCalendarOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
   const [gmailAuthorizationError, setGmailAuthorizationError] = useState(false);
   const deferredQuery = useDeferredValue(query);
 
@@ -126,6 +132,7 @@ export default function Home() {
         setSidebarOpen(false);
         setGoogleTasksOpen(false);
         setGoogleCalendarOpen(false);
+        setTrashOpen(false);
       }
       if (!event.metaKey && !event.ctrlKey && event.key.toLowerCase() === "h" && !isTypingTarget(event.target)) {
         setSelectedId("home");
@@ -136,7 +143,8 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const selected = items.find((item) => item.id === selectedId) || items[0];
+  const visibleItems = useMemo(() => items.filter((item) => !item.trash), [items]);
+  const selected = visibleItems.find((item) => item.id === selectedId) || visibleItems[0];
   const utilityPage = selectedId === "gmail" || selectedId === "parro" || selectedId === "news-slashdot" || selectedId === "news-tweakers" || selectedId === "news-nos" || selectedId === "news-bunniksnieuws" ? selectedId : null;
   const currentTitle = utilityPage === "gmail" ? t("gmail.title") : utilityPage === "parro" ? t("parro.title") : utilityPage === "news-slashdot" ? "Slashdot" : utilityPage === "news-tweakers" ? "Tweakers" : utilityPage === "news-nos" ? "NOS" : utilityPage === "news-bunniksnieuws" ? "Bunniks Nieuws" : selected?.title || t("nav.home");
 
@@ -182,9 +190,54 @@ export default function Home() {
   const deleteItem = (id: string) => {
     const target = items.find((item) => item.id === id);
     if (!target || id === "home" || !window.confirm(t("dialogs.deleteItem", { title: target.title }))) return;
-    const idsToDelete = descendantIds(items, id);
-    setItems((current) => current.filter((item) => !idsToDelete.has(item.id)));
+    const metadata = { deletedAt: new Date().toISOString(), batchId: uid("trash"), rootId: id };
+    setItems((current) => markItemSubtreeTrashed(current, id, metadata).items);
     selectItem("home");
+  };
+
+  const trashRow = (databaseId: string, rowId: string) => {
+    const metadata = { deletedAt: new Date().toISOString(), batchId: uid("trash"), rootId: rowId };
+    return setItems((current) => markRowTrashed(current, databaseId, rowId, metadata).items);
+  };
+
+  const trashEntries = useMemo(() => {
+    const entries: Array<{ id: string; title: string; kind: string; deletedAt: string; descendantCount: number; batchId: string }> = [];
+    for (const item of items) {
+      if (item.trash && item.trash.rootId === item.id) {
+        const descendants = descendantIds(items, item.id);
+        const rowCount = items.reduce((count, candidate) => count + (candidate.kind === "database" && descendants.has(candidate.id)
+          ? candidate.rows.filter((row) => row.trash?.batchId === item.trash?.batchId).length
+          : 0), 0);
+        entries.push({
+          id: item.id,
+          title: item.title,
+          kind: item.kind,
+          deletedAt: item.trash.deletedAt,
+          descendantCount: descendants.size - 1 + rowCount,
+          batchId: item.trash.batchId,
+        });
+      }
+      if (item.kind === "database") {
+        for (const row of item.rows) {
+          if (row.trash && row.trash.rootId === row.id && !item.trash) {
+            entries.push({ id: `${item.id}/${row.id}`, title: row.title, kind: "row", deletedAt: row.trash.deletedAt, descendantCount: 0, batchId: row.trash.batchId });
+          }
+        }
+      }
+    }
+    return entries.sort((left, right) => right.deletedAt.localeCompare(left.deletedAt));
+  }, [items]);
+
+  const restoreTrash = (batchId: string) => {
+    if (setItems((current) => restoreTrashBatch(current, batchId).items)) setTrashOpen(false);
+  };
+
+  const purgeTrash = (batchId: string) => {
+    const result = purgeTrashBatch(items, batchId);
+    if (!result.changed) return;
+    const confirmed = window.confirm(t("trash.confirmPurge", { count: result.removedCount }));
+    if (!confirmed) return;
+    if (setItems(() => result.items)) setTrashOpen(false);
   };
 
   const quickAdd = (kind: "task" | "note", text: string): boolean => {
@@ -225,7 +278,7 @@ export default function Home() {
   const searchResults = useMemo<SearchResult[]>(() => {
     const needle = deferredQuery.toLowerCase().trim();
     if (!needle) return [];
-    return items.flatMap((item) => {
+    return visibleItems.flatMap((item) => {
       const results: SearchResult[] = [];
       if (item.title.toLowerCase().includes(needle)) {
         results.push({
@@ -236,7 +289,7 @@ export default function Home() {
         });
       }
       if (item.kind === "database") {
-        item.rows.forEach((row) => {
+        item.rows.filter((row) => !row.trash).forEach((row) => {
           if (row.title.toLowerCase().includes(needle)) {
             results.push({
               id: item.id,
@@ -251,7 +304,7 @@ export default function Home() {
       }
       return results;
     });
-  }, [deferredQuery, items]);
+  }, [deferredQuery, visibleItems]);
 
   const updateSelectedBlocks = (blocks: Block[]) => {
     if (isPage(selected)) updateItem({ ...selected, blocks });
@@ -269,7 +322,7 @@ export default function Home() {
   return (
     <main className={`app-shell theme-${theme}`}>
       <Sidebar
-        items={items}
+        items={visibleItems}
         selectedId={selectedId}
         expanded={expanded}
         mobileOpen={sidebarOpen}
@@ -298,6 +351,17 @@ export default function Home() {
             <button className="tasks-trigger calendar-trigger" aria-label={t("calendar.title")} onClick={() => setGoogleCalendarOpen(true)}>
               <span><InterfaceIcon name="calendar" /></span><span>{t("top.googleCalendar")}</span>
             </button>
+            <Suspense fallback={null}>
+              <WorkspaceActionsMenu
+                items={items}
+                confirmedItems={confirmedItems}
+                sourceRevision={revision}
+                containsUnconfirmedChanges={containsUnconfirmedChanges}
+                conflicts={conflicts}
+                disabled={!hydrated}
+                onOpenTrash={() => setTrashOpen(true)}
+              />
+            </Suspense>
             <div className="language-switch" role="group" aria-label={t("language.label")}>
               <button type="button" className={language === "en" ? "active" : ""} aria-label={t("language.switchToEnglish")} aria-pressed={language === "en"} onClick={() => setLanguage("en")}>EN</button>
               <button type="button" className={language === "nl" ? "active" : ""} aria-label={t("language.switchToDutch")} aria-pressed={language === "nl"} onClick={() => setLanguage("nl")}>NL</button>
@@ -324,6 +388,7 @@ export default function Home() {
                 database={selected}
                 onUpdate={updateItem}
                 initialRowId={selectedRowId}
+                onTrashRow={trashRow}
               />
             ) : selected?.id === "home" ? (
               <div className="page-view home-page">
@@ -410,6 +475,14 @@ export default function Home() {
             onOpenDatabase={() => { setGoogleCalendarOpen(false); selectItem(GOOGLE_CALENDAR_DATABASE_ID); }}
             onClose={() => setGoogleCalendarOpen(false)}
           /></Suspense>
+      )}
+      {trashOpen && (
+        <Suspense fallback={null}><TrashDialog
+          entries={trashEntries}
+          onRestore={restoreTrash}
+          onPurge={purgeTrash}
+          onClose={() => setTrashOpen(false)}
+        /></Suspense>
       )}
     </main>
   );

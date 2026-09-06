@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createGoogleTasksDatabase, GOOGLE_TASKS_DATABASE_ID } from "./model";
 import { useLanguage } from "./i18n";
+import type { WorkspaceMutationSession } from "./workspace-persistence-controller.ts";
 import type { Item } from "./types";
 
 type GoogleTaskList = { id: string; title: string };
@@ -28,14 +29,14 @@ type GoogleTasksSummary = {
 };
 
 type GoogleTasksDialogProps = {
-  items: Item[];
   revision: number;
   onReplace: (items: Item[], revision: number) => void;
+  onBeginSync: () => Promise<WorkspaceMutationSession | null>;
   onOpenDatabase: () => void;
   onClose: () => void;
 };
 
-export function GoogleTasksDialog({ items, revision, onReplace, onOpenDatabase, onClose }: GoogleTasksDialogProps) {
+export function GoogleTasksDialog({ revision, onReplace, onBeginSync, onOpenDatabase, onClose }: GoogleTasksDialogProps) {
   const { language, t } = useLanguage();
   const [status, setStatus] = useState<GoogleTasksStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,14 +75,20 @@ export function GoogleTasksDialog({ items, revision, onReplace, onOpenDatabase, 
     setBusy(true);
     setError("");
     setSummary(null);
+    const session = await onBeginSync();
+    if (!session) {
+      setError(t("sync.workspaceBusy"));
+      setBusy(false);
+      return;
+    }
     try {
-      const nextItems = items.some((item) => item.id === GOOGLE_TASKS_DATABASE_ID)
-        ? items
-        : [...items, createGoogleTasksDatabase()];
+      const nextItems = session.items.some((item) => item.id === GOOGLE_TASKS_DATABASE_ID)
+        ? session.items
+        : [...session.items, createGoogleTasksDatabase()];
       const response = await fetch("/api/google-tasks/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: nextItems, baseRevision: revision }),
+        body: JSON.stringify({ items: nextItems, baseRevision: session.revision }),
       });
       const body = await response.json() as { workspace?: { items: Item[]; revision: number }; sync?: GoogleTasksSummary; error?: string; code?: string };
       if (!response.ok || !body.workspace || !body.sync) throw new Error(body.code === "sync_busy" ? t("sync.busy") : body.code === "sync_uncertain" ? t("sync.uncertain") : body.error || t("google.syncError"));
@@ -91,6 +98,7 @@ export function GoogleTasksDialog({ items, revision, onReplace, onOpenDatabase, 
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("google.syncError"));
     } finally {
+      session.release();
       setBusy(false);
     }
   };

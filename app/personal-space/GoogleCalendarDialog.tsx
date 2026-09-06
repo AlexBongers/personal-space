@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createGoogleCalendarDatabase, GOOGLE_CALENDAR_DATABASE_ID } from "./model";
 import { useLanguage } from "./i18n";
+import type { WorkspaceMutationSession } from "./workspace-persistence-controller.ts";
 import type { Item } from "./types";
 
 type CalendarStatus = {
@@ -24,14 +25,14 @@ type CalendarSummary = {
 };
 
 type GoogleCalendarDialogProps = {
-  items: Item[];
   revision: number;
   onReplace: (items: Item[], revision: number) => void;
+  onBeginSync: () => Promise<WorkspaceMutationSession | null>;
   onOpenDatabase: () => void;
   onClose: () => void;
 };
 
-export function GoogleCalendarDialog({ items, revision, onReplace, onOpenDatabase, onClose }: GoogleCalendarDialogProps) {
+export function GoogleCalendarDialog({ revision, onReplace, onBeginSync, onOpenDatabase, onClose }: GoogleCalendarDialogProps) {
   const { language, t } = useLanguage();
   const [status, setStatus] = useState<CalendarStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,14 +71,20 @@ export function GoogleCalendarDialog({ items, revision, onReplace, onOpenDatabas
     setBusy(true);
     setError("");
     setSummary(null);
+    const session = await onBeginSync();
+    if (!session) {
+      setError(t("sync.workspaceBusy"));
+      setBusy(false);
+      return;
+    }
     try {
-      const nextItems = items.some((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID)
-        ? items
-        : [...items, createGoogleCalendarDatabase()];
+      const nextItems = session.items.some((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID)
+        ? session.items
+        : [...session.items, createGoogleCalendarDatabase()];
       const response = await fetch("/api/google-calendar/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: nextItems, baseRevision: revision }),
+        body: JSON.stringify({ items: nextItems, baseRevision: session.revision }),
       });
       const body = await response.json() as { workspace?: { items: Item[]; revision: number }; sync?: CalendarSummary; error?: string; code?: string };
       if (!response.ok || !body.workspace || !body.sync) throw new Error(body.code === "sync_busy" ? t("sync.busy") : body.code === "sync_uncertain" ? t("sync.uncertain") : body.error || t("calendar.syncError"));
@@ -87,6 +94,7 @@ export function GoogleCalendarDialog({ items, revision, onReplace, onOpenDatabas
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("calendar.syncError"));
     } finally {
+      session.release();
       setBusy(false);
     }
   };

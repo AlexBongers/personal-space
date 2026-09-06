@@ -1,7 +1,6 @@
 "use client";
 
 import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { HomeOverview } from "./personal-space/HomeOverview";
 import {
   createEmptyDatabase,
   createEmptyPage,
@@ -11,6 +10,9 @@ import {
   isDatabase,
   isPage,
   STORAGE_KEYS,
+  uid,
+  GOOGLE_TASKS_DATABASE_ID,
+  GOOGLE_TASK_PROPERTY_IDS,
 } from "./personal-space/model";
 import { Sidebar } from "./personal-space/Sidebar";
 import { InterfaceIcon } from "./personal-space/InterfaceIcon";
@@ -23,6 +25,7 @@ import { useWorkspacePersistence } from "./personal-space/useWorkspacePersistenc
 
 const BlockEditor = lazy(() => import("./personal-space/BlockEditor").then((module) => ({ default: module.BlockEditor })));
 const DatabaseView = lazy(() => import("./personal-space/DatabaseView").then((module) => ({ default: module.DatabaseView })));
+const HomeOverview = lazy(() => import("./personal-space/HomeOverview").then((module) => ({ default: module.HomeOverview })));
 const SearchDialog = lazy(() => import("./personal-space/SearchDialog").then((module) => ({ default: module.SearchDialog })));
 const GoogleTasksDialog = lazy(() => import("./personal-space/GoogleTasksDialog").then((module) => ({ default: module.GoogleTasksDialog })));
 const GoogleCalendarDialog = lazy(() => import("./personal-space/GoogleCalendarDialog").then((module) => ({ default: module.GoogleCalendarDialog })));
@@ -33,7 +36,26 @@ const isTypingTarget = (target: EventTarget | null) => {
 };
 
 export default function Home() {
-  const { items, setItems, replaceItems, revision, hydrated, syncState } = useWorkspacePersistence();
+  const {
+    items,
+    setItems,
+    replaceItems,
+    revision,
+    hydrated,
+    editingReady,
+    mutationLocked,
+    syncState,
+    conflicts,
+    retry,
+    beginExternalMutation,
+    legacyRecovery,
+    recoveryRecords,
+    recoveryDraftId,
+    acceptLegacyRecovery,
+    dismissLegacyRecovery,
+    recoverDraft,
+    discardRecovery,
+  } = useWorkspacePersistence();
   const { language, setLanguage, t } = useLanguage();
   const [selectedId, setSelectedId] = useState("home");
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
@@ -49,11 +71,11 @@ export default function Home() {
   const deferredQuery = useDeferredValue(query);
 
   useEffect(() => {
-    if (!hydrated || items.some((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID)) return;
+    if (!hydrated || !editingReady || items.some((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID)) return;
     setItems((current) => current.some((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID)
       ? current
       : [...current, createGoogleCalendarDatabase()]);
-  }, [hydrated, items, setItems]);
+  }, [hydrated, editingReady, items, setItems]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -165,6 +187,41 @@ export default function Home() {
     selectItem("home");
   };
 
+  const quickAdd = (kind: "task" | "note", text: string): boolean => {
+    if (!editingReady || syncState === "loading" || syncState === "conflict") return false;
+    if (kind === "note") {
+      const page = { ...createEmptyPage(null), title: text };
+      const accepted = setItems((current) => [...current, page]);
+      if (accepted) selectItem(page.id);
+      return accepted;
+    }
+    const database = items.find((item) => item.id === GOOGLE_TASKS_DATABASE_ID);
+    if (!database || !isDatabase(database)) return false;
+    const row = {
+      id: uid("task"),
+      title: text,
+      values: {
+        [GOOGLE_TASK_PROPERTY_IDS.status]: "Open",
+        [GOOGLE_TASK_PROPERTY_IDS.due]: null,
+        [GOOGLE_TASK_PROPERTY_IDS.notes]: "",
+        [GOOGLE_TASK_PROPERTY_IDS.list]: "",
+        [GOOGLE_TASK_PROPERTY_IDS.link]: "",
+        [GOOGLE_TASK_PROPERTY_IDS.id]: "",
+        [GOOGLE_TASK_PROPERTY_IDS.parent]: "",
+        [GOOGLE_TASK_PROPERTY_IDS.position]: "",
+      },
+      blocks: [],
+    };
+    return setItems((current) => current.map((item) => item.id === database.id && isDatabase(item) ? { ...item, rows: [...item.rows, row] } : item));
+  };
+
+  const syncLabel = mutationLocked
+    ? (language === "nl" ? "Google-sync bezig" : "Google sync in progress")
+    : syncState === "conflict"
+    ? (language === "nl" ? "Conflict: controleer wijzigingen" : "Conflict: review changes")
+    : t(`sync.${syncState}`);
+  const persistenceBlocked = !editingReady || syncState === "loading" || syncState === "conflict";
+
   const searchResults = useMemo<SearchResult[]>(() => {
     const needle = deferredQuery.toLowerCase().trim();
     if (!needle) return [];
@@ -253,9 +310,10 @@ export default function Home() {
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z" /></svg>
               </button>
             </div>
-            <span className={`sync-indicator sync-${syncState}`} role="status" aria-label={t(`sync.${syncState}`)}>
+            <span className={`sync-indicator sync-${syncState}`} role="status" aria-label={syncLabel} title={syncLabel}>
               <i aria-hidden="true" />
             </span>
+            <span className="sync-label">{syncLabel}</span>
           </div>
         </header>
         <div className="content-scroll">
@@ -269,7 +327,13 @@ export default function Home() {
               />
             ) : selected?.id === "home" ? (
               <div className="page-view home-page">
-                <HomeOverview items={items} onOpen={selectItem} />
+                <HomeOverview
+                  items={items}
+                  onOpen={selectItem}
+                  onQuickAdd={quickAdd}
+                  quickAddDisabled={persistenceBlocked}
+                  quickAddStatus={conflicts.length ? syncLabel : undefined}
+                />
               </div>
             ) : (
               <div className="page-view">
@@ -290,6 +354,35 @@ export default function Home() {
             )}
           </Suspense>
         </div>
+        {syncState === "conflict" && (
+          <div className="workspace-alert" role="alert">
+            <span>{syncLabel}{conflicts.length ? ` (${conflicts.length})` : ""}</span>
+            <button type="button" className="small-button" onClick={() => void retry()}>{language === "nl" ? "Opnieuw proberen" : "Retry"}</button>
+          </div>
+        )}
+        {legacyRecovery && (
+          <div className="workspace-alert" role="region" aria-label={language === "nl" ? "Legacy-workspace gevonden" : "Legacy workspace found"}>
+            <span>{language === "nl" ? "Er is een oudere browserworkspace gevonden. Kies expliciet of je die wilt importeren." : "An older browser workspace was found. Choose explicitly whether to import it."}</span>
+            <span>
+              <button type="button" className="small-button" disabled={!editingReady || syncState === "saving"} onClick={() => { acceptLegacyRecovery(); }}>{language === "nl" ? "Importeren" : "Import"}</button>
+              <button type="button" className="small-button" disabled={syncState === "saving"} onClick={dismissLegacyRecovery}>{language === "nl" ? "D1 behouden" : "Keep D1"}</button>
+            </span>
+          </div>
+        )}
+        {recoveryRecords.some((record) => record.draftId !== recoveryDraftId) && (
+          <details className="workspace-recovery-list">
+            <summary>{language === "nl" ? "Herstelkopieën uit andere tabs" : "Recovery drafts from other tabs"}</summary>
+            {recoveryRecords.filter((record) => record.draftId !== recoveryDraftId).map((record) => (
+              <div className="workspace-recovery-row" key={record.draftId}>
+                <span><strong>{record.draftId.slice(0, 12)}</strong><small>{record.draftItems.slice(0, 3).map((item) => item.title).join(", ")}</small></span>
+                <span>
+                  <button type="button" className="small-button" disabled={!editingReady} onClick={() => { recoverDraft(record.draftId); }}>{language === "nl" ? "Herstellen" : "Recover"}</button>
+                  <button type="button" className="small-button" onClick={() => { discardRecovery(record.draftId); }}>{language === "nl" ? "Verwijderen" : "Discard"}</button>
+                </span>
+              </div>
+            ))}
+          </details>
+        )}
       </section>
       {searchOpen && (
         <Suspense fallback={null}><SearchDialog
@@ -301,19 +394,19 @@ export default function Home() {
           /></Suspense>
       )}
       {googleTasksOpen && (
-        <Suspense fallback={null}><GoogleTasksDialog
-            items={items}
+          <Suspense fallback={null}><GoogleTasksDialog
             revision={revision}
             onReplace={replaceItems}
+            onBeginSync={beginExternalMutation}
             onOpenDatabase={() => { setGoogleTasksOpen(false); selectItem("google-tasks"); }}
             onClose={() => setGoogleTasksOpen(false)}
           /></Suspense>
       )}
       {googleCalendarOpen && (
-        <Suspense fallback={null}><GoogleCalendarDialog
-            items={items}
+          <Suspense fallback={null}><GoogleCalendarDialog
             revision={revision}
             onReplace={replaceItems}
+            onBeginSync={beginExternalMutation}
             onOpenDatabase={() => { setGoogleCalendarOpen(false); selectItem(GOOGLE_CALENDAR_DATABASE_ID); }}
             onClose={() => setGoogleCalendarOpen(false)}
           /></Suspense>

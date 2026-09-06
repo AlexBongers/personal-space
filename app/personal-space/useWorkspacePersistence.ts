@@ -1,19 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { makeSeed, mergeSeedAdditions, normalizeItems, SEED_VERSION, STORAGE_KEYS } from "./model";
+import { useCallback, useEffect, useState, type SetStateAction } from "react";
+import { makeSeed } from "./model.ts";
+import {
+  BrowserRecoveryStore,
+  getDraftId,
+  type RecoveryStorage,
+} from "./workspace-recovery.ts";
+import {
+  WorkspacePersistenceController,
+  type WorkspaceEnvelope,
+  type WorkspaceSaveResult,
+  type PersistenceStatus,
+} from "./workspace-persistence-controller.ts";
+import { isWorkspaceMutationLocked, subscribeWorkspaceMutationLock } from "./workspace-mutation-lock.ts";
 import type { Item } from "./types";
 
-export type SyncState = "loading" | "saving" | "saved" | "offline" | "error";
+export type SyncState = PersistenceStatus;
 
-type WorkspaceResponse = {
-  items: Item[];
-  revision: number;
-  updatedAt: string;
-  error?: string;
-};
-
-const D1_MIGRATION_KEY = "personal-space-d1-migrated-v1";
+type WorkspaceResponse = WorkspaceEnvelope & { error?: string };
 
 const readResponse = async (response: Response): Promise<WorkspaceResponse> => {
   const body = await response.json() as WorkspaceResponse;
@@ -27,113 +32,95 @@ const putWorkspace = (items: Item[], baseRevision: number) => fetch("/api/worksp
   body: JSON.stringify({ items, baseRevision }),
 });
 
-const readLegacyWorkspace = () => {
-  const stored = window.localStorage.getItem(STORAGE_KEYS.items);
-  if (!stored) return null;
-  const parsed = normalizeItems(JSON.parse(stored) as Item[]);
-  const seedVersion = window.localStorage.getItem(STORAGE_KEYS.seedVersion);
-  return seedVersion === SEED_VERSION ? parsed : mergeSeedAdditions(parsed);
+const transport = {
+  async load(): Promise<WorkspaceEnvelope> {
+    return readResponse(await fetch("/api/workspace", { cache: "no-store" }));
+  },
+  async save(items: Item[], baseRevision: number): Promise<WorkspaceSaveResult> {
+    const response = await putWorkspace(items, baseRevision);
+    if (response.status === 409) {
+      const current = await response.json() as WorkspaceResponse;
+      if (!Number.isInteger(current.revision) || !Array.isArray(current.items)) throw new Error(current.error || "Workspace conflict response is invalid");
+      return { ok: false, current };
+    }
+    return { ok: true, workspace: await readResponse(response) };
+  },
+};
+
+const unavailableStorage = (): RecoveryStorage => ({
+  getItem: () => { throw new Error("Browser storage is unavailable"); },
+  setItem: () => { throw new Error("Browser storage is unavailable"); },
+  removeItem: () => { throw new Error("Browser storage is unavailable"); },
+  length: 0,
+  key: () => null,
+});
+
+const controllerForBrowser = () => {
+  let local: RecoveryStorage = unavailableStorage();
+  let session: RecoveryStorage = unavailableStorage();
+  if (typeof window !== "undefined") {
+    try { local = window.localStorage; } catch { /* Controller reports the storage failure. */ }
+    try { session = window.sessionStorage; } catch { /* Controller uses an ephemeral draft id. */ }
+  }
+  let draftId = "server-render";
+  try { draftId = getDraftId(session); } catch { draftId = `ephemeral-${Date.now().toString(36)}`; }
+  return new WorkspacePersistenceController(transport, new BrowserRecoveryStore(local, draftId), makeSeed());
 };
 
 export function useWorkspacePersistence() {
-  const [items, setItems] = useState<Item[]>(() => normalizeItems(makeSeed()));
-  const [hydrated, setHydrated] = useState(false);
-  const [backendReady, setBackendReady] = useState(false);
-  const [syncState, setSyncState] = useState<SyncState>("loading");
-  const [revision, setRevision] = useState(0);
-  const revisionRef = useRef(0);
-  const skipNextSaveRef = useRef(true);
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const [controller] = useState(controllerForBrowser);
+  const [snapshot, setSnapshot] = useState(() => controller.snapshot);
+  const [mutationLocked, setMutationLocked] = useState(isWorkspaceMutationLocked);
 
   useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        let remote = await readResponse(await fetch("/api/workspace", { cache: "no-store" }));
-        let nextItems = normalizeItems(remote.items);
-        const legacyMigrated = window.localStorage.getItem(D1_MIGRATION_KEY) === "true";
-        const legacyItems = legacyMigrated ? null : readLegacyWorkspace();
+    const unsubscribe = controller.subscribe(setSnapshot);
+    void controller.load();
+    return () => { unsubscribe(); };
+  }, [controller]);
 
-        if (remote.revision === 1 && legacyItems) {
-          const migrationResponse = await putWorkspace(legacyItems, remote.revision);
-          if (migrationResponse.status === 409) {
-            remote = await migrationResponse.json() as WorkspaceResponse;
-          } else {
-            remote = await readResponse(migrationResponse);
-          }
-          nextItems = normalizeItems(remote.items);
-        }
+  useEffect(() => subscribeWorkspaceMutationLock(setMutationLocked), []);
 
-        if (cancelled) return;
-        revisionRef.current = remote.revision;
-        setRevision(remote.revision);
-        skipNextSaveRef.current = true;
-        setItems(nextItems);
-        setBackendReady(true);
-        setSyncState("saved");
-        window.localStorage.setItem(D1_MIGRATION_KEY, "true");
-        window.localStorage.removeItem(STORAGE_KEYS.items);
-        window.localStorage.removeItem(STORAGE_KEYS.seedVersion);
-      } catch {
-        if (cancelled) return;
-        try {
-          const fallback = readLegacyWorkspace();
-          if (fallback) setItems(fallback);
-        } catch {
-          // Keep the deterministic seed if both D1 and the legacy backup are unavailable.
-        }
-        setSyncState("offline");
-      } finally {
-        if (!cancelled) setHydrated(true);
-      }
+  useEffect(() => {
+    const retry = () => {
+      if (document.visibilityState === "visible") void controller.retry();
     };
-    void load();
-    return () => { cancelled = true; };
-  }, []);
+    window.addEventListener("online", retry);
+    document.addEventListener("visibilitychange", retry);
+    return () => {
+      window.removeEventListener("online", retry);
+      document.removeEventListener("visibilitychange", retry);
+    };
+  }, [controller]);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    if (!backendReady) {
-      window.localStorage.setItem(STORAGE_KEYS.items, JSON.stringify(items));
-      return;
-    }
-    if (skipNextSaveRef.current) {
-      skipNextSaveRef.current = false;
-      return;
-    }
+  const setItems = useCallback((mutation: SetStateAction<Item[]>) => controller.apply(mutation), [controller]);
+  const replaceItems = useCallback((items: Item[], revision: number) => controller.replaceItems(items, revision), [controller]);
+  const retry = useCallback(() => controller.retry(), [controller]);
+  const beginExternalMutation = useCallback(() => controller.beginExternalMutation(), [controller]);
+  const acceptLegacyRecovery = useCallback(() => controller.acceptLegacyRecovery(), [controller]);
+  const dismissLegacyRecovery = useCallback(() => controller.dismissLegacyRecovery(), [controller]);
+  const recoverDraft = useCallback((draftId: string) => controller.recoverDraft(draftId), [controller]);
+  const discardRecovery = useCallback((draftId: string) => controller.discardRecovery(draftId), [controller]);
 
-    const snapshot = items;
-    const timer = window.setTimeout(() => {
-      setSyncState("saving");
-      saveQueueRef.current = saveQueueRef.current.then(async () => {
-        let response = await putWorkspace(snapshot, revisionRef.current);
-        if (response.status === 409) {
-          const conflict = await response.json() as WorkspaceResponse;
-          if (!Number.isInteger(conflict.revision)) throw new Error(conflict.error || "Workspace conflict");
-          revisionRef.current = conflict.revision;
-          response = await putWorkspace(snapshot, revisionRef.current);
-        }
-        const saved = await readResponse(response);
-        revisionRef.current = saved.revision;
-        setRevision(saved.revision);
-        setSyncState("saved");
-        window.localStorage.removeItem(STORAGE_KEYS.items);
-      }).catch(() => {
-        window.localStorage.setItem(STORAGE_KEYS.items, JSON.stringify(snapshot));
-        setSyncState("error");
-      });
-    }, 650);
-
-    return () => window.clearTimeout(timer);
-  }, [backendReady, hydrated, items]);
-
-  const replaceItems = (nextItems: Item[], nextRevision: number) => {
-    revisionRef.current = nextRevision;
-    setRevision(nextRevision);
-    skipNextSaveRef.current = true;
-    setSyncState("saved");
-    setItems(normalizeItems(nextItems));
+  return {
+    items: snapshot.items,
+    setItems,
+    replaceItems,
+    revision: snapshot.revision,
+    hydrated: snapshot.hydrated,
+    backendReady: snapshot.backendReady,
+    editingReady: snapshot.safeToEdit && !mutationLocked,
+    mutationLocked,
+    syncState: snapshot.status,
+    conflicts: snapshot.conflicts,
+    recoveryError: snapshot.recoveryError,
+    recoveryRecords: snapshot.recoveryRecords,
+    recoveryDraftId: controller.recoveryDraftId,
+    legacyRecovery: snapshot.legacyRecovery,
+    beginExternalMutation,
+    acceptLegacyRecovery,
+    dismissLegacyRecovery,
+    recoverDraft,
+    discardRecovery,
+    retry,
   };
-
-  return { items, setItems, replaceItems, revision, hydrated, syncState };
 }

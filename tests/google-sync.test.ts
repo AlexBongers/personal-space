@@ -241,7 +241,8 @@ test("calendar: recurring instances inherit the recurrence rule from their serie
     attendees: [{ email: "laurademooij@gmail.com" }, { email: "guest@example.com" }],
     hiddenFromList: true,
   });
-  const staleRow = googleCalendarToRow(f.remote.get("instance-1")!, { id: "container-1", summary: "Test calendar", accessRole: "owner" });
+  const staleEvent = f.remote.get("instance-1")! as unknown as Parameters<typeof googleCalendarToRow>[0];
+  const staleRow = googleCalendarToRow(staleEvent, { id: "container-1", summary: "Test calendar", accessRole: "owner" });
   f.integration.rows = [staleRow];
   const staleFingerprint = JSON.stringify(googleCalendarPayload(staleRow));
   f.database.sqlite.prepare(`INSERT INTO google_calendar_mapping (local_row_id, calendar_id, remote_event_id, remote_etag, remote_updated, local_fingerprint) VALUES (?, 'container-1', 'instance-1', 'instance-etag', '2026-09-04T12:00:00Z', ?)`).run(staleRow.id, staleFingerprint);

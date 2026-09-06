@@ -35,7 +35,7 @@ const formatFeedTime = (value: string, formatter: Intl.DateTimeFormat) => {
   return formatter.format(date);
 };
 
-type NewsSource = "slashdot" | "tweakers" | "nos" | "bunniksnieuws";
+export type NewsSource = "slashdot" | "tweakers" | "nos" | "bunniksnieuws";
 
 const SOURCE_DETAILS: Record<NewsSource, { name: string; url: string }> = {
   slashdot: { name: "Slashdot", url: "https://slashdot.org/" },
@@ -44,13 +44,14 @@ const SOURCE_DETAILS: Record<NewsSource, { name: string; url: string }> = {
   bunniksnieuws: { name: "Bunniks Nieuws", url: "https://www.bunniksnieuws.nl/" },
 };
 
-export function SlashdotFeed({ source = "slashdot" }: { source?: NewsSource }) {
+export function SlashdotFeed({ source = "slashdot", compact = false, maxStories, hideHeading = false }: { source?: NewsSource; compact?: boolean; maxStories?: number; hideHeading?: boolean }) {
   const { language, t } = useLanguage();
   const { name: sourceName, url: sourceUrl } = SOURCE_DETAILS[source];
   const [feed, setFeed] = useState<SlashdotFeedResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [showDescriptions, setShowDescriptions] = useState(!compact);
   const requestRef = useRef<AbortController | null>(null);
   const { ref: panelRef, active } = useNearViewport<HTMLElement>();
   const locale = language === "nl" ? "nl-NL" : "en-US";
@@ -94,11 +95,11 @@ export function SlashdotFeed({ source = "slashdot" }: { source?: NewsSource }) {
     };
   }, [active, loadFeed]);
 
-  const stories = useMemo(() => feed?.stories.slice(0, 10) || [], [feed]);
+  const stories = useMemo(() => feed?.stories.slice(0, maxStories ?? (compact ? 3 : 10)) || [], [compact, feed, maxStories]);
 
   return (
-    <section ref={panelRef} className="slashdot-panel" aria-labelledby={`${source}-heading`}>
-      <div className="slashdot-heading">
+    <section ref={panelRef} className={`slashdot-panel ${compact ? "slashdot-compact" : ""}`} aria-labelledby={hideHeading ? undefined : `${source}-heading`} aria-label={hideHeading ? sourceName : undefined}>
+      {!hideHeading && <div className="slashdot-heading">
         <div>
           <h2 id={`${source}-heading`}>{sourceName}</h2>
         </div>
@@ -111,12 +112,13 @@ export function SlashdotFeed({ source = "slashdot" }: { source?: NewsSource }) {
         >
           <span className={loading || refreshing ? "spin" : ""}>↻</span>
         </button>
-      </div>
+      </div>}
       <div className="slashdot-meta">
         <span className={`live-dot ${error ? "feed-warning" : ""}`} aria-hidden="true" />
         <span>{feed?.fetchedAt ? t("overview.newsUpdated", { time: formatFeedTime(feed.fetchedAt, feedTimeFormatter) }) : t("overview.newsLoading")}</span>
         <span className="meta-divider">·</span>
         <a href={sourceUrl} target="_blank" rel="noreferrer">{sourceName} ↗</a>
+        {hideHeading && <button type="button" className="feed-refresh compact-feed-refresh" aria-label={`${sourceName}: ${t("news.refresh")}`} onClick={() => void loadFeed(true)} disabled={loading || refreshing}><span className={loading || refreshing ? "spin" : ""}>↻</span></button>}
       </div>
 
       {loading && !feed && (
@@ -141,7 +143,7 @@ export function SlashdotFeed({ source = "slashdot" }: { source?: NewsSource }) {
                 <span className="story-copy">
                   <strong>{story.title}</strong>
                   <span className="story-meta">{story.section || t("overview.newsSection")} · {formatStoryTime(story.publishedAt, storyTimeFormatter)}</span>
-                  {story.description && <span className="story-description">{story.description}</span>}
+                  {(!compact || showDescriptions) && story.description && <span className="story-description">{story.description}</span>}
                 </span>
                 <span className="story-arrow">↗</span>
               </a>
@@ -151,6 +153,7 @@ export function SlashdotFeed({ source = "slashdot" }: { source?: NewsSource }) {
       )}
 
       {error && <p className="news-status">{error}</p>}
+      {compact && stories.length > 0 && <button type="button" className="text-button news-summary-toggle" onClick={() => setShowDescriptions((current) => !current)}>{showDescriptions ? t("home.hideNewsSummaries") : t("home.showNewsSummaries")}</button>}
       <div className="slashdot-footer">
         <a href={sourceUrl} target="_blank" rel="noreferrer">{t("news.open", { source: sourceName })} ↗</a>
       </div>

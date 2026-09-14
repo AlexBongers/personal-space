@@ -20,7 +20,11 @@ BASE_DIR = Path(__file__).resolve().parent
 QNAP_HOME = Path("/opt/data/home")
 QNAP_WRAPPER = Path("/opt/data/skills/productivity/parro/scripts/parro.py")
 DEFAULT_PARRO_HOME = QNAP_HOME if QNAP_HOME.exists() else Path(os.environ.get("HOME", str(Path.home())))
-DEFAULT_WRAPPER = QNAP_WRAPPER if QNAP_WRAPPER.exists() else BASE_DIR / "parro.py"
+# Keep the watcher and the checked-in CLI wrapper on the same release path. The
+# QNAP wrapper can still be selected explicitly with PARRO_WRAPPER, but should
+# not silently bypass fixes made in this repository.
+REPOSITORY_WRAPPER = BASE_DIR / "parro.py"
+DEFAULT_WRAPPER = REPOSITORY_WRAPPER if REPOSITORY_WRAPPER.exists() else QNAP_WRAPPER
 PARRO_HOME = Path(os.environ.get("PARRO_HOME", str(DEFAULT_PARRO_HOME)))
 WRAPPER = Path(os.environ.get("PARRO_WRAPPER", str(DEFAULT_WRAPPER)))
 DEFAULT_STATE_PATH = (

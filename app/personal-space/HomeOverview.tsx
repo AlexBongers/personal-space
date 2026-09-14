@@ -34,6 +34,7 @@ type HomeOverviewProps = {
   onQuickAdd?: (kind: HomeQuickAddKind, text: string) => boolean | void;
   quickAddDisabled?: boolean;
   quickAddStatus?: string;
+  parroRefreshSignal?: number;
 };
 
 const NEWS_PREFERENCE_KEY = "personal-space-home-news-v1";
@@ -239,7 +240,7 @@ function QuickAdd({ taskAvailable, onQuickAdd, disabled, status }: { taskAvailab
   );
 }
 
-function AttentionPanel({ tasks, onOpen }: { tasks: ReturnType<typeof selectHomeTasks>; onOpen: (id: string, rowId?: string) => void }) {
+function AttentionPanel({ tasks, onOpen, parroRefreshSignal }: { tasks: ReturnType<typeof selectHomeTasks>; onOpen: (id: string, rowId?: string) => void; parroRefreshSignal?: number }) {
   const { language, t } = useLanguage();
   return (
     <section className="home-section" aria-labelledby="home-attention-heading">
@@ -250,7 +251,7 @@ function AttentionPanel({ tasks, onOpen }: { tasks: ReturnType<typeof selectHome
           <TasksList rows={tasks.overdue} todayKey={tasks.todayKey} emptyLabel={t("home.noOverdue")} language={language} onOpen={(rowId) => onOpen(GOOGLE_TASKS_DATABASE_ID, rowId)} />
           {tasks.overdue.length > 5 && <p className="home-list-total">{t("home.moreOverdue", { count: tasks.overdue.length - 5 })}</p>}
         </section>
-        <ParroInbox compact onOpenParro={() => onOpen("parro")} />
+        <ParroInbox compact onOpenParro={() => onOpen("parro")} refreshSignal={parroRefreshSignal} />
       </div>
     </section>
   );
@@ -293,7 +294,7 @@ function HomeNews() {
   );
 }
 
-export function HomeOverview({ items, onOpen, onQuickAdd, quickAddDisabled, quickAddStatus }: HomeOverviewProps) {
+export function HomeOverview({ items, onOpen, onQuickAdd, quickAddDisabled, quickAddStatus, parroRefreshSignal }: HomeOverviewProps) {
   const { t } = useLanguage();
   const [now, setNow] = useState(() => new Date());
   const taskDatabase = items.find((item) => item.id === GOOGLE_TASKS_DATABASE_ID && !item.trash);
@@ -308,7 +309,7 @@ export function HomeOverview({ items, onOpen, onQuickAdd, quickAddDisabled, quic
     <section className="home-overview" aria-label={t("overview.aria")}>
       <HomeToday items={items} now={now} onOpen={onOpen} />
       <QuickAdd taskAvailable={Boolean(taskDatabase && isDatabase(taskDatabase))} onQuickAdd={onQuickAdd} disabled={quickAddDisabled} status={quickAddStatus} />
-      <AttentionPanel tasks={tasks} onOpen={onOpen} />
+      <AttentionPanel tasks={tasks} onOpen={onOpen} parroRefreshSignal={parroRefreshSignal} />
       <section className="home-section" aria-labelledby="home-gmail-heading"><div className="sr-only" id="home-gmail-heading">{t("gmail.title")}</div><GmailInbox compact onOpenInbox={() => onOpen("gmail")} /></section>
       <HomeNews />
     </section>

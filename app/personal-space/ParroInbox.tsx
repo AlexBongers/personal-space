@@ -6,15 +6,16 @@ import { InterfaceIcon } from "./InterfaceIcon";
 import type { ParroMessagesResponse } from "./parro-types";
 import { useNearViewport } from "./useNearViewport";
 
-type Props = { compact?: boolean; onOpenParro?: () => void };
+type Props = { compact?: boolean; onOpenParro?: () => void; refreshSignal?: number };
 
-export function ParroInbox({ compact = false, onOpenParro }: Props) {
+export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: Props) {
   const { language, t } = useLanguage();
   const [inbox, setInbox] = useState<ParroMessagesResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+  const refreshSignalRef = useRef(refreshSignal);
   const { ref: panelRef, active } = useNearViewport<HTMLElement>();
 
   const load = useCallback(async () => {
@@ -43,6 +44,12 @@ export function ParroInbox({ compact = false, onOpenParro }: Props) {
     const timer = window.setInterval(() => { if (!document.hidden) void load(); }, 15 * 60 * 1000);
     return () => { window.clearTimeout(initial); window.clearInterval(timer); requestRef.current?.abort(); requestRef.current = null; };
   }, [active, load]);
+
+  useEffect(() => {
+    if (!active || refreshSignalRef.current === refreshSignal) return;
+    refreshSignalRef.current = refreshSignal;
+    void load();
+  }, [active, load, refreshSignal]);
 
   const locale = language === "nl" ? "nl-NL" : "en-US";
   const dateFormat = useMemo(() => new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }), [locale]);

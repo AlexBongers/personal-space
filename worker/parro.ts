@@ -1,3 +1,5 @@
+import { fetchParroMessages, limitedText, loginParro, ParroError, refreshParroTokens, type ParroTokens } from "./parro-client.ts";
+
 export type ParroMessageKind = "announcement" | "chatroom";
 
 export type ParroMessage = {
@@ -18,6 +20,7 @@ export type ParroMessage = {
 export type ParroMessagesResponse = {
   state: "connected" | "empty" | "unavailable" | "unconfigured" | "sign_in_required";
   messages: ParroMessage[];
+  connectionState?: "connected" | "disconnected" | "unconfigured";
   syncedAt?: string;
   unread?: number;
   error?: string;
@@ -37,6 +40,8 @@ export interface ParroDatabase {
 export interface ParroEnv {
   DB?: ParroDatabase;
   PARRO_SYNC_TOKEN?: string;
+  PARRO_TOKEN_ENCRYPTION_KEY?: string;
+  GOOGLE_TOKEN_ENCRYPTION_KEY?: string;
 }
 
 type IncomingMessage = {
@@ -151,7 +156,7 @@ export const sanitizeParroPayload = (value: unknown, now = new Date().toISOStrin
   if (!isRecord(value) || !Array.isArray(value.messages) || value.messages.length > MAX_MESSAGES) return null;
   const syncedAt = isoDate(value.syncedAt, now);
   const messages = value.messages.map((message) => normalizeMessage(message, syncedAt)).filter((message): message is IncomingMessage => message !== null);
-  if (messages.length !== value.messages.length) return null;
+  if (messages.length !== value.messages.length || new Set(messages.map((message) => message.id)).size !== messages.length) return null;
   return { replace: value.replace === true, syncedAt, messages };
 };
 
@@ -188,7 +193,10 @@ LIMIT ?`).bind(limit).all<StoredMessage>();
   } satisfies ParroMessage);
   });
   const unread = messages.reduce((total, message) => total + (message.unreadCount || (message.unread ? 1 : 0)), 0);
-  const syncedAt = rows.results.reduce((latest, row) => row.synced_at > latest ? row.synced_at : latest, "");
+  const metadata = await database.prepare("SELECT data FROM workspace_state WHERE id = ?").bind("parro-sync").all<{ data: string }>();
+  let lastSync = "";
+  try { lastSync = isoDate(JSON.parse(metadata.results[0]?.data || "null")?.syncedAt, ""); } catch { /* Legacy snapshots use message timestamps. */ }
+  const syncedAt = rows.results.reduce((latest, row) => row.synced_at > latest ? row.synced_at : latest, lastSync);
   return { state: messages.length ? "connected" : "empty", messages, syncedAt: syncedAt || undefined, unread };
 };
 
@@ -196,9 +204,11 @@ const handleRead = async (request: Request, env: ParroEnv, url: URL) => {
   if (!isLocalRequest(request) && !request.headers.get("oai-authenticated-user-id")) return json({ state: "sign_in_required", messages: [] }, 401);
   if (!env.DB) return json({ state: "unconfigured", messages: [] });
   const requestedLimit = Number(url.searchParams.get("limit"));
-  const limit = requestedLimit === 5 || requestedLimit === 6 ? requestedLimit : 20;
+  const limit = Number.isInteger(requestedLimit) && requestedLimit >= 1 && requestedLimit <= 20 ? requestedLimit : 20;
   try {
-    return json(await readMessages(env.DB, limit));
+    const connection = await readConnection(env.DB);
+    if (connection && connection.owner !== ownerId(request)) return json({ state: "sign_in_required", messages: [] }, 403);
+    return json({ ...await readMessages(env.DB, limit), connectionState: !tokenKey(env) ? "unconfigured" : connection ? "connected" : "disconnected" });
   } catch {
     return json({ state: "unavailable", messages: [] }, 503);
   }
@@ -207,21 +217,40 @@ const handleRead = async (request: Request, env: ParroEnv, url: URL) => {
 const authorizedSync = (request: Request, env: ParroEnv) => Boolean(env.PARRO_SYNC_TOKEN)
   && request.headers.get("Authorization") === `Bearer ${env.PARRO_SYNC_TOKEN}`;
 
-const handleSync = async (request: Request, env: ParroEnv) => {
+const handleLegacySync = async (request: Request, env: ParroEnv) => {
   if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
   if (!env.PARRO_SYNC_TOKEN) return json({ error: "Parro sync is not configured" }, 503);
   if (!authorizedSync(request, env)) return json({ error: "Unauthorized" }, 401);
   if (!env.DB) return json({ error: "D1 database is not configured" }, 503);
+  if (await readConnection(env.DB)) return json({ error: "Parro synchroniseert rechtstreeks; lokale imports zijn uitgeschakeld" }, 409);
   if (!request.headers.get("Content-Type")?.toLowerCase().startsWith("application/json")) return json({ error: "Expected an application/json request" }, 415);
   const declaredLength = Number(request.headers.get("Content-Length") || 0);
   if (declaredLength > MAX_PAYLOAD_BYTES) return json({ error: "Parro payload exceeds the storage limit" }, 413);
-  const body = await request.arrayBuffer().catch(() => null);
-  if (!body || body.byteLength > MAX_PAYLOAD_BYTES) return json({ error: "Parro payload exceeds the storage limit" }, 413);
+  const body = await limitedText(request, MAX_PAYLOAD_BYTES).catch(() => null);
+  if (body === null) return json({ error: "Parro payload exceeds the storage limit" }, 413);
   let parsed: unknown = null;
-  try { parsed = JSON.parse(new TextDecoder().decode(body)); } catch { /* Invalid JSON is reported below. */ }
+  try { parsed = JSON.parse(body); } catch { /* Invalid JSON is reported below. */ }
   const payload = sanitizeParroPayload(parsed);
   if (!payload) return json({ error: "Invalid Parro payload" }, 400);
-  const statements = payload.messages.map((message) => env.DB!.prepare(`INSERT INTO parro_messages
+  return storeSnapshot(env.DB, payload);
+};
+
+// The legacy importer shares the direct-sync lease so an in-flight NAS upload
+// cannot replace a new direct connection's first snapshot.
+const handleSync = async (request: Request, env: ParroEnv) => {
+  if (request.method !== "POST" || !env.DB || !authorizedSync(request, env)) return handleLegacySync(request, env);
+  const leaseOwner = crypto.randomUUID();
+  const lease = await env.DB.prepare(`INSERT INTO google_sync_lease (id, owner, expires_at) VALUES (?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at WHERE google_sync_lease.expires_at <= ?`)
+    .bind("parro", leaseOwner, Date.now() + 600_000, Date.now()).run();
+  if (!lease.meta?.changes) return json({ error: "Parro wordt al gesynchroniseerd." }, 409);
+  try { return await handleLegacySync(request, env); }
+  finally { await env.DB.prepare("DELETE FROM google_sync_lease WHERE id = ? AND owner = ?").bind("parro", leaseOwner).run().catch(() => {}); }
+};
+
+const storeSnapshot = async (database: ParroDatabase, payload: IncomingPayload, direct = false) => {
+  try {
+    const statements = payload.messages.map((message) => database.prepare(`INSERT INTO parro_messages
 (id, kind, title, body, sender, room_name, published_at, unread, unread_count, external_url, attachment_count, attachment_names_json, synced_at, updated_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(id) DO UPDATE SET
@@ -252,8 +281,17 @@ updated_at = CURRENT_TIMESTAMP`).bind(
       JSON.stringify(message.attachmentNames),
       payload.syncedAt,
     ));
-  if (payload.replace) statements.push(env.DB.prepare("DELETE FROM parro_messages WHERE synced_at <> ?").bind(payload.syncedAt));
-  await env.DB.batch(statements);
+    // Clear first in the atomic batch: timestamps are not snapshot identifiers.
+    if (payload.replace) statements.unshift(database.prepare("DELETE FROM parro_messages"));
+    statements.push(database.prepare(`INSERT INTO workspace_state (id, revision, data)
+VALUES (?, 1, ?)
+ON CONFLICT(id) DO UPDATE SET data = excluded.data, revision = revision + 1, updated_at = CURRENT_TIMESTAMP`)
+    .bind("parro-sync", JSON.stringify({ syncedAt: payload.syncedAt })));
+    await database.batch(statements);
+  } catch {
+    if (direct) throw new ParroError("Parro-berichten zijn opgehaald, maar konden niet veilig worden opgeslagen. Probeer opnieuw.", 503, "parro_snapshot_store_failed");
+    return json({ error: "Parro snapshot could not be stored; retry the sync" }, 503);
+  }
   return json({ ok: true, count: payload.messages.length, syncedAt: payload.syncedAt });
 };
 
@@ -263,5 +301,119 @@ export async function handleParroApi(request: Request, env: ParroEnv, url = new 
     return handleRead(request, env, url);
   }
   if (url.pathname === "/api/parro/sync") return handleSync(request, env);
+  if (["/api/parro/connect", "/api/parro/refresh", "/api/parro/connection"].includes(url.pathname)) return handleDirectSync(request, env, url);
   return null;
 }
+
+const CONNECTION_ID = "parro-connection";
+const ownerId = (request: Request) => request.headers.get("oai-authenticated-user-id") || (isLocalRequest(request) ? "local" : "");
+const tokenKey = (env: ParroEnv) => env.PARRO_TOKEN_ENCRYPTION_KEY || env.GOOGLE_TOKEN_ENCRYPTION_KEY;
+type Connection = { owner: string; encrypted: string };
+const readConnection = async (database: ParroDatabase): Promise<Connection | null> => {
+  const rows = await database.prepare("SELECT data FROM workspace_state WHERE id = ?").bind(CONNECTION_ID).all<{ data: string }>();
+  if (!rows.results[0]?.data) return null;
+  const value: unknown = JSON.parse(rows.results[0].data);
+  if (!isRecord(value) || typeof value.owner !== "string" || typeof value.encrypted !== "string") throw new ParroError("De opgeslagen Parro-koppeling is ongeldig.");
+  return { owner: value.owner, encrypted: value.encrypted };
+};
+const keyBytes = (value: string) => Uint8Array.from(atob(value.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0));
+const encryptionKey = async (env: ParroEnv) => {
+  const raw = keyBytes(tokenKey(env) || "");
+  if (raw.byteLength !== 32) throw new ParroError("Parro-tokenbeveiliging is nog niet ingesteld.", 503);
+  return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+};
+const encryptTokens = async (tokens: ParroTokens, owner: string, env: ParroEnv) => {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: new TextEncoder().encode(`personal-space:parro:${owner}`) }, await encryptionKey(env), new TextEncoder().encode(JSON.stringify(tokens))));
+  const bytes = new Uint8Array(iv.length + cipher.length); bytes.set(iv); bytes.set(cipher, iv.length);
+  return btoa(String.fromCharCode(...bytes));
+};
+const decryptTokens = async (connection: Connection, env: ParroEnv): Promise<ParroTokens> => {
+  const bytes = keyBytes(connection.encrypted);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(0, 12), additionalData: new TextEncoder().encode(`personal-space:parro:${connection.owner}`) }, await encryptionKey(env), bytes.slice(12));
+  return JSON.parse(new TextDecoder().decode(plain));
+};
+const saveConnection = async (database: ParroDatabase, tokens: ParroTokens, owner: string, env: ParroEnv) => {
+  const data = JSON.stringify({ owner, encrypted: await encryptTokens(tokens, owner, env) });
+  await database.prepare(`INSERT INTO workspace_state (id, revision, data) VALUES (?, 1, ?)
+ON CONFLICT(id) DO UPDATE SET data = excluded.data, revision = revision + 1, updated_at = CURRENT_TIMESTAMP`).bind(CONNECTION_ID, data).run();
+};
+type DirectStage = "connection_save" | "message_fetch" | "snapshot_store";
+const directStageFailure: Record<DirectStage, { status: number; code: string; message: string }> = {
+  connection_save: { status: 503, code: "parro_connection_save_failed", message: "De Parro-inlog is gelukt, maar de beveiligde koppeling kon niet worden opgeslagen. Probeer opnieuw." },
+  message_fetch: { status: 502, code: "parro_message_fetch_failed", message: "De Parro-koppeling is gelukt, maar berichten konden niet worden opgehaald. Probeer het later opnieuw." },
+  snapshot_store: { status: 503, code: "parro_snapshot_store_failed", message: "Parro-berichten zijn opgehaald, maar konden niet veilig worden opgeslagen. Probeer opnieuw." },
+};
+const runDirectStage = async <T>(stage: DirectStage, operation: () => Promise<T>): Promise<T> => {
+  try { return await operation(); }
+  catch (error) {
+    if (error instanceof ParroError) throw error;
+    const failure = directStageFailure[stage];
+    throw new ParroError(failure.message, failure.status, failure.code);
+  }
+};
+const handleDirectSync = async (request: Request, env: ParroEnv, url: URL) => {
+  const method = url.pathname.endsWith("/connection") ? "DELETE" : "POST";
+  if (request.method !== method) return new Response(null, { status: 405, headers: { Allow: method } });
+  const owner = ownerId(request);
+  if (!owner) return json({ error: "Log eerst in op Personal Space.", state: "sign_in_required" }, 401);
+  if (request.headers.get("Origin") !== url.origin || request.headers.get("Sec-Fetch-Site") === "cross-site") return json({ error: "Ongeldige aanvraagherkomst." }, 403);
+  if (!env.DB || !tokenKey(env)) return json({ error: "Parro synchronisatie is nog niet geconfigureerd.", state: "unconfigured" }, 503);
+  const database = env.DB;
+  // One shared deadline bounds login, retries and all message requests well within the lease.
+  const signal = AbortSignal.timeout(90_000);
+  const leaseOwner = crypto.randomUUID();
+  let leased = false;
+  let connectionSaved = false;
+  try {
+    const lease = await database.prepare(`INSERT INTO google_sync_lease (id, owner, expires_at) VALUES (?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at WHERE google_sync_lease.expires_at <= ?`)
+      .bind("parro", leaseOwner, Date.now() + 600_000, Date.now()).run();
+    if (!lease.meta?.changes) return json({ error: "Parro wordt al gesynchroniseerd. Probeer zo nog eens." }, 409);
+    leased = true;
+    const connection = await readConnection(database);
+    connectionSaved = Boolean(connection);
+    if (connection && connection.owner !== owner) return json({ error: "Deze Parro-koppeling hoort bij een andere gebruiker." }, 403);
+    if (method === "DELETE") {
+      await database.batch([database.prepare("DELETE FROM workspace_state WHERE id IN (?, ?)").bind(CONNECTION_ID, "parro-sync"), database.prepare("DELETE FROM parro_messages")]);
+      return json({ ok: true });
+    }
+    let tokens: ParroTokens;
+    if (url.pathname.endsWith("/connect")) {
+      if (!request.headers.get("Content-Type")?.startsWith("application/json")) return json({ error: "Een JSON-aanvraag is vereist." }, 415);
+      const body = await limitedText(request, 10_000).catch(() => null);
+      if (body === null) return json({ error: "De inlogaanvraag is te groot." }, 413);
+      let input: unknown; try { input = JSON.parse(body); } catch { return json({ error: "Ongeldige inlogaanvraag." }, 400); }
+      if (!isRecord(input) || typeof input.username !== "string" || !input.username.trim() || input.username.length > 320 || typeof input.password !== "string" || !input.password || input.password.length > 2_000 || input.account !== undefined && (typeof input.account !== "string" || input.account.length > 200)) return json({ error: "Vul je Parro-e-mailadres en wachtwoord in." }, 400);
+      tokens = await loginParro(input.username.trim(), input.password, typeof input.account === "string" ? input.account.trim() : "", signal);
+      // Preserve the login even if fetching messages fails afterwards.
+      await runDirectStage("connection_save", () => saveConnection(database, tokens, owner, env));
+      connectionSaved = true;
+    } else {
+      if (!connection) return json({ error: "Verbind Parro eerst met je account.", state: "sign_in_required" }, 401);
+      tokens = await decryptTokens(connection, env);
+    }
+    const syncedAt = new Date().toISOString();
+    let messages: unknown[];
+    try { messages = await runDirectStage("message_fetch", () => fetchParroMessages(tokens.access_token, syncedAt, signal)); }
+    catch (error) {
+      if (!(error instanceof ParroError) || error.status !== 401) throw error;
+      tokens = await refreshParroTokens(tokens.refresh_token, signal);
+      // Persist a rotated refresh token before subsequent API calls can fail.
+      await runDirectStage("connection_save", () => saveConnection(database, tokens, owner, env));
+      connectionSaved = true;
+      messages = await runDirectStage("message_fetch", () => fetchParroMessages(tokens.access_token, syncedAt, signal));
+    }
+    const payload = sanitizeParroPayload({ messages, syncedAt, replace: true });
+    if (!payload) throw new ParroError("Parro gaf ongeldige berichten; de bestaande berichten blijven bewaard.");
+    await runDirectStage("connection_save", () => saveConnection(database, tokens, owner, env));
+    connectionSaved = true;
+    return await runDirectStage("snapshot_store", () => storeSnapshot(database, payload, true));
+  } catch (error) {
+    const status = error instanceof ParroError ? error.status : 502;
+    const message = error instanceof ParroError ? error.message : "Parro synchroniseren is tijdelijk mislukt. Probeer opnieuw; bestaande berichten blijven bewaard.";
+    return json({ error: message, code: error instanceof ParroError ? error.code : "parro_unavailable", state: status === 401 ? "sign_in_required" : "unavailable", connectionSaved }, status);
+  } finally {
+    if (leased) await database.prepare("DELETE FROM google_sync_lease WHERE id = ? AND owner = ?").bind("parro", leaseOwner).run().catch(() => {});
+  }
+};

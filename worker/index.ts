@@ -20,6 +20,7 @@ interface Env {
   GOOGLE_REDIRECT_URI?: string;
   GOOGLE_TOKEN_ENCRYPTION_KEY?: string;
   PARRO_SYNC_TOKEN?: string;
+  PARRO_TOKEN_ENCRYPTION_KEY?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -132,6 +133,8 @@ const worker = {
         return await handleParroApi(request, {
           DB: env.DB as unknown as ParroDatabase | undefined,
           PARRO_SYNC_TOKEN: env.PARRO_SYNC_TOKEN,
+          PARRO_TOKEN_ENCRYPTION_KEY: env.PARRO_TOKEN_ENCRYPTION_KEY,
+          GOOGLE_TOKEN_ENCRYPTION_KEY: env.GOOGLE_TOKEN_ENCRYPTION_KEY,
         }, url) || new Response(null, { status: 404 });
       } catch (error) {
         console.error("Parro API failed", error);

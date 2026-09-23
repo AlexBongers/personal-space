@@ -72,7 +72,6 @@ export default function Home() {
   const [query, setQuery] = useState("");
   const [googleTasksOpen, setGoogleTasksOpen] = useState(false);
   const [googleCalendarOpen, setGoogleCalendarOpen] = useState(false);
-  const [parroRefreshSignal, setParroRefreshSignal] = useState(0);
   const [trashOpen, setTrashOpen] = useState(false);
   const [gmailAuthorizationError, setGmailAuthorizationError] = useState(false);
   const deferredQuery = useDeferredValue(query);
@@ -352,9 +351,6 @@ export default function Home() {
             <button className="tasks-trigger calendar-trigger" aria-label={t("calendar.title")} onClick={() => setGoogleCalendarOpen(true)}>
               <span><InterfaceIcon name="calendar" /></span><span>{t("top.googleCalendar")}</span>
             </button>
-            <button className="tasks-trigger parro-trigger" aria-label={t("top.parroSync")} onClick={() => { setParroRefreshSignal((current) => current + 1); if (selectedId !== "home" && selectedId !== "parro") selectItem("parro"); }}>
-              <span><InterfaceIcon name="mail" /></span><span>{t("top.parroSync")}</span>
-            </button>
             <Suspense fallback={null}>
               <WorkspaceActionsMenu
                 items={items}
@@ -386,7 +382,7 @@ export default function Home() {
         </header>
         <div className="content-scroll">
           <Suspense fallback={<div className="view-loading" aria-hidden="true"><span /><span /><span /></div>}>
-            {utilityPage ? <div className="page-view utility-page">{utilityPage === "gmail" ? <GmailInbox authorizationError={gmailAuthorizationError} /> : utilityPage === "parro" ? <ParroInbox refreshSignal={parroRefreshSignal} /> : <SlashdotFeed key={utilityPage} source={utilityPage === "news-slashdot" ? "slashdot" : utilityPage === "news-tweakers" ? "tweakers" : utilityPage === "news-nos" ? "nos" : "bunniksnieuws"} />}</div> : isDatabase(selected) ? (
+            {utilityPage ? <div className="page-view utility-page">{utilityPage === "gmail" ? <GmailInbox authorizationError={gmailAuthorizationError} /> : utilityPage === "parro" ? <ParroInbox /> : <SlashdotFeed key={utilityPage} source={utilityPage === "news-slashdot" ? "slashdot" : utilityPage === "news-tweakers" ? "tweakers" : utilityPage === "news-nos" ? "nos" : "bunniksnieuws"} />}</div> : isDatabase(selected) ? (
               <DatabaseView
                 key={`${selected.id}-${selectedRowId || "none"}`}
                 database={selected}
@@ -402,7 +398,6 @@ export default function Home() {
                   onQuickAdd={quickAdd}
                   quickAddDisabled={persistenceBlocked}
                   quickAddStatus={conflicts.length ? syncLabel : undefined}
-                  parroRefreshSignal={parroRefreshSignal}
                 />
               </div>
             ) : (

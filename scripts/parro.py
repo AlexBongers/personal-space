@@ -13,9 +13,8 @@ from pathlib import Path
 from typing import List
 
 HOME = Path(os.environ.get("PARRO_HOME", os.environ.get("HOME", str(Path.home()))))
-# uvx reuses cached tool environments by default. Refresh Parro's package
-# metadata on every watcher run so new CLI releases are actually picked up.
-CLI = ["uvx", "--refresh-package", "parro", "--from", "parro[cli]", "parro"]
+# Reuse the tool environment for each command. Refresh deliberately during upgrades.
+CLI = ["uvx", "--from", "parro[cli]", "parro"]
 LAST_ATTACHMENTS = HOME / ".config" / "parro" / ".last_attachments"
 
 

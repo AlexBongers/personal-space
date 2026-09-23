@@ -18,6 +18,7 @@ export type ParroMessage = {
 export type ParroMessagesResponse = {
   state: "connected" | "empty" | "unavailable" | "unconfigured" | "sign_in_required";
   messages: ParroMessage[];
+  connectionState?: "connected" | "disconnected" | "unconfigured";
   syncedAt?: string;
   unread?: number;
   error?: string;

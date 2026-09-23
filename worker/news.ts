@@ -1,6 +1,6 @@
 export const NEWS_SOURCES = {
   slashdot: { name: "Slashdot", url: "https://rss.slashdot.org/Slashdot/slashdotMain", host: "slashdot.org" },
-  tweakers: { name: "Tweakers", url: "https://tweakers.net/feeds/nieuws.xml", host: "tweakers.net" },
+  tweakers: { name: "Tweakers", url: "https://tweakers.net/feeds/nieuws.xml/direct", host: "tweakers.net" },
   nos: { name: "NOS", url: "https://feeds.nos.nl/nosnieuwsalgemeen", host: "nos.nl" },
   bunniksnieuws: { name: "Bunniks Nieuws", url: "https://www.bunniksnieuws.nl/rss", host: "bunniksnieuws.nl" },
 } as const;

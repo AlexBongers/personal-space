@@ -29,15 +29,18 @@ test("NOS and Bunniks Nieuws use their own trusted article hosts", () => {
 
 test("news requests are read-only, coalesced and cached independently per source", async (t) => {
   let requests = 0;
+  const requestedUrls: string[] = [];
   t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
     requests++;
     const inputUrl = String(input);
+    requestedUrls.push(inputUrl);
     const host = inputUrl.includes("tweakers") ? "tweakers.net" : inputUrl.includes("nosnieuws") ? "nos.nl" : inputUrl.includes("bunniksnieuws") ? "bunniksnieuws.nl" : "slashdot.org";
     return new Response(item(`https://${host}/story/1`));
   });
   const request = new Request("https://personal.test/api/tweakers");
   const [first, second] = await Promise.all([handleNewsApi(request, "tweakers"), handleNewsApi(request, "tweakers")]);
   assert.equal(first.status, 200);
+  assert.equal(requestedUrls[0], "https://tweakers.net/feeds/nieuws.xml/direct");
   assert.deepEqual(await first.json(), await second.json());
   await handleNewsApi(request, "tweakers");
   assert.equal(requests, 1);

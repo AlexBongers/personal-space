@@ -93,39 +93,41 @@ Opening a message takes you to the connected account in Gmail. The site must rem
 
 ## Parro school messages
 
-Home and the sidebar include a private Parro panel. The adapted watcher in
-[`scripts/parro_watcher.py`](./scripts/parro_watcher.py) reads announcements and unread chatrooms
-locally through the Parro CLI, then sends only bounded message summaries to the protected
-`/api/parro/sync` endpoint. Parro credentials, cookies and raw API responses stay on the machine
-where the watcher runs. D1 stores the latest sanitized snapshot so the overview remains fast.
-Use the current Parro CLI with Python 3.11 or newer and `uvx` on the watcher host.
+Parro now connects directly from the private Site. Open the Parro panel, select
+**Verbinden**, and enter your Parro credentials. If the login contains multiple
+identities, provide a unique part of the desired person's name or role in Account.
+Login follows Parro's PKCE authorization flow, including the account and application
+pickers. The password and temporary login cookies are used only during that request.
 
-Configure a strong `PARRO_SYNC_TOKEN` as a private Sites runtime secret and set the same value as
-an environment variable on the Hermes/QNAP host. Because the site is owner-only, also set the
-Sites-generated `PARRO_SITE_BYPASS_TOKEN` there. This is a Sites gateway credential, not a Parro
-credential. Then set `PARRO_SYNC_URL` there to:
+The Worker fetches announcements and unread chatrooms directly from Parro; no QNAP,
+Hermes process or scheduled NAS watcher is required. The panel refreshes on opening,
+periodically while visible, and when you choose **Vernieuwen**. This is page-driven
+synchronization: it does not run while the page is closed.
 
-```text
-https://personal-space.a-a-t-bongers.chatgpt.site/api/parro/sync
-```
+Set `PARRO_TOKEN_ENCRYPTION_KEY` to a base64/base64url-encoded 32-byte secret in the
+Sites runtime. When omitted, the existing `GOOGLE_TOKEN_ENCRYPTION_KEY` is used with
+Parro-specific AES-GCM authenticated context. D1 stores encrypted access/refresh
+tokens bound to the Site owner's identity, and the latest sanitized message snapshot.
+Never put keys or credentials in frontend code, Git or browser storage. Apply all
+D1 migrations before using the connection. Local development uses the local identity;
+connect separately on the owner-only hosted Site.
 
-Run the watcher on a schedule, for example every 15 minutes:
+`POST /api/parro/connect`, `POST /api/parro/refresh`, and
+`DELETE /api/parro/connection` require the signed-in owner's same-origin request.
+The server rotates expired tokens automatically and retains the previous snapshot
+on failed reads. A shared lease prevents simultaneous refresh/import operations.
+Requests share a 90-second upstream deadline. Disconnect removes the saved tokens
+and Parro messages. Responses and credentials are never logged.
 
-```bash
-PARRO_SYNC_URL='https://personal-space.a-a-t-bongers.chatgpt.site/api/parro/sync' \
-PARRO_SYNC_TOKEN='use-the-same-private-token' \
-PARRO_SITE_BYPASS_TOKEN='use-the-sites-gateway-token' \
-python3 scripts/parro_watcher.py
-```
+The old `scripts/parro_watcher.py` and bearer-protected `/api/parro/sync` remain
+available for migration only. Once a direct connection exists, legacy imports are
+rejected. Remove the old NAS schedule after connecting; its token is not needed for
+the direct connection.
 
-For a cron job that cannot inherit a shell environment, place these three variables in the
-owner-only file `~/.config/parro/personal-space-sync.env`; the watcher loads that file
-automatically. Do not put Parro username/password, Parro access tokens or other Parro session
-data in this file.
-
-The watcher does not print message content. A successful run replaces the stored snapshot in one
-protected D1 batch so a failed Parro read cannot overwrite a working overview. The existing
-Hermes wrapper and authenticated Parro session are prerequisites for the first live sync.
+The login protocol in `worker/parro-client.ts` is adapted from
+[Anne Schuth's parro-cli](https://github.com/anneschuth/parro-cli), distributed under
+the MIT license. Its copyright and license are retained in
+[`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md).
 
 See [REQUIREMENTS.md](./REQUIREMENTS.md) for the complete product contract and [AGENTS.md](./AGENTS.md)
 for repository conventions. The final hostile-use findings and accepted storage limitation are

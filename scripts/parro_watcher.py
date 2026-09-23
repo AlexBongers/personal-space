@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import urllib.error
@@ -72,9 +73,9 @@ def integer(value: Any) -> int:
 
 
 def as_list(value: Any) -> List[Dict[str, Any]]:
-    if not isinstance(value, list):
-        return []
-    return [entry for entry in value if isinstance(entry, dict)]
+    if not isinstance(value, list) or any(not isinstance(entry, dict) for entry in value):
+        raise RuntimeError("Parro returned an unexpected result; previous snapshot retained")
+    return value
 
 
 def run_parro(args: List[str]) -> Any:
@@ -82,14 +83,20 @@ def run_parro(args: List[str]) -> Any:
     environment["HOME"] = str(PARRO_HOME)
     command = [sys.executable, str(WRAPPER), "--json", *args]
     try:
-        result = subprocess.run(command, capture_output=True, text=True, env=environment)
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=environment, start_new_session=True)
+        try:
+            output, _ = process.communicate(timeout=90)
+        except subprocess.TimeoutExpired as error:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.communicate()
+            raise RuntimeError(f"Parro {args[0]} timed out; check the local login and connection") from error
     except OSError as error:
         raise RuntimeError("Parro command could not be started") from error
-    if result.returncode != 0:
-        raise RuntimeError("Parro command failed")
-    output = result.stdout.strip()
+    if process.returncode != 0:
+        raise RuntimeError(f"Parro {args[0]} failed; check the local Parro login")
+    output = output.strip()
     if not output:
-        return []
+        raise RuntimeError("Parro returned no JSON; previous snapshot retained")
     try:
         return json.loads(output)
     except json.JSONDecodeError as error:
@@ -237,11 +244,7 @@ def chatroom_message(room: Dict[str, Any], synced_at: str) -> Optional[Dict[str,
     if not room_id or unread_count < 1:
         return None
     name = clean_text(room.get("title") or room.get("subject") or room.get("name"), 240) or "Parro-chatroom"
-    latest: Dict[str, Any] = {}
-    try:
-        latest = latest_chat_message(room_id)
-    except RuntimeError:
-        latest = {}
+    latest = latest_chat_message(room_id)
     message_date = latest.get("lastModifiedAt") or latest.get("createdAt")
     published = iso_date(message_date or room.get("sortDate") or room.get("lastModifiedAt"), synced_at)
     sender = display_name(latest.get("identity")) or display_name(latest.get("sender"))
@@ -264,7 +267,7 @@ def chatroom_message(room: Dict[str, Any], synced_at: str) -> Optional[Dict[str,
 
 def sync_url_is_safe(value: str) -> bool:
     parsed = urllib.parse.urlparse(value)
-    return parsed.scheme == "https" or (parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"})
+    return bool(parsed.hostname) and not parsed.username and not parsed.password and (parsed.scheme == "https" or (parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}))
 
 
 def send_snapshot(
@@ -292,10 +295,18 @@ def send_snapshot(
     )
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            if response.status < 200 or response.status >= 300:
-                raise RuntimeError("Personal Space sync rejected")
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
-        raise RuntimeError("Personal Space sync failed") from error
+            if response.status != 200 or response.headers.get_content_type() != "application/json":
+                raise RuntimeError("Personal Space returned no sync receipt; check the sync URL and Site bypass token")
+            try:
+                receipt = json.loads(response.read(65_537))
+            except (ValueError, UnicodeDecodeError) as error:
+                raise RuntimeError("Personal Space returned an invalid sync receipt") from error
+            if not isinstance(receipt, dict) or receipt.get("ok") is not True or type(receipt.get("count")) is not int or receipt["count"] != len(messages) or parse_dt(receipt.get("syncedAt")) != parse_dt(synced_at):
+                raise RuntimeError("Personal Space did not confirm this snapshot")
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f"Personal Space sync failed (HTTP {error.code}); check sync and Site access credentials") from error
+    except (urllib.error.URLError, TimeoutError) as error:
+        raise RuntimeError("Personal Space sync could not connect; check the URL and network") from error
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -327,15 +338,17 @@ def main() -> int:
         if published > newest_announcement:
             newest_announcement = published
         normalized = announcement_message(announcement, synced_at)
-        if normalized:
-            messages.append(normalized)
+        if normalized is None:
+            raise RuntimeError("Parro announcement has no title; previous snapshot retained")
+        messages.append(normalized)
 
     next_chatroom_state: Dict[str, Dict[str, Any]] = {}
     new_chatrooms = 0
-    for room in chatrooms[:MAX_CHATROOMS]:
+    unread_rooms = [room for room in chatrooms if integer(room.get("unreadCount")) > 0]
+    for room in unread_rooms[:MAX_CHATROOMS]:
         room_id = source_id(room)
         if not room_id:
-            continue
+            raise RuntimeError("Parro chatroom has no identifier; previous snapshot retained")
         name = clean_text(room.get("title") or room.get("subject") or room.get("name"), 240)
         sort_date = room.get("sortDate") or room.get("lastModifiedAt") or ""
         unread_count = integer(room.get("unreadCount"))

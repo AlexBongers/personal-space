@@ -1,3 +1,61 @@
+## DEF-008: Tweakers feed fails to load on the live Site
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 2
+
+Steps to reproduce:
+1. Start Personal Space and open the live Site.
+2. Select `Tweakers` from the sidebar to open its news page.
+3. Wait for the feed request to finish.
+
+Expected: The Tweakers page displays recent article headlines and summaries, or the last successful feed with a stale-data notice if a refresh fails.
+Actual: The live `GET /api/tweakers` returned HTTP 503 at 2026-09-23 14:45 UTC and again at 14:52 UTC. When there is no cached successful feed, the page displays its unavailable-feed message instead of articles.
+
+History:
+- qa: opened after reproducing HTTP 503 responses from the live feed endpoint; awaiting a deployed fix before retest.
+- orchestrator: recorded backend-dev's switch to Tweakers' direct news feed; targeted tests pass, awaiting live retest.
+- qa: closed after production retest of the deployed fix; manual refresh updated the page at 17:03 local time, the UI rendered 10 Tweakers headlines without an unavailable/stale error, and the post-deploy production `GET /api/tweakers` log was HTTP 200.
+
+## DEF-007: Disconnected Parro is shown as an empty connected inbox
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 2
+
+Steps to reproduce:
+1. Start the app with Parro direct sync configured but without a saved Parro connection.
+2. Open Home and select Parro to open the full Parro page.
+3. Observe the connection form and activate `Parro nu synchroniseren` without entering credentials.
+
+Expected: The disconnected state shows a clear connection prompt; inbox-only controls and the empty-inbox message are hidden or disabled until Parro is connected.
+Actual: The page shows the connection form together with `Nog geen Parro-berichten`, and the sync button remains enabled but only reloads the same disconnected state without visible feedback.
+
+History:
+- qa: opened
+- qa: closed after browser retest; disconnected Home and full-page panels now show the connection prompt without an empty-inbox message, and the sync control is disabled with connection guidance.
+
+## DEF-006: Corrupt news preference order is accepted with duplicate feeds
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 2
+
+Steps to reproduce:
+1. Put `{"version":99,"order":["slashdot","slashdot"],"collapsed":{}}` under the Home news preference key in local storage.
+2. Open Home and open the news customization panel.
+3. Inspect the rendered feed list and its source order.
+
+Expected: An unknown preference version or duplicate source falls back to the four fixed sources exactly once.
+Actual: The reader ignores the version and preserves duplicate valid sources, so duplicate React keys and duplicate feeds can render.
+
+History:
+- qa: opened
+- qa: closed after focused retest; unknown versions fall back to the four default sources and duplicate valid sources are reduced to one before missing sources are appended.
+
 ## DEF-005: Legacy import can replace a pending recovery draft
 
 - Status: CLOSED
@@ -92,37 +150,3 @@ Actual: The new persistence hook never reads the legacy key or migration marker,
 History:
 - qa: opened
 - qa: closed after retest; legacy recovery is read, preserved and exposed with explicit Import/D1 behouden actions.
-## DEF-006: Corrupt news preference order is accepted with duplicate feeds
-
-- Status: OPEN
-- Severity: LOW
-- Found by: qa
-- Phase: 2
-
-Steps to reproduce:
-1. Put `{"version":99,"order":["slashdot","slashdot"],"collapsed":{}}` under the Home news preference key in local storage.
-2. Open Home and open the news customization panel.
-3. Inspect the rendered feed list and its source order.
-
-Expected: An unknown preference version or duplicate source falls back to the four fixed sources exactly once.
-Actual: The reader ignores the version and preserves duplicate valid sources, so duplicate React keys and duplicate feeds can render.
-
-History:
-- qa: opened
-## DEF-006: Corrupt news preference order is accepted with duplicate feeds
-
-- Status: OPEN
-- Severity: LOW
-- Found by: qa
-- Phase: 2
-
-Steps to reproduce:
-1. Put `{"version":99,"order":["slashdot","slashdot"],"collapsed":{}}` under the Home news preference key in local storage.
-2. Open Home and open the news customization panel.
-3. Inspect the rendered feed list and its source order.
-
-Expected: An unknown preference version or duplicate source falls back to the four fixed sources exactly once.
-Actual: The reader ignores the version and preserves duplicate valid sources, so duplicate React keys and duplicate feeds can render.
-
-History:
-- qa: opened

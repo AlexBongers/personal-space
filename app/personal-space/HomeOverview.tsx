@@ -34,10 +34,10 @@ type HomeOverviewProps = {
   onQuickAdd?: (kind: HomeQuickAddKind, text: string) => boolean | void;
   quickAddDisabled?: boolean;
   quickAddStatus?: string;
-  parroRefreshSignal?: number;
 };
 
 const NEWS_PREFERENCE_KEY = "personal-space-home-news-v1";
+const NEWS_PREFERENCE_VERSION = 1 as const;
 const NEWS_SOURCES: Array<{ source: NewsSource; label: string }> = [
   { source: "slashdot", label: "Slashdot" },
   { source: "tweakers", label: "Tweakers" },
@@ -46,13 +46,13 @@ const NEWS_SOURCES: Array<{ source: NewsSource; label: string }> = [
 ];
 
 type NewsPreferences = {
-  version: 1;
+  version: typeof NEWS_PREFERENCE_VERSION;
   order: NewsSource[];
   collapsed: Partial<Record<NewsSource, boolean>>;
 };
 
 const defaultNewsPreferences = (): NewsPreferences => ({
-  version: 1,
+  version: NEWS_PREFERENCE_VERSION,
   order: NEWS_SOURCES.map(({ source }) => source),
   collapsed: {},
 });
@@ -65,12 +65,13 @@ const readNewsPreferences = (): NewsPreferences => {
     const raw = window.localStorage.getItem(NEWS_PREFERENCE_KEY);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as Partial<NewsPreferences>;
-    const order = Array.isArray(parsed.order) ? parsed.order.filter(validNewsSource) : [];
+    if (!parsed || parsed.version !== NEWS_PREFERENCE_VERSION) return fallback;
+    const order = Array.isArray(parsed.order) ? [...new Set(parsed.order.filter(validNewsSource))] : [];
     const completeOrder = [...order, ...fallback.order.filter((source) => !order.includes(source))];
     const collapsed = parsed.collapsed && typeof parsed.collapsed === "object"
       ? Object.fromEntries(Object.entries(parsed.collapsed).filter(([source, value]) => validNewsSource(source) && typeof value === "boolean")) as NewsPreferences["collapsed"]
       : {};
-    return { version: 1, order: completeOrder, collapsed };
+    return { version: NEWS_PREFERENCE_VERSION, order: completeOrder, collapsed };
   } catch {
     return fallback;
   }
@@ -227,7 +228,7 @@ function QuickAdd({ taskAvailable, onQuickAdd, disabled, status }: { taskAvailab
       <div className="home-subheading"><h2 id="home-quick-add-heading"><InterfaceIcon name="plus" />{t("home.quickAdd")}</h2></div>
       <div className="home-quick-form">
         <label className="sr-only" htmlFor="home-quick-add-input">{t("home.quickAddPlaceholder")}</label>
-        <input id="home-quick-add-input" value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } }} placeholder={t("home.quickAddPlaceholder")} disabled={Boolean(disabled || submitting)} />
+        <input id="home-quick-add-input" value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} placeholder={t("home.quickAddPlaceholder")} disabled={Boolean(disabled || submitting)} />
         <select value={kind} onChange={(event) => setKind(event.target.value as HomeQuickAddKind)} disabled={Boolean(disabled || submitting)} aria-label={t("home.quickAddType")}>
           <option value="task">{t("home.quickAddTask")}</option>
           <option value="note">{t("home.quickAddNote")}</option>
@@ -240,7 +241,7 @@ function QuickAdd({ taskAvailable, onQuickAdd, disabled, status }: { taskAvailab
   );
 }
 
-function AttentionPanel({ tasks, onOpen, parroRefreshSignal }: { tasks: ReturnType<typeof selectHomeTasks>; onOpen: (id: string, rowId?: string) => void; parroRefreshSignal?: number }) {
+function AttentionPanel({ tasks, onOpen }: { tasks: ReturnType<typeof selectHomeTasks>; onOpen: (id: string, rowId?: string) => void }) {
   const { language, t } = useLanguage();
   return (
     <section className="home-section" aria-labelledby="home-attention-heading">
@@ -251,7 +252,8 @@ function AttentionPanel({ tasks, onOpen, parroRefreshSignal }: { tasks: ReturnTy
           <TasksList rows={tasks.overdue} todayKey={tasks.todayKey} emptyLabel={t("home.noOverdue")} language={language} onOpen={(rowId) => onOpen(GOOGLE_TASKS_DATABASE_ID, rowId)} />
           {tasks.overdue.length > 5 && <p className="home-list-total">{t("home.moreOverdue", { count: tasks.overdue.length - 5 })}</p>}
         </section>
-        <ParroInbox compact onOpenParro={() => onOpen("parro")} refreshSignal={parroRefreshSignal} />
+        <ParroInbox compact onOpenParro={() => onOpen("parro")} />
+        <GmailInbox compact onOpenInbox={() => onOpen("gmail")} />
       </div>
     </section>
   );
@@ -286,7 +288,7 @@ function HomeNews() {
           const contentId = `home-news-${source}`;
           return <article className={`home-news-source ${collapsed ? "is-collapsed" : ""}`} key={source}>
             <button type="button" className="home-news-toggle" aria-expanded={!collapsed} aria-controls={contentId} onClick={() => toggle(source)}><span>{label}</span><span aria-hidden="true">{collapsed ? "+" : "−"}</span></button>
-            <div id={contentId} className="home-news-content" hidden={collapsed}><SlashdotFeed source={source} compact hideHeading /></div>
+            <div id={contentId} className="home-news-content" hidden={collapsed}>{!collapsed && <SlashdotFeed source={source} compact hideHeading />}</div>
           </article>;
         })}
       </div>
@@ -294,7 +296,7 @@ function HomeNews() {
   );
 }
 
-export function HomeOverview({ items, onOpen, onQuickAdd, quickAddDisabled, quickAddStatus, parroRefreshSignal }: HomeOverviewProps) {
+export function HomeOverview({ items, onOpen, onQuickAdd, quickAddDisabled, quickAddStatus }: HomeOverviewProps) {
   const { t } = useLanguage();
   const [now, setNow] = useState(() => new Date());
   const taskDatabase = items.find((item) => item.id === GOOGLE_TASKS_DATABASE_ID && !item.trash);
@@ -309,8 +311,7 @@ export function HomeOverview({ items, onOpen, onQuickAdd, quickAddDisabled, quic
     <section className="home-overview" aria-label={t("overview.aria")}>
       <HomeToday items={items} now={now} onOpen={onOpen} />
       <QuickAdd taskAvailable={Boolean(taskDatabase && isDatabase(taskDatabase))} onQuickAdd={onQuickAdd} disabled={quickAddDisabled} status={quickAddStatus} />
-      <AttentionPanel tasks={tasks} onOpen={onOpen} parroRefreshSignal={parroRefreshSignal} />
-      <section className="home-section" aria-labelledby="home-gmail-heading"><div className="sr-only" id="home-gmail-heading">{t("gmail.title")}</div><GmailInbox compact onOpenInbox={() => onOpen("gmail")} /></section>
+      <AttentionPanel tasks={tasks} onOpen={onOpen} />
       <HomeNews />
     </section>
   );

@@ -931,3 +931,16 @@ td { height: 56px; font-size: .9375rem; }
 .parro-connect-error { padding: 9px 11px; border-radius: var(--control-radius); background: var(--surface-soft); color: var(--ink); }
 
 .parro-connection-actions { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+
+/* Polish: smooth motion, refined surfaces and accessible defaults */
+html { scroll-behavior: smooth; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+.home-tasks-panel, .slashdot-panel { transition: box-shadow .2s ease, border-color .2s ease, transform .2s ease; }
+.home-tasks-panel:hover, .slashdot-panel:hover { border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); box-shadow: var(--shadow); transform: translateY(-1px); }
+.nav-item, .home-task-row, .chevron { transition: background .15s ease, color .15s ease; }
+.tree-row.active { background: linear-gradient(90deg, color-mix(in srgb, var(--amber) 14%, transparent), var(--surface-soft) 60%); }
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--faint) 45%, transparent) transparent; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+  .home-tasks-panel:hover, .slashdot-panel:hover { transform: none; }
+}

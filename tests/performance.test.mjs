@@ -14,6 +14,9 @@ test("the initial route keeps heavy editors and dialogs in lazy chunks", () => {
     "app/personal-space/SearchDialog.tsx",
     "app/personal-space/GoogleTasksDialog.tsx",
     "app/personal-space/GoogleCalendarDialog.tsx",
+    "app/personal-space/GmailInbox.tsx",
+    "app/personal-space/ParroInbox.tsx",
+    "app/personal-space/SlashdotFeed.tsx",
   ]) assert.ok(pageEntry.dynamicImports?.includes(moduleName), `${moduleName} remains lazy-loaded`);
 });
 

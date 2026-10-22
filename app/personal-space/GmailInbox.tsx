@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "./i18n";
 import { InterfaceIcon } from "./InterfaceIcon";
 import type { GmailInboxResponse } from "./gmail-types";
+import { fetchRemoteJson } from "./remote-json";
 import { useNearViewport } from "./useNearViewport";
 
 type Props = { compact?: boolean; onOpenInbox?: () => void; authorizationError?: boolean };
@@ -25,8 +26,7 @@ export function GmailInbox({ compact = false, onOpenInbox, authorizationError = 
     const query = new URLSearchParams({ limit: compact ? "5" : "20" });
     if (pageToken) query.set("pageToken", pageToken);
     try {
-      const response = await fetch(`/api/gmail/inbox?${query}`, { cache: "no-store", signal: controller.signal });
-      const body = await response.json() as GmailInboxResponse;
+      const { body } = await fetchRemoteJson<GmailInboxResponse>(`/api/gmail/inbox?${query}`, { cache: "no-store", signal: controller.signal });
       if (requestRef.current !== controller) return;
       if (body.state === "unavailable" || !body.state) throw new Error("Gmail unavailable");
       setFailed(false);

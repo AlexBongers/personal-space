@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "./i18n";
+import { fetchRemoteJson } from "./remote-json";
 import { useNearViewport } from "./useNearViewport";
 
 type SlashdotStory = {
@@ -22,6 +23,8 @@ type SlashdotFeedResponse = {
 };
 
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
+// Only public headlines are reused; private inboxes never enter this cache.
+const recentFeeds = new Map<string, { feed: SlashdotFeedResponse; receivedAt: number }>();
 
 const formatStoryTime = (value: string, formatter: Intl.DateTimeFormat) => {
   const date = new Date(value);
@@ -47,7 +50,7 @@ const SOURCE_DETAILS: Record<NewsSource, { name: string; url: string }> = {
 export function SlashdotFeed({ source = "slashdot", compact = false, maxStories, hideHeading = false }: { source?: NewsSource; compact?: boolean; maxStories?: number; hideHeading?: boolean }) {
   const { language, t } = useLanguage();
   const { name: sourceName, url: sourceUrl } = SOURCE_DETAILS[source];
-  const [feed, setFeed] = useState<SlashdotFeedResponse | null>(null);
+  const [feed, setFeed] = useState<SlashdotFeedResponse | null>(() => recentFeeds.get(source)?.feed ?? null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -64,16 +67,26 @@ export function SlashdotFeed({ source = "slashdot", compact = false, maxStories,
     requestRef.current = controller;
     if (manual) setRefreshing(true);
     try {
-      const response = await fetch(`/api/${source}`, { cache: manual ? "reload" : "default", signal: controller.signal });
-      const body = await response.json() as SlashdotFeedResponse;
+      const cached = recentFeeds.get(source);
+      if (!manual && cached && Date.now() - cached.receivedAt < REFRESH_INTERVAL_MS && !cached.feed.stale) {
+        setFeed(cached.feed);
+        setError("");
+        return;
+      }
+      const { response, body } = await fetchRemoteJson<SlashdotFeedResponse>(`/api/${source}`, {
+        cache: manual ? "reload" : "default",
+        headers: manual ? { "Cache-Control": "no-cache" } : undefined,
+        signal: controller.signal,
+      });
       if (requestRef.current !== controller) return;
       if (!response.ok || !body.stories?.length) throw new Error(t("overview.newsUnavailable"));
+      recentFeeds.set(source, { feed: body, receivedAt: Date.now() });
       setFeed(body);
       setError(body.stale ? t("overview.newsStale") : "");
-    } catch (requestError) {
-      if (requestError instanceof Error && requestError.name === "AbortError") return;
+    } catch {
+      if (controller.signal.aborted) return;
       if (requestRef.current !== controller) return;
-      setError(requestError instanceof Error ? requestError.message : t("overview.newsUnavailable"));
+      setError(t("overview.newsUnavailable"));
     } finally {
       if (requestRef.current === controller) {
         requestRef.current = null;
@@ -115,7 +128,7 @@ export function SlashdotFeed({ source = "slashdot", compact = false, maxStories,
       </div>}
       <div className="slashdot-meta">
         <span className={`live-dot ${error ? "feed-warning" : ""}`} aria-hidden="true" />
-        <span>{feed?.fetchedAt ? t("overview.newsUpdated", { time: formatFeedTime(feed.fetchedAt, feedTimeFormatter) }) : t("overview.newsLoading")}</span>
+        <span>{feed?.fetchedAt ? t("overview.newsUpdated", { time: formatFeedTime(feed.fetchedAt, feedTimeFormatter) }) : t(loading ? "overview.newsLoading" : "overview.newsUnavailable")}</span>
         <span className="meta-divider">·</span>
         <a href={sourceUrl} target="_blank" rel="noreferrer">{sourceName} ↗</a>
         {hideHeading && <button type="button" className="feed-refresh compact-feed-refresh" aria-label={`${sourceName}: ${t("news.refresh")}`} onClick={() => void loadFeed(true)} disabled={loading || refreshing}><span className={loading || refreshing ? "spin" : ""}>↻</span></button>}
@@ -152,7 +165,7 @@ export function SlashdotFeed({ source = "slashdot", compact = false, maxStories,
         </ol>
       )}
 
-      {error && <p className="news-status">{error}</p>}
+      {error && stories.length > 0 && <p className="news-status" role="status">{error}</p>}
       {compact && stories.length > 0 && <button type="button" className="text-button news-summary-toggle" onClick={() => setShowDescriptions((current) => !current)}>{showDescriptions ? t("home.hideNewsSummaries") : t("home.showNewsSummaries")}</button>}
       <div className="slashdot-footer">
         <a href={sourceUrl} target="_blank" rel="noreferrer">{t("news.open", { source: sourceName })} ↗</a>

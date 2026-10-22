@@ -1,3 +1,46 @@
+## DEF-010: Expired Parro connection stays connected after navigation
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 2
+
+Steps to reproduce:
+1. Start Personal Space with saved Parro connection tokens and cached messages.
+2. Let the upstream refresh token expire and trigger Parro synchronization.
+3. Navigate away and return to the Parro page.
+
+Expected: The connection remains marked as requiring sign-in, existing messages are preserved, and a successful reconnect restores normal synchronization.
+Actual: Authentication failure was returned only for the current refresh; subsequent status reads still reported the saved connection as connected and repeated refresh attempts used the same invalid tokens.
+
+History:
+- qa: opened from backend diagnosis of the saved expired-token state; regression uses mocked upstream authentication failure rather than altering the user's live connection.
+- orchestrator: backend implemented persisted needsSignIn flag, preserved cached messages, stopped repeated expired-token requests, and cleared the flag after successful reconnect; ready for QA regression retest.
+- qa: closed after final 122-test suite passed, including persisted expired-token sign-in state, no repeated upstream refresh, cached-message preservation, and successful reconnect clearing the sign-in flag; live credentials were not modified.
+
+
+## DEF-009: Feed refresh cannot recover promptly after a load failure
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 2
+
+Steps to reproduce:
+1. Start Personal Space and open a news source from the sidebar.
+2. Allow the first request to succeed, then simulate an upstream failure after the cached feed expires.
+3. Restore the upstream feed and activate the source's refresh control within fifteen minutes.
+4. Separately, request a source with no successful cached response while upstream is unavailable and inspect its response cache policy.
+
+Expected: Manual refresh requests fresh upstream data; temporary failures are not browser-cached and automatic recovery retries promptly while preserving previously loaded stories.
+Actual: The Worker ignores manual reload intent, backs stale failures off for fifteen minutes, and returns HTTP 503 with private max-age=900. A retry can therefore retain a failure or stale result for fifteen minutes.
+
+History:
+- qa: opened after inspecting the production-equivalent Worker flow and establishing feed-loading checks; current upstream sources all render locally, while failure and refresh cases require controlled regression tests.
+- orchestrator: backend-dev implemented explicit refresh cache bypass, no-store failure responses, and a thirty-second stale retry interval; targeted regression tests pass, awaiting QA retest.
+- qa: closed after final build and all 122 tests passed, including no-store failure policy, coalesced manual cache bypass, short stale backoff and retry regressions; local Tweakers refresh completed with ten visible articles and an enabled refresh control.
+
+
 ## DEF-008: Tweakers feed fails to load on the live Site
 
 - Status: CLOSED

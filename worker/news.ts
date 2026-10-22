@@ -8,6 +8,7 @@ export type NewsSource = keyof typeof NEWS_SOURCES;
 export type NewsStory = { id: string; title: string; url: string; description: string; author: string; publishedAt: string; section: string };
 export type NewsFeed = { stories: NewsStory[]; fetchedAt: string; stale?: boolean; error?: string };
 const TTL = 15 * 60 * 1000;
+const RETRY_DELAY = 30 * 1000;
 const cached = new Map<NewsSource, { checkedAt: number; feed: NewsFeed }>();
 const pending = new Map<NewsSource, Promise<NewsFeed>>();
 
@@ -54,9 +55,10 @@ async function fetchFeed(source: NewsSource): Promise<NewsFeed> {
 
 export async function handleNewsApi(request: Request, source: NewsSource) {
   if (request.method !== "GET") return new Response(null, { status: 405, headers: { Allow: "GET" } });
-  const json = (feed: NewsFeed, status = 200) => Response.json(feed, { status, headers: { "Cache-Control": "private, max-age=900", "X-Content-Type-Options": "nosniff" } });
+  const json = (feed: NewsFeed, status = 200) => Response.json(feed, { status, headers: { "Cache-Control": status !== 200 || feed.stale ? "no-store" : "private, max-age=900", "X-Content-Type-Options": "nosniff" } });
   const previous = cached.get(source);
-  if (previous && Date.now() - previous.checkedAt < TTL) return json(previous.feed);
+  const refresh = request.cache === "reload" || request.cache === "no-cache" || /(?:^|,)\s*(?:no-cache|max-age=0)(?:\s|,|$)/i.test(request.headers.get("Cache-Control") || "");
+  if (!refresh && previous && Date.now() - previous.checkedAt < (previous.feed.stale ? RETRY_DELAY : TTL)) return json(previous.feed);
   let requestPromise = pending.get(source);
   if (!requestPromise) {
     requestPromise = fetchFeed(source).then((feed) => {

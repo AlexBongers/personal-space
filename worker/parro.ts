@@ -208,7 +208,7 @@ const handleRead = async (request: Request, env: ParroEnv, url: URL) => {
   try {
     const connection = await readConnection(env.DB);
     if (connection && connection.owner !== ownerId(request)) return json({ state: "sign_in_required", messages: [] }, 403);
-    return json({ ...await readMessages(env.DB, limit), connectionState: !tokenKey(env) ? "unconfigured" : connection ? "connected" : "disconnected" });
+    return json({ ...await readMessages(env.DB, limit), connectionState: !tokenKey(env) ? "unconfigured" : connection && !connection.needsSignIn ? "connected" : "disconnected" });
   } catch {
     return json({ state: "unavailable", messages: [] }, 503);
   }
@@ -308,13 +308,13 @@ export async function handleParroApi(request: Request, env: ParroEnv, url = new 
 const CONNECTION_ID = "parro-connection";
 const ownerId = (request: Request) => request.headers.get("oai-authenticated-user-id") || (isLocalRequest(request) ? "local" : "");
 const tokenKey = (env: ParroEnv) => env.PARRO_TOKEN_ENCRYPTION_KEY || env.GOOGLE_TOKEN_ENCRYPTION_KEY;
-type Connection = { owner: string; encrypted: string };
+type Connection = { owner: string; encrypted: string; needsSignIn?: boolean };
 const readConnection = async (database: ParroDatabase): Promise<Connection | null> => {
   const rows = await database.prepare("SELECT data FROM workspace_state WHERE id = ?").bind(CONNECTION_ID).all<{ data: string }>();
   if (!rows.results[0]?.data) return null;
   const value: unknown = JSON.parse(rows.results[0].data);
   if (!isRecord(value) || typeof value.owner !== "string" || typeof value.encrypted !== "string") throw new ParroError("De opgeslagen Parro-koppeling is ongeldig.");
-  return { owner: value.owner, encrypted: value.encrypted };
+  return { owner: value.owner, encrypted: value.encrypted, needsSignIn: value.needsSignIn === true };
 };
 const keyBytes = (value: string) => Uint8Array.from(atob(value.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0));
 const encryptionKey = async (env: ParroEnv) => {
@@ -391,6 +391,7 @@ ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expi
       connectionSaved = true;
     } else {
       if (!connection) return json({ error: "Verbind Parro eerst met je account.", state: "sign_in_required" }, 401);
+      if (connection.needsSignIn) return json({ error: "De Parro-sessie is verlopen. Verbind Parro opnieuw.", state: "sign_in_required", code: "parro_refresh_rejected" }, 401);
       tokens = await decryptTokens(connection, env);
     }
     const syncedAt = new Date().toISOString();
@@ -398,7 +399,16 @@ ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expi
     try { messages = await runDirectStage("message_fetch", () => fetchParroMessages(tokens.access_token, syncedAt, signal)); }
     catch (error) {
       if (!(error instanceof ParroError) || error.status !== 401) throw error;
-      tokens = await refreshParroTokens(tokens.refresh_token, signal);
+      try { tokens = await refreshParroTokens(tokens.refresh_token, signal); }
+      catch (refreshError) {
+        if (refreshError instanceof ParroError && refreshError.code === "parro_refresh_rejected") {
+          // Preserve ownership and saved messages while preventing repeated expired-token requests.
+          const stored = await readConnection(database);
+          if (stored) await database.prepare("UPDATE workspace_state SET data = ?, revision = revision + 1 WHERE id = ?")
+            .bind(JSON.stringify({ ...stored, needsSignIn: true }), CONNECTION_ID).run();
+        }
+        throw refreshError;
+      }
       // Persist a rotated refresh token before subsequent API calls can fail.
       await runDirectStage("connection_save", () => saveConnection(database, tokens, owner, env));
       connectionSaved = true;

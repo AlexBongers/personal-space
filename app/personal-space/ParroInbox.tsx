@@ -6,6 +6,7 @@ import { InterfaceIcon } from "./InterfaceIcon";
 import type { ParroMessagesResponse } from "./parro-types";
 const ParroConnection = lazy(() => import("./ParroConnection").then((module) => ({ default: module.ParroConnection })));
 import { parroSnapshotStatus, shouldSyncParro } from "./parro-status";
+import { fetchRemoteJson } from "./remote-json";
 import { useNearViewport } from "./useNearViewport";
 
 type Props = { compact?: boolean; onOpenParro?: () => void; refreshSignal?: number };
@@ -32,8 +33,7 @@ export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: 
     setLoading(true);
     try {
       const query = new URLSearchParams({ limit: compact ? "4" : "20" });
-      const response = await fetch(`/api/parro/messages?${query}`, { cache: "no-store", signal: controller.signal });
-      const body = await response.json() as ParroMessagesResponse;
+      const { response, body } = await fetchRemoteJson<ParroMessagesResponse>(`/api/parro/messages?${query}`, { cache: "no-store", signal: controller.signal });
       if (requestRef.current !== controller) return;
       if ((!response.ok && body.state !== "sign_in_required" && body.state !== "unconfigured") || !body.state || body.state === "unavailable") throw new Error("Parro unavailable");
       setInbox(body);
@@ -41,15 +41,17 @@ export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: 
       if (shouldSyncParro(body.connectionState, forceSync, body.syncedAt, allowAutomaticSync)) {
         setSyncing(true);
         setSyncError(null);
-        const syncResponse = await fetch("/api/parro/refresh", { method: "POST", signal: controller.signal });
-        const result = await syncResponse.json().catch(() => ({})) as { ok?: boolean; state?: string; error?: unknown };
+        const { response: syncResponse, body: result } = await fetchRemoteJson<{ ok?: boolean; state?: string; error?: unknown }>("/api/parro/refresh", { method: "POST", signal: controller.signal }, 60_000);
         if (requestRef.current !== controller) return;
         if (!syncResponse.ok || !result.ok) {
           setSyncError(typeof result.error === "string" && result.error.trim() ? result.error : t("parro.syncFailed"));
-          if (result.state === "sign_in_required") setEditingConnection(true);
+          if (syncResponse.status === 401 || result.state === "sign_in_required") {
+            setEditingConnection(true);
+            setSyncError(t("parro.loginExpired"));
+            setInbox((current) => current ? { ...current, connectionState: "disconnected" } : current);
+          }
         } else {
-          const refreshed = await fetch(`/api/parro/messages?${query}`, { cache: "no-store", signal: controller.signal });
-          const refreshedBody = await refreshed.json() as ParroMessagesResponse;
+          const { response: refreshed, body: refreshedBody } = await fetchRemoteJson<ParroMessagesResponse>(`/api/parro/messages?${query}`, { cache: "no-store", signal: controller.signal });
           if (requestRef.current !== controller) return;
           if (!refreshed.ok || !refreshedBody.state || refreshedBody.state === "unavailable") throw new Error("Parro unavailable");
           setInbox(refreshedBody);
@@ -97,6 +99,7 @@ export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: 
   const today = dayFormat.format(new Date());
   const snapshot = parroSnapshotStatus(inbox?.syncedAt);
   const connected = inbox?.connectionState === "connected" && (inbox.state === "connected" || inbox.state === "empty");
+  const hasSnapshot = connected || Boolean(inbox?.messages.length);
   const signInRequired = inbox?.state === "sign_in_required";
   const unread = inbox?.unread || 0;
 
@@ -107,8 +110,8 @@ export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: 
       <h2 id="parro-heading"><InterfaceIcon name="mail" />{t("parro.title")}{connected && unread > 0 && <span className="inbox-count" aria-label={t("parro.unreadCount", { count: unread })}>{unread}</span>}</h2>
       <button type="button" className="feed-refresh" aria-label={t("parro.refresh")} title={connected ? t("parro.refreshHint") : t("parro.refreshUnavailable")} disabled={busy || !connected} onClick={() => void load(true)}><span className={loading || syncing ? "spin" : ""}>↻</span></button>
     </div>
-    {connected && snapshot.date && <div className="parro-meta"><span>{t("parro.updated", { time: syncFormat.format(snapshot.date) })}</span><span>{t("parro.unreadCount", { count: unread })}</span></div>}
-    {connected && (inbox.messages.length > 0 || snapshot.date) && snapshot.stale && <p className="parro-notice parro-sync-warning" role="status">{t(snapshot.date ? "parro.syncDelayed" : "parro.syncUnknown")}</p>}
+    {hasSnapshot && snapshot.date && <div className="parro-meta"><span>{t("parro.updated", { time: syncFormat.format(snapshot.date) })}</span><span>{t("parro.unreadCount", { count: unread })}</span></div>}
+    {hasSnapshot && inbox && (inbox.messages.length > 0 || snapshot.date) && snapshot.stale && <p className="parro-notice parro-sync-warning" role="status">{t(snapshot.date ? "parro.syncDelayed" : "parro.syncUnknown")}</p>}
     {syncing && <p className="parro-sync-help" role="status">{t("parro.syncing")}</p>}
     {syncError && <p className="parro-notice parro-sync-warning" role="alert">{syncError}</p>}
     {!signInRequired && inbox?.connectionState === "unconfigured" && <p className="parro-notice">{t("parro.serverUnconfigured")}</p>}
@@ -118,7 +121,7 @@ export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: 
     {failed && <p className="parro-notice" role="status">{connected ? t("parro.stale") : t("parro.unavailable")} <button type="button" className="text-button" onClick={() => void load()} disabled={loading}>{t("overview.tryAgain")}</button></p>}
     {signInRequired && <a className="small-button" href="/signin-with-chatgpt?return_to=%2F" target="_top">{t("parro.signIn")}</a>}
     {inbox?.state === "unconfigured" && <p className="parro-notice">{t("parro.unconfigured")}</p>}
-    {connected && <>
+    {hasSnapshot && inbox && <>
       <ol className="parro-list">
         {inbox.messages.map((message) => {
           const date = new Date(message.publishedAt);

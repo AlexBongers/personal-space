@@ -105,6 +105,7 @@ function directDatabase(failAt: "connection_save" | "snapshot_store" | "" = "") 
           if (query.startsWith("DELETE FROM google_sync_lease")) lease = false;
           if (failAt === "connection_save" && query.startsWith("INSERT INTO workspace_state") && statement.values[0] === "parro-connection") throw new Error("RAW_DB_PASSWORD_TOKEN_SENTINEL");
           if (query.startsWith("INSERT INTO workspace_state")) state.set(String(statement.values[0]), String(statement.values[1]));
+          if (query.startsWith("UPDATE workspace_state SET data = ?")) state.set(String(statement.values[1]), String(statement.values[0]));
           return { meta: { changes: 1 } };
         },
       };
@@ -424,7 +425,7 @@ test("direct Parro stages return safe codes when saving, fetching or storing fai
 test("direct Parro login, refresh rotation, failed snapshot and ownership", async (t) => {
   const db = directDatabase();
   const env = { DB: db.database, PARRO_TOKEN_ENCRYPTION_KEY: btoa("x".repeat(32)), PARRO_SYNC_TOKEN: "legacy" };
-  let state = ""; let challenge = ""; let failMessages = false; let expired = false; let tokenRefreshes = 0;
+  let state = ""; let challenge = ""; let failMessages = false; let expired = false; let tokenRefreshes = 0; let rejectRefresh = false;
   t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     if (url.pathname.endsWith("/authorize")) {
@@ -442,6 +443,7 @@ test("direct Parro login, refresh rotation, failed snapshot and ownership", asyn
     if (url.pathname.endsWith("/token")) {
       const fields = new URLSearchParams(String(init?.body));
       if (fields.get("grant_type") === "refresh_token") {
+        if (rejectRefresh) { tokenRefreshes++; return Response.json({ error: "invalid_grant" }, { status: 400 }); }
         assert.equal(fields.get("refresh_token"), "refresh-secret"); tokenRefreshes++;
         return Response.json({ access_token: "rotated-access", refresh_token: "rotated-refresh" });
       }
@@ -455,7 +457,7 @@ test("direct Parro login, refresh rotation, failed snapshot and ownership", asyn
     assert.equal(headers.get("Range"), null);
     assert.equal(headers.get("User-Agent"), null);
     assert.equal(init?.redirect, "manual");
-    if (expired && new Headers(init?.headers).get("Authorization") === "Bearer access-secret") return new Response(null, { status: 401 });
+    if (rejectRefresh || expired && new Headers(init?.headers).get("Authorization") === "Bearer access-secret") return new Response(null, { status: 401 });
     if (failMessages) return new Response(null, { status: 503 });
     if (url.pathname.endsWith("/group")) { assert.equal(url.searchParams.get("dtype"), "identity.RHomeGroup"); return Response.json({ items: [{ id: 12, name: "Class" }] }); }
     if (url.pathname.endsWith("/chatroom")) return Response.json({ items: [{ id: 23, name: "Teacher", unreadCount: 2 }] });
@@ -485,6 +487,20 @@ test("direct Parro login, refresh rotation, failed snapshot and ownership", asyn
   db.lease = true;
   assert.equal((await handleParroApi(directRequest("refresh"), env))?.status, 409); db.lease = false;
   assert.equal((await handleParroApi(new Request("https://personal.test/api/parro/sync", { method: "POST", headers: { Authorization: "Bearer legacy" } }), env))?.status, 409);
+  rejectRefresh = true;
+  const beforeExpiry = JSON.stringify(db.snapshot);
+  assert.equal((await handleParroApi(directRequest("refresh"), env))?.status, 401);
+  assert.equal(JSON.parse(db.state.get("parro-connection")!).needsSignIn, true);
+  assert.equal(JSON.stringify(db.snapshot), beforeExpiry, "expired sessions preserve saved messages");
+  const expiredStatus = await handleParroApi(new Request("https://personal.test/api/parro/messages", { headers: { "oai-authenticated-user-id": "owner" } }), env);
+  assert.equal((await expiredStatus!.json()).connectionState, "disconnected");
+  assert.equal((await handleParroApi(directRequest("refresh"), env))?.status, 401);
+  assert.equal(tokenRefreshes, 2, "expired connection is not retried upstream after reload");
+  assert.equal((await handleParroApi(new Request("https://personal.test/api/parro/messages", { headers: { "oai-authenticated-user-id": "other" } }), env))?.status, 403, "expiry retains ownership protection");
+  rejectRefresh = false;
+  expired = false;
+  assert.equal((await handleParroApi(directRequest("connect", { username: "parent@example.test", password: "test-password" }), env))?.status, 200);
+  assert.equal(JSON.parse(db.state.get("parro-connection")!).needsSignIn, undefined, "successful reconnect clears expiry state");
   assert.equal((await handleParroApi(directRequest("connection"), env))?.status, 200);
   assert.equal(db.state.has("parro-connection"), false); assert.equal(db.snapshot.length, 0);
 });

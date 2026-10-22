@@ -27,7 +27,20 @@ test("NOS and Bunniks Nieuws use their own trusted article hosts", () => {
   assert.throws(() => parseNewsFeed(item("https://tweakers.net/nieuws/1"), "nos"), /No usable/);
 });
 
+test("a cold feed failure is not cached by the browser and can immediately recover", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response("Unavailable", { status: 503 }));
+  const request = new Request("https://personal.test/api/nos");
+  const failed = await handleNewsApi(request, "nos");
+  assert.equal(failed.status, 503);
+  assert.equal(failed.headers.get("Cache-Control"), "no-store");
+  t.mock.method(globalThis, "fetch", async () => new Response(item("https://nos.nl/artikel/recovered")));
+  const recovered = await handleNewsApi(request, "nos");
+  assert.equal(recovered.status, 200);
+  assert.equal((await recovered.json()).stories.length, 1);
+});
+
 test("news requests are read-only, coalesced and cached independently per source", async (t) => {
+  t.mock.method(Date, "now", () => new Date("2099-01-01").getTime());
   let requests = 0;
   const requestedUrls: string[] = [];
   t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
@@ -44,17 +57,30 @@ test("news requests are read-only, coalesced and cached independently per source
   assert.deepEqual(await first.json(), await second.json());
   await handleNewsApi(request, "tweakers");
   assert.equal(requests, 1);
+  const refresh = new Request(request, { headers: { "Cache-Control": "no-cache" } });
+  await Promise.all([handleNewsApi(refresh, "tweakers"), handleNewsApi(refresh, "tweakers")]);
+  assert.equal(requests, 2, "manual refresh bypasses the fresh server cache and remains coalesced");
   await handleNewsApi(request, "slashdot");
-  assert.equal(requests, 2);
+  assert.equal(requests, 3);
   await handleNewsApi(request, "nos");
   await handleNewsApi(request, "bunniksnieuws");
-  assert.equal(requests, 4);
+  assert.equal(requests, 5);
   assert.equal((await handleNewsApi(new Request(request, { method: "POST" }), "tweakers")).status, 405);
-  assert.equal(requests, 4);
+  assert.equal(requests, 5);
   t.mock.method(Date, "now", () => new Date("2100-01-01").getTime());
   t.mock.method(globalThis, "fetch", async () => { requests++; throw new Error("offline"); });
   const stale = await handleNewsApi(request, "tweakers");
   assert.equal((await stale.json()).stale, true);
+  assert.equal(stale.headers.get("Cache-Control"), "no-store");
   await handleNewsApi(request, "tweakers");
-  assert.equal(requests, 5, "failed refresh is backed off for fifteen minutes");
+  assert.equal(requests, 6, "failed refresh is briefly backed off");
+  await handleNewsApi(refresh, "tweakers");
+  assert.equal(requests, 7, "manual retry bypasses the failure backoff");
+  t.mock.method(Date, "now", () => new Date("2100-01-01T00:00:31Z").getTime());
+  t.mock.method(globalThis, "fetch", async () => { requests++; return new Response(item("https://tweakers.net/nieuws/recovered")); });
+  const recovered = await handleNewsApi(request, "tweakers");
+  const body = await recovered.json();
+  assert.equal(body.stale, undefined);
+  assert.equal(body.stories[0].url, "https://tweakers.net/nieuws/recovered");
+  assert.equal(requests, 8, "automatic retry recovers after thirty seconds rather than fifteen minutes");
 });

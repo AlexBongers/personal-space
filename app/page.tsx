@@ -16,14 +16,14 @@ import {
 } from "./personal-space/model";
 import { Sidebar } from "./personal-space/Sidebar";
 import { InterfaceIcon } from "./personal-space/InterfaceIcon";
-import { GmailInbox } from "./personal-space/GmailInbox";
-import { ParroInbox } from "./personal-space/ParroInbox";
-import { SlashdotFeed } from "./personal-space/SlashdotFeed";
 import type { Block, Item, SearchResult, Theme } from "./personal-space/types";
 import { useLanguage } from "./personal-space/i18n";
 import { useWorkspacePersistence } from "./personal-space/useWorkspacePersistence";
 import { markItemSubtreeTrashed, markRowTrashed, purgeTrashBatch, restoreTrashBatch } from "./personal-space/workspace-trash";
 
+const GmailInbox = lazy(() => import("./personal-space/GmailInbox").then((module) => ({ default: module.GmailInbox })));
+const ParroInbox = lazy(() => import("./personal-space/ParroInbox").then((module) => ({ default: module.ParroInbox })));
+const SlashdotFeed = lazy(() => import("./personal-space/SlashdotFeed").then((module) => ({ default: module.SlashdotFeed })));
 const BlockEditor = lazy(() => import("./personal-space/BlockEditor").then((module) => ({ default: module.BlockEditor })));
 const DatabaseView = lazy(() => import("./personal-space/DatabaseView").then((module) => ({ default: module.DatabaseView })));
 const HomeOverview = lazy(() => import("./personal-space/HomeOverview").then((module) => ({ default: module.HomeOverview })));

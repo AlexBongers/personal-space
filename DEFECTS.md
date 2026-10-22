@@ -1,3 +1,25 @@
+## DEF-012: Rejected Parro reconnect is reported as a successful connection
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 2
+
+Steps to reproduce:
+1. Start Personal Space with an existing saved Parro connection.
+2. Open Parro and choose to reconnect.
+3. Submit credentials that the upstream login rejects with HTTP 401.
+4. Observe the failed reconnect response and connection form outcome.
+
+Expected: The new login attempt fails visibly and the reconnect form remains available, while the previous saved messages and connection record are preserved.
+Actual: The server sets connectionSaved from the existence of the old connection before attempting login. On rejection it returns connectionSaved=true; the frontend outcome helper interprets that as connected=true and closes the form despite authentication failure.
+
+History:
+- qa: opened after reproducing the original helper with a mocked HTTP failure payload containing connectionSaved=true, state=sign_in_required and code=credentials_rejected; it returned connected=true. Production POST /api/parro/connect returned HTTP 401 twice with an authenticated site user and same-origin requests, but the user's exact upstream error is not yet established. No real credentials were used in QA.
+- orchestrator: backend now reports only newly saved valid connections; frontend keeps rejected authentication visible, preserves messages, and bounds connect and refresh requests beyond the server deadline. Targeted tests pass; awaiting QA.
+- qa: closed the rejected-reconnect classification defect after final build and 128/128 tests passed. Backend regressions cover old valid and expired connections: rejected new credentials return HTTP 401/connectionSaved=false while old encrypted records and messages remain intact and the lease is released. Frontend regressions prioritize sign_in_required/needsSignIn over old saved tokens, retain failure outcome, and distinguish a newly saved login with message-fetch failure. Timeout regression verifies stalled-body TimeoutError and retry. Local browser form navigation passed with no console warnings/errors; no credentials were submitted, so this does not verify successful upstream account authentication.
+
+
 ## DEF-011: News fallback disappears across Worker instances
 
 - Status: CLOSED

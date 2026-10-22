@@ -41,7 +41,7 @@ export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: 
       if (shouldSyncParro(body.connectionState, forceSync, body.syncedAt, allowAutomaticSync)) {
         setSyncing(true);
         setSyncError(null);
-        const { response: syncResponse, body: result } = await fetchRemoteJson<{ ok?: boolean; state?: string; error?: unknown }>("/api/parro/refresh", { method: "POST", signal: controller.signal }, 60_000);
+        const { response: syncResponse, body: result } = await fetchRemoteJson<{ ok?: boolean; state?: string; error?: unknown }>("/api/parro/refresh", { method: "POST", signal: controller.signal }, 95_000);
         if (requestRef.current !== controller) return;
         if (!syncResponse.ok || !result.ok) {
           setSyncError(typeof result.error === "string" && result.error.trim() ? result.error : t("parro.syncFailed"));

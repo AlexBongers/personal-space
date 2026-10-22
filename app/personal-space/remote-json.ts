@@ -9,6 +9,9 @@ export async function fetchRemoteJson<T>(input: string, init: RequestInit = {}, 
     const response = await fetch(input, { ...init, signal: controller.signal });
     const body = await response.json() as T;
     return { response, body };
+  } catch (error) {
+    if (controller.signal.aborted && !init.signal?.aborted) throw controller.signal.reason;
+    throw error;
   } finally {
     globalThis.clearTimeout(timer);
     init.signal?.removeEventListener("abort", cancel);

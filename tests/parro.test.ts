@@ -489,7 +489,9 @@ test("direct Parro login, refresh rotation, failed snapshot and ownership", asyn
   assert.equal((await handleParroApi(new Request("https://personal.test/api/parro/sync", { method: "POST", headers: { Authorization: "Bearer legacy" } }), env))?.status, 409);
   rejectRefresh = true;
   const beforeExpiry = JSON.stringify(db.snapshot);
-  assert.equal((await handleParroApi(directRequest("refresh"), env))?.status, 401);
+  const expiredRefresh = await handleParroApi(directRequest("refresh"), env);
+  assert.equal(expiredRefresh?.status, 401);
+  assert.equal((await expiredRefresh!.json()).connectionSaved, false, "rejected refresh cannot be reported as a usable saved connection");
   assert.equal(JSON.parse(db.state.get("parro-connection")!).needsSignIn, true);
   assert.equal(JSON.stringify(db.snapshot), beforeExpiry, "expired sessions preserve saved messages");
   const expiredStatus = await handleParroApi(new Request("https://personal.test/api/parro/messages", { headers: { "oai-authenticated-user-id": "owner" } }), env);
@@ -503,4 +505,33 @@ test("direct Parro login, refresh rotation, failed snapshot and ownership", asyn
   assert.equal(JSON.parse(db.state.get("parro-connection")!).needsSignIn, undefined, "successful reconnect clears expiry state");
   assert.equal((await handleParroApi(directRequest("connection"), env))?.status, 200);
   assert.equal(db.state.has("parro-connection"), false); assert.equal(db.snapshot.length, 0);
+});
+
+test("rejected reconnect never reports the previous connection as a newly saved login", async (t) => {
+  const diagnostics: unknown[][] = [];
+  t.mock.method(console, "warn", (...args: unknown[]) => diagnostics.push(args));
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/authorize")) return new Response('<form action="/login"><input name="emailadres"><input name="wachtwoord" type="password"></form>');
+    if (url.pathname === "/login") return new Response('<p>Inlog afgewezen</p><form><input name="wachtwoord" type="password"></form>');
+    throw new Error("Unexpected test endpoint");
+  });
+  for (const needsSignIn of [false, true]) {
+    const db = directDatabase();
+    const saved = JSON.stringify({ owner: "owner", encrypted: "PRIVATE_EXISTING_TOKEN", needsSignIn });
+    db.state.set("parro-connection", saved);
+    db.snapshot = [["private-existing-message"]];
+    const response = await handleParroApi(directRequest("connect", { username: "private-parent@example.test", password: "PRIVATE_PASSWORD" }), { DB: db.database, PARRO_TOKEN_ENCRYPTION_KEY: btoa("x".repeat(32)) });
+    assert.equal(response?.status, 401);
+    const body = await response!.json();
+    assert.equal(body.connectionSaved, false);
+    assert.equal(body.state, "sign_in_required");
+    assert.equal(body.code, "credentials_rejected");
+    assert.equal(db.state.get("parro-connection"), saved, "failed reconnect preserves the old connection");
+    assert.deepEqual(db.snapshot, [["private-existing-message"]]);
+    assert.equal(db.lease, false);
+  }
+  assert.equal(diagnostics.length, 2);
+  assert.deepEqual(diagnostics[0], ["Parro operation failed", { operation: "connect", stage: "login", status: 401, code: "credentials_rejected", connectionSaved: false }]);
+  assert.doesNotMatch(JSON.stringify(diagnostics), /PRIVATE_|private-parent|private-existing/);
 });

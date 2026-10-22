@@ -49,3 +49,34 @@ test("after connection handoff, status can load without auto-sync while manual r
   assert.equal(shouldSyncParro("connected", true, staleSnapshot, false, now), true);
   assert.equal(shouldSyncParro("connected", false, staleSnapshot, true, now), true);
 });
+
+test("rejected reconnect never treats old saved tokens as a successful login", () => {
+  for (const rejection of [{ state: "sign_in_required" }, { needsSignIn: true }]) {
+    assert.deepEqual(parroConnectOutcome(false, {
+      connectionSaved: true,
+      ...rejection,
+      error: "Parro heeft de inlogbevestiging niet geaccepteerd.",
+    }, "Inloggen mislukt.", "Synchroniseren mislukt."), {
+      connected: false,
+      error: "Parro heeft de inlogbevestiging niet geaccepteerd.",
+    });
+  }
+});
+
+test("a successful reconnect dismisses the form without a sync warning", () => {
+  assert.deepEqual(parroConnectOutcome(true, { ok: true, connectionSaved: true }, "Inloggen mislukt.", "Synchroniseren mislukt."), {
+    connected: true,
+    syncError: null,
+  });
+});
+
+test("newly saved tokens allow partial connection when only message fetching fails", () => {
+  assert.deepEqual(parroConnectOutcome(false, {
+    state: "unavailable",
+    connectionSaved: true,
+    error: "Parro-groepen konden niet worden opgehaald.",
+  }, "Inloggen mislukt.", "Synchroniseren mislukt."), {
+    connected: true,
+    syncError: "Parro-groepen konden niet worden opgehaald.",
+  });
+});

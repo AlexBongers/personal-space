@@ -1,12 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "./i18n";
-import { parroConnectOutcome } from "./parro-connect-outcome";
+import { fetchRemoteJson } from "./remote-json";
+import { parroConnectOutcome, type ParroConnectResponse } from "./parro-connect-outcome";
 
 type Props = { onConnected: (syncError: string | null) => void; onBusyChange?: (busy: boolean) => void };
-
-type ConnectionResponse = { ok?: boolean; connectionSaved?: boolean; error?: unknown };
 
 export function ParroConnection({ onConnected, onBusyChange }: Props) {
   const { t } = useLanguage();
@@ -16,32 +15,49 @@ export function ParroConnection({ onConnected, onBusyChange }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const requestRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => {
+    const request = requestRef.current;
+    requestRef.current = null;
+    request?.abort();
+    if (request) onBusyChange?.(false);
+  }, [onBusyChange]);
+
+  useEffect(() => {
+    if (error && !busy) passwordRef.current?.focus();
+  }, [error, busy]);
 
   return <form className="parro-connect-form" onSubmit={async (event) => {
     event.preventDefault();
-    if (busy || !username.trim() || !password) return;
+    if (requestRef.current || !username.trim() || !password) return;
+    const controller = new AbortController();
+    requestRef.current = controller;
     setBusy(true);
     onBusyChange?.(true);
     setError(null);
     try {
-      const response = await fetch("/api/parro/connect", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+      const { response, body: result } = await fetchRemoteJson<ParroConnectResponse>("/api/parro/connect", {
+        signal: controller.signal, method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: username.trim(), password, ...(account.trim() ? { account: account.trim() } : {}) }),
-      });
-      const result = await response.json().catch(() => ({})) as ConnectionResponse;
+      }, 95_000);
+      if (requestRef.current !== controller) return;
       const outcome = parroConnectOutcome(response.ok, result, t("parro.connectFailed"), t("parro.syncFailed"));
       if (!outcome.connected) {
         setError(outcome.error);
         return;
       }
       onConnected(outcome.syncError);
-    } catch {
-      setError(t("parro.connectFailed"));
+    } catch (requestError) {
+      if (requestRef.current !== controller || controller.signal.aborted) return;
+      setError(t(requestError instanceof Error && requestError.name === "TimeoutError" ? "parro.connectTimedOut" : "parro.connectFailed"));
     } finally {
-      setPassword("");
-      setBusy(false);
-      onBusyChange?.(false);
-      window.setTimeout(() => passwordRef.current?.focus(), 0);
+      if (requestRef.current === controller) {
+        requestRef.current = null;
+        setPassword("");
+        setBusy(false);
+        onBusyChange?.(false);
+      }
     }
   }} aria-busy={busy}>
     <p className="parro-notice">{t("parro.connectDescription")}</p>

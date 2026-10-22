@@ -1,4 +1,4 @@
-type ParroConnectResponse = { ok?: boolean; connectionSaved?: boolean; error?: unknown };
+export type ParroConnectResponse = { ok?: boolean; connectionSaved?: boolean; state?: string; needsSignIn?: boolean; error?: unknown };
 
 type ParroConnectOutcome =
   | { connected: true; syncError: string | null }
@@ -14,6 +14,10 @@ export function parroConnectOutcome(
   syncFallback: string,
 ): ParroConnectOutcome {
   const message = responseMessage(result);
+  // Saved tokens can belong to an older login; authentication rejection always wins.
+  if (result.state === "sign_in_required" || result.needsSignIn) {
+    return { connected: false, error: message ?? connectFallback };
+  }
   if (result.connectionSaved) {
     return { connected: true, syncError: message ?? (responseOk && result.ok ? null : syncFallback) };
   }

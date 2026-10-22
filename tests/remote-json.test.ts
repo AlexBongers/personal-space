@@ -15,7 +15,7 @@ test("remote panels time out a stalled response body and can retry", async () =>
   assert.ok(address && typeof address !== "string");
   const url = `http://127.0.0.1:${address.port}`;
   try {
-    await assert.rejects(fetchRemoteJson(url, {}, 100));
+    await assert.rejects(fetchRemoteJson(url, {}, 100), { name: "TimeoutError" });
     stall = false;
     const { body } = await fetchRemoteJson<{ stories: string[] }>(url);
     assert.deepEqual(body.stories, ["fresh"]);

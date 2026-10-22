@@ -365,6 +365,7 @@ const handleDirectSync = async (request: Request, env: ParroEnv, url: URL) => {
   const leaseOwner = crypto.randomUUID();
   let leased = false;
   let connectionSaved = false;
+  let stage = "connection_read";
   try {
     const lease = await database.prepare(`INSERT INTO google_sync_lease (id, owner, expires_at) VALUES (?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expires_at WHERE google_sync_lease.expires_at <= ?`)
@@ -372,7 +373,6 @@ ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expi
     if (!lease.meta?.changes) return json({ error: "Parro wordt al gesynchroniseerd. Probeer zo nog eens." }, 409);
     leased = true;
     const connection = await readConnection(database);
-    connectionSaved = Boolean(connection);
     if (connection && connection.owner !== owner) return json({ error: "Deze Parro-koppeling hoort bij een andere gebruiker." }, 403);
     if (method === "DELETE") {
       await database.batch([database.prepare("DELETE FROM workspace_state WHERE id IN (?, ?)").bind(CONNECTION_ID, "parro-sync"), database.prepare("DELETE FROM parro_messages")]);
@@ -385,23 +385,29 @@ ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expi
       if (body === null) return json({ error: "De inlogaanvraag is te groot." }, 413);
       let input: unknown; try { input = JSON.parse(body); } catch { return json({ error: "Ongeldige inlogaanvraag." }, 400); }
       if (!isRecord(input) || typeof input.username !== "string" || !input.username.trim() || input.username.length > 320 || typeof input.password !== "string" || !input.password || input.password.length > 2_000 || input.account !== undefined && (typeof input.account !== "string" || input.account.length > 200)) return json({ error: "Vul je Parro-e-mailadres en wachtwoord in." }, 400);
+      stage = "login";
       tokens = await loginParro(input.username.trim(), input.password, typeof input.account === "string" ? input.account.trim() : "", signal);
       // Preserve the login even if fetching messages fails afterwards.
+      stage = "connection_save";
       await runDirectStage("connection_save", () => saveConnection(database, tokens, owner, env));
       connectionSaved = true;
     } else {
       if (!connection) return json({ error: "Verbind Parro eerst met je account.", state: "sign_in_required" }, 401);
       if (connection.needsSignIn) return json({ error: "De Parro-sessie is verlopen. Verbind Parro opnieuw.", state: "sign_in_required", code: "parro_refresh_rejected" }, 401);
       tokens = await decryptTokens(connection, env);
+      connectionSaved = true;
     }
     const syncedAt = new Date().toISOString();
     let messages: unknown[];
+    stage = "message_fetch";
     try { messages = await runDirectStage("message_fetch", () => fetchParroMessages(tokens.access_token, syncedAt, signal)); }
     catch (error) {
       if (!(error instanceof ParroError) || error.status !== 401) throw error;
+      stage = "token_refresh";
       try { tokens = await refreshParroTokens(tokens.refresh_token, signal); }
       catch (refreshError) {
         if (refreshError instanceof ParroError && refreshError.code === "parro_refresh_rejected") {
+          connectionSaved = false;
           // Preserve ownership and saved messages while preventing repeated expired-token requests.
           const stored = await readConnection(database);
           if (stored) await database.prepare("UPDATE workspace_state SET data = ?, revision = revision + 1 WHERE id = ?")
@@ -410,19 +416,26 @@ ON CONFLICT(id) DO UPDATE SET owner = excluded.owner, expires_at = excluded.expi
         throw refreshError;
       }
       // Persist a rotated refresh token before subsequent API calls can fail.
+      stage = "connection_save";
       await runDirectStage("connection_save", () => saveConnection(database, tokens, owner, env));
       connectionSaved = true;
+      stage = "message_fetch";
       messages = await runDirectStage("message_fetch", () => fetchParroMessages(tokens.access_token, syncedAt, signal));
     }
     const payload = sanitizeParroPayload({ messages, syncedAt, replace: true });
     if (!payload) throw new ParroError("Parro gaf ongeldige berichten; de bestaande berichten blijven bewaard.");
+    stage = "connection_save";
     await runDirectStage("connection_save", () => saveConnection(database, tokens, owner, env));
     connectionSaved = true;
+    stage = "snapshot_store";
     return await runDirectStage("snapshot_store", () => storeSnapshot(database, payload, true));
   } catch (error) {
     const status = error instanceof ParroError ? error.status : 502;
     const message = error instanceof ParroError ? error.message : "Parro synchroniseren is tijdelijk mislukt. Probeer opnieuw; bestaande berichten blijven bewaard.";
-    return json({ error: message, code: error instanceof ParroError ? error.code : "parro_unavailable", state: status === 401 ? "sign_in_required" : "unavailable", connectionSaved }, status);
+    const code = error instanceof ParroError ? error.code : "parro_unavailable";
+    if (status === 401) connectionSaved = false;
+    console.warn("Parro operation failed", { operation: url.pathname.endsWith("/connect") ? "connect" : "refresh", stage, status, code, connectionSaved });
+    return json({ error: message, code, state: status === 401 ? "sign_in_required" : "unavailable", connectionSaved }, status);
   } finally {
     if (leased) await database.prepare("DELETE FROM google_sync_lease WHERE id = ? AND owner = ?").bind("parro", leaseOwner).run().catch(() => {});
   }

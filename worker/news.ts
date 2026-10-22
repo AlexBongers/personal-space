@@ -1,3 +1,4 @@
+import { ensureWorkspaceSchema, type WorkspaceDatabase } from "./workspace-store.ts";
 export const NEWS_SOURCES = {
   slashdot: { name: "Slashdot", url: "https://rss.slashdot.org/Slashdot/slashdotMain", host: "slashdot.org" },
   tweakers: { name: "Tweakers", url: "https://tweakers.net/feeds/nieuws.xml/direct", host: "tweakers.net" },
@@ -11,19 +12,28 @@ const TTL = 15 * 60 * 1000;
 const RETRY_DELAY = 30 * 1000;
 const cached = new Map<NewsSource, { checkedAt: number; feed: NewsFeed }>();
 const pending = new Map<NewsSource, Promise<NewsFeed>>();
-const sharedCache = () => (globalThis.caches as (CacheStorage & { default?: Cache }) | undefined)?.default;
-// Only public RSS snapshots are stored here; visitor headers never enter the cache key.
-const snapshotKey = (request: Request, source: NewsSource) => new Request(new URL(`/__news-cache/v1/${source}`, request.url));
-const readSnapshot = async (key: Request) => {
+// Public RSS only, in a separate row from the workspace and private integration state.
+const snapshotId = (source: NewsSource) => `news-feed:${source}`;
+const readSnapshot = async (database: WorkspaceDatabase | undefined, source: NewsSource) => {
+  if (!database) return undefined;
   try {
-    const response = await sharedCache()?.match(key);
-    return response ? await response.json() as { checkedAt: number; feed: NewsFeed } : undefined;
-  } catch { return undefined; }
+    const row = await database.prepare("SELECT data FROM workspace_state WHERE id = ?").bind(snapshotId(source)).first<{ data: string }>();
+    return row ? JSON.parse(row.data) as { checkedAt: number; feed: NewsFeed } : undefined;
+  } catch {
+    console.warn("News snapshot unavailable", { source, stage: "read" });
+    return undefined;
+  }
 };
-const writeSnapshot = async (key: Request, feed: NewsFeed) => {
+const writeSnapshot = async (database: WorkspaceDatabase | undefined, source: NewsSource, feed: NewsFeed) => {
+  if (!database) return;
   try {
-    await sharedCache()?.put(key, Response.json({ checkedAt: Date.now(), feed }, { headers: { "Cache-Control": "public, max-age=86400" } }));
-  } catch { /* A cache outage must not discard a successfully fetched feed. */ }
+    await ensureWorkspaceSchema(database);
+    await database.prepare(`INSERT INTO workspace_state (id, revision, data) VALUES (?, 1, ?)
+ON CONFLICT(id) DO UPDATE SET data = excluded.data, revision = revision + 1, updated_at = CURRENT_TIMESTAMP`)
+      .bind(snapshotId(source), JSON.stringify({ checkedAt: Date.now(), feed })).run();
+  } catch {
+    console.warn("News snapshot unavailable", { source, stage: "write" });
+  }
 };
 
 export const decodeEntities = (value: string) => value
@@ -67,11 +77,10 @@ async function fetchFeed(source: NewsSource): Promise<NewsFeed> {
   return parseNewsFeed(xml, source);
 }
 
-export async function handleNewsApi(request: Request, source: NewsSource) {
+export async function handleNewsApi(request: Request, source: NewsSource, database?: WorkspaceDatabase) {
   if (request.method !== "GET") return new Response(null, { status: 405, headers: { Allow: "GET" } });
   const json = (feed: NewsFeed, status = 200) => Response.json(feed, { status, headers: { "Cache-Control": status !== 200 || feed.stale ? "no-store" : "private, max-age=900", "X-Content-Type-Options": "nosniff" } });
-  const key = snapshotKey(request, source);
-  const previous = cached.get(source) || await readSnapshot(key);
+  const previous = cached.get(source) || await readSnapshot(database, source);
   if (previous) cached.set(source, previous);
   const refresh = request.cache === "reload" || request.cache === "no-cache" || /(?:^|,)\s*(?:no-cache|max-age=0)(?:\s|,|$)/i.test(request.headers.get("Cache-Control") || "");
   if (!refresh && previous && Date.now() - previous.checkedAt < (previous.feed.stale ? RETRY_DELAY : TTL)) return json(previous.feed);
@@ -79,14 +88,14 @@ export async function handleNewsApi(request: Request, source: NewsSource) {
   if (!requestPromise) {
     requestPromise = fetchFeed(source).then(async (feed) => {
       cached.set(source, { feed, checkedAt: Date.now() });
-      await writeSnapshot(key, feed);
+      await writeSnapshot(database, source, feed);
       return feed;
     }).finally(() => pending.delete(source));
     pending.set(source, requestPromise);
   }
   try { return json(await requestPromise); }
   catch {
-    const fallback = previous || await readSnapshot(key);
+    const fallback = previous || await readSnapshot(database, source);
     if (fallback) {
       const feed = { ...fallback.feed, stale: true };
       cached.set(source, { feed, checkedAt: Date.now() });

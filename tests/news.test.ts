@@ -85,63 +85,66 @@ test("news requests are read-only, coalesced and cached independently per source
   assert.equal(requests, 8, "automatic retry recovers after thirty seconds rather than fifteen minutes");
 });
 
-test("public feed snapshots survive isolate replacement and failed upstream refreshes", async (t) => {
-  const snapshots = new Map<string, Response>();
-  const originalCaches = Object.getOwnPropertyDescriptor(globalThis, "caches");
-  Object.defineProperty(globalThis, "caches", { configurable: true, value: { default: {
-    async match(key: Request) { return snapshots.get(key.url)?.clone(); },
-    async put(key: Request, response: Response) {
-      assert.equal(key.headers.get("Authorization"), null);
-      assert.equal(key.headers.get("oai-authenticated-user-id"), null);
-      assert.equal(response.headers.get("Cache-Control"), "public, max-age=86400");
-      snapshots.set(key.url, response.clone());
+test("D1 public snapshots survive new isolates, upstream failures and separate source requests", async (t) => {
+  const snapshots = new Map<string, string>();
+  const database = {
+    prepare(query: string) {
+      let values: unknown[] = [];
+      const statement = {
+        bind(...input: unknown[]) { values = input; return statement; },
+        async first<T>() { const data = snapshots.get(String(values[0])); return data ? { data } as T : null; },
+        async run() {
+          if (query.startsWith("INSERT INTO workspace_state")) {
+            // Simulate asynchronous storage: returning HTTP 200 must wait for this write.
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            snapshots.set(String(values[0]), String(values[1]));
+          }
+          return {};
+        },
+      };
+      return statement;
     },
-  } } });
-  t.after(() => {
-    if (originalCaches) Object.defineProperty(globalThis, "caches", originalCaches);
-    else Reflect.deleteProperty(globalThis, "caches");
-  });
-  const freshIsolate = (name: string) => import(new URL(`../worker/news.ts?isolate=${name}`, import.meta.url).href);
+  };
+  const freshIsolate = (name: string) => import(new URL(`../worker/news.ts?isolate=d1-${name}`, import.meta.url).href);
   const request = new Request("https://personal.test/api/tweakers", { headers: { Authorization: "Bearer visitor-secret", "oai-authenticated-user-id": "owner", "Cache-Control": "no-cache" } });
   let upstreamCalls = 0;
-  t.mock.method(globalThis, "fetch", async () => {
-    upstreamCalls++;
-    return new Response(item("https://tweakers.net/nieuws/shared-snapshot"));
-  });
-  const first = await (await freshIsolate("first")).handleNewsApi(request, "tweakers");
+  t.mock.method(globalThis, "fetch", async () => { upstreamCalls++; return new Response(item("https://tweakers.net/nieuws/shared-snapshot")); });
+  const first = await (await freshIsolate("first")).handleNewsApi(request, "tweakers", database);
   assert.equal(first.status, 200);
-  assert.equal(snapshots.size, 1);
+  assert.equal(snapshots.size, 1, "D1 write is finished before returning the first successful response");
+  assert.doesNotMatch(snapshots.get("news-feed:tweakers")!, /visitor-secret|owner|Authorization/);
   t.mock.method(globalThis, "fetch", async () => { upstreamCalls++; return new Response(null, { status: 503 }); });
   const secondIsolate = await freshIsolate("second");
-  const cached = await secondIsolate.handleNewsApi(new Request("https://personal.test/api/tweakers"), "tweakers");
+  const cached = await secondIsolate.handleNewsApi(new Request("https://personal.test/api/tweakers"), "tweakers", database);
   assert.equal((await cached.json()).stories.length, 1);
-  assert.equal(upstreamCalls, 1, "a fresh shared snapshot avoids fetching in a new isolate");
-  const failedRefresh = await (await freshIsolate("third")).handleNewsApi(request, "tweakers");
+  assert.equal(upstreamCalls, 1, "fresh D1 snapshot skips upstream even with no isolate or edge cache");
+  const failedRefresh = await (await freshIsolate("third")).handleNewsApi(request, "tweakers", database);
   assert.equal(failedRefresh.status, 200);
   assert.equal(failedRefresh.headers.get("Cache-Control"), "no-store");
   const stale = await failedRefresh.json();
   assert.equal(stale.stale, true);
   assert.equal(stale.stories[0].url, "https://tweakers.net/nieuws/shared-snapshot");
   assert.equal(upstreamCalls, 2);
+  const coldFailure = await secondIsolate.handleNewsApi(new Request("https://personal.test/api/nos"), "nos", database);
+  assert.equal(coldFailure.status, 503);
+  assert.equal(coldFailure.headers.get("Cache-Control"), "no-store");
   t.mock.method(globalThis, "fetch", async () => new Response(item("https://nos.nl/artikel/separate-source")));
-  const nos = await secondIsolate.handleNewsApi(new Request("https://personal.test/api/nos"), "nos");
+  const nos = await secondIsolate.handleNewsApi(new Request("https://personal.test/api/nos"), "nos", database);
   assert.equal((await nos.json()).stories[0].url, "https://nos.nl/artikel/separate-source");
-  assert.equal(snapshots.size, 2, "public sources have independent shared snapshots");
+  assert.equal(snapshots.size, 2, "sources have independent D1 rows");
 });
 
-test("cache storage failure never prevents serving a successful live feed", async (t) => {
-  const originalCaches = Object.getOwnPropertyDescriptor(globalThis, "caches");
-  Object.defineProperty(globalThis, "caches", { configurable: true, value: { default: {
-    async match() { throw new Error("cache unavailable"); },
-    async put() { throw new Error("cache unavailable"); },
-  } } });
-  t.after(() => {
-    if (originalCaches) Object.defineProperty(globalThis, "caches", originalCaches);
-    else Reflect.deleteProperty(globalThis, "caches");
-  });
+test("D1 failure permits live feeds and emits only sanitized storage diagnostics", async (t) => {
+  const warnings: unknown[][] = [];
+  t.mock.method(console, "warn", (...args: unknown[]) => warnings.push(args));
+  const database = { prepare() { throw new Error("RAW_DB_PRIVATE_SENTINEL"); } };
   t.mock.method(globalThis, "fetch", async () => new Response(item("https://tweakers.net/nieuws/live")));
-  const isolate = await import(new URL("../worker/news.ts?isolate=cache-outage", import.meta.url).href);
-  const response = await isolate.handleNewsApi(new Request("https://personal.test/api/tweakers"), "tweakers");
+  const isolate = await import(new URL("../worker/news.ts?isolate=d1-outage", import.meta.url).href);
+  const response = await isolate.handleNewsApi(new Request("https://personal.test/api/tweakers"), "tweakers", database);
   assert.equal(response.status, 200);
   assert.equal((await response.json()).stories[0].url, "https://tweakers.net/nieuws/live");
+  assert.deepEqual(warnings, [
+    ["News snapshot unavailable", { source: "tweakers", stage: "read" }],
+    ["News snapshot unavailable", { source: "tweakers", stage: "write" }],
+  ]);
 });

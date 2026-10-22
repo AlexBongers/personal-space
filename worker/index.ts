@@ -115,11 +115,11 @@ const worker = {
     }
 
     if (url.pathname === "/api/slashdot") {
-      return handleSlashdotApi(request);
+      return handleSlashdotApi(request, env.DB);
     }
-    if (url.pathname === "/api/tweakers") return handleNewsApi(request, "tweakers");
-    if (url.pathname === "/api/nos") return handleNewsApi(request, "nos");
-    if (url.pathname === "/api/bunniksnieuws") return handleNewsApi(request, "bunniksnieuws");
+    if (url.pathname === "/api/tweakers") return handleNewsApi(request, "tweakers", env.DB);
+    if (url.pathname === "/api/nos") return handleNewsApi(request, "nos", env.DB);
+    if (url.pathname === "/api/bunniksnieuws") return handleNewsApi(request, "bunniksnieuws", env.DB);
     if (url.pathname === "/api/gmail/inbox") return handleGmailApi(request, {
       DB: env.DB as unknown as GoogleTasksDatabase | undefined,
       GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,

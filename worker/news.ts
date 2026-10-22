@@ -11,6 +11,20 @@ const TTL = 15 * 60 * 1000;
 const RETRY_DELAY = 30 * 1000;
 const cached = new Map<NewsSource, { checkedAt: number; feed: NewsFeed }>();
 const pending = new Map<NewsSource, Promise<NewsFeed>>();
+const sharedCache = () => (globalThis.caches as (CacheStorage & { default?: Cache }) | undefined)?.default;
+// Only public RSS snapshots are stored here; visitor headers never enter the cache key.
+const snapshotKey = (request: Request, source: NewsSource) => new Request(new URL(`/__news-cache/v1/${source}`, request.url));
+const readSnapshot = async (key: Request) => {
+  try {
+    const response = await sharedCache()?.match(key);
+    return response ? await response.json() as { checkedAt: number; feed: NewsFeed } : undefined;
+  } catch { return undefined; }
+};
+const writeSnapshot = async (key: Request, feed: NewsFeed) => {
+  try {
+    await sharedCache()?.put(key, Response.json({ checkedAt: Date.now(), feed }, { headers: { "Cache-Control": "public, max-age=86400" } }));
+  } catch { /* A cache outage must not discard a successfully fetched feed. */ }
+};
 
 export const decodeEntities = (value: string) => value
   .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
@@ -56,21 +70,25 @@ async function fetchFeed(source: NewsSource): Promise<NewsFeed> {
 export async function handleNewsApi(request: Request, source: NewsSource) {
   if (request.method !== "GET") return new Response(null, { status: 405, headers: { Allow: "GET" } });
   const json = (feed: NewsFeed, status = 200) => Response.json(feed, { status, headers: { "Cache-Control": status !== 200 || feed.stale ? "no-store" : "private, max-age=900", "X-Content-Type-Options": "nosniff" } });
-  const previous = cached.get(source);
+  const key = snapshotKey(request, source);
+  const previous = cached.get(source) || await readSnapshot(key);
+  if (previous) cached.set(source, previous);
   const refresh = request.cache === "reload" || request.cache === "no-cache" || /(?:^|,)\s*(?:no-cache|max-age=0)(?:\s|,|$)/i.test(request.headers.get("Cache-Control") || "");
   if (!refresh && previous && Date.now() - previous.checkedAt < (previous.feed.stale ? RETRY_DELAY : TTL)) return json(previous.feed);
   let requestPromise = pending.get(source);
   if (!requestPromise) {
-    requestPromise = fetchFeed(source).then((feed) => {
+    requestPromise = fetchFeed(source).then(async (feed) => {
       cached.set(source, { feed, checkedAt: Date.now() });
+      await writeSnapshot(key, feed);
       return feed;
     }).finally(() => pending.delete(source));
     pending.set(source, requestPromise);
   }
   try { return json(await requestPromise); }
   catch {
-    if (previous) {
-      const feed = { ...previous.feed, stale: true };
+    const fallback = previous || await readSnapshot(key);
+    if (fallback) {
+      const feed = { ...fallback.feed, stale: true };
       cached.set(source, { feed, checkedAt: Date.now() });
       return json(feed);
     }

@@ -1,3 +1,24 @@
+## DEF-011: News fallback disappears across Worker instances
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 2
+
+Steps to reproduce:
+1. Open the deployed Personal Space Site and request Tweakers news successfully.
+2. Request the same feed again through a different Worker instance while upstream is temporarily unavailable.
+3. Observe the second response despite the successful response moments earlier.
+
+Expected: A last successful public feed remains available across Worker instances and is returned with a stale indicator during temporary upstream failures.
+Actual: Production v55 returned Tweakers HTTP 503 about one second after a successful HTTP 200 response containing fifteen articles. The in-memory feed map belongs to one Worker instance, so another instance has no fallback.
+
+History:
+- qa: opened from the orchestrator's authenticated post-deployment reproduction; the earlier DEF-009 refresh and browser caching regressions remain passed, while cross-instance fallback needs durable shared storage.
+- orchestrator: backend-dev added a shared edge cache of successful public RSS snapshots, awaited before responding, with source isolation and stale fallback; eight targeted RSS tests pass, awaiting QA.
+- qa: closed after final build and 124/124 tests passed; independent module instances successfully read the shared public RSS snapshot, failed upstream refresh returned HTTP 200 with stale stories and no-store, sources remained isolated, and cache-storage outages did not block successful live feeds. Deployment must still be checked by the orchestrator; Cache API snapshots are best-effort and expire after 24 hours.
+
+
 ## DEF-010: Expired Parro connection stays connected after navigation
 
 - Status: CLOSED

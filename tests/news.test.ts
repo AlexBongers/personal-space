@@ -84,3 +84,64 @@ test("news requests are read-only, coalesced and cached independently per source
   assert.equal(body.stories[0].url, "https://tweakers.net/nieuws/recovered");
   assert.equal(requests, 8, "automatic retry recovers after thirty seconds rather than fifteen minutes");
 });
+
+test("public feed snapshots survive isolate replacement and failed upstream refreshes", async (t) => {
+  const snapshots = new Map<string, Response>();
+  const originalCaches = Object.getOwnPropertyDescriptor(globalThis, "caches");
+  Object.defineProperty(globalThis, "caches", { configurable: true, value: { default: {
+    async match(key: Request) { return snapshots.get(key.url)?.clone(); },
+    async put(key: Request, response: Response) {
+      assert.equal(key.headers.get("Authorization"), null);
+      assert.equal(key.headers.get("oai-authenticated-user-id"), null);
+      assert.equal(response.headers.get("Cache-Control"), "public, max-age=86400");
+      snapshots.set(key.url, response.clone());
+    },
+  } } });
+  t.after(() => {
+    if (originalCaches) Object.defineProperty(globalThis, "caches", originalCaches);
+    else Reflect.deleteProperty(globalThis, "caches");
+  });
+  const freshIsolate = (name: string) => import(new URL(`../worker/news.ts?isolate=${name}`, import.meta.url).href);
+  const request = new Request("https://personal.test/api/tweakers", { headers: { Authorization: "Bearer visitor-secret", "oai-authenticated-user-id": "owner", "Cache-Control": "no-cache" } });
+  let upstreamCalls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    upstreamCalls++;
+    return new Response(item("https://tweakers.net/nieuws/shared-snapshot"));
+  });
+  const first = await (await freshIsolate("first")).handleNewsApi(request, "tweakers");
+  assert.equal(first.status, 200);
+  assert.equal(snapshots.size, 1);
+  t.mock.method(globalThis, "fetch", async () => { upstreamCalls++; return new Response(null, { status: 503 }); });
+  const secondIsolate = await freshIsolate("second");
+  const cached = await secondIsolate.handleNewsApi(new Request("https://personal.test/api/tweakers"), "tweakers");
+  assert.equal((await cached.json()).stories.length, 1);
+  assert.equal(upstreamCalls, 1, "a fresh shared snapshot avoids fetching in a new isolate");
+  const failedRefresh = await (await freshIsolate("third")).handleNewsApi(request, "tweakers");
+  assert.equal(failedRefresh.status, 200);
+  assert.equal(failedRefresh.headers.get("Cache-Control"), "no-store");
+  const stale = await failedRefresh.json();
+  assert.equal(stale.stale, true);
+  assert.equal(stale.stories[0].url, "https://tweakers.net/nieuws/shared-snapshot");
+  assert.equal(upstreamCalls, 2);
+  t.mock.method(globalThis, "fetch", async () => new Response(item("https://nos.nl/artikel/separate-source")));
+  const nos = await secondIsolate.handleNewsApi(new Request("https://personal.test/api/nos"), "nos");
+  assert.equal((await nos.json()).stories[0].url, "https://nos.nl/artikel/separate-source");
+  assert.equal(snapshots.size, 2, "public sources have independent shared snapshots");
+});
+
+test("cache storage failure never prevents serving a successful live feed", async (t) => {
+  const originalCaches = Object.getOwnPropertyDescriptor(globalThis, "caches");
+  Object.defineProperty(globalThis, "caches", { configurable: true, value: { default: {
+    async match() { throw new Error("cache unavailable"); },
+    async put() { throw new Error("cache unavailable"); },
+  } } });
+  t.after(() => {
+    if (originalCaches) Object.defineProperty(globalThis, "caches", originalCaches);
+    else Reflect.deleteProperty(globalThis, "caches");
+  });
+  t.mock.method(globalThis, "fetch", async () => new Response(item("https://tweakers.net/nieuws/live")));
+  const isolate = await import(new URL("../worker/news.ts?isolate=cache-outage", import.meta.url).href);
+  const response = await isolate.handleNewsApi(new Request("https://personal.test/api/tweakers"), "tweakers");
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).stories[0].url, "https://tweakers.net/nieuws/live");
+});

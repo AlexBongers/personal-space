@@ -425,7 +425,7 @@ test("direct Parro stages return safe codes when saving, fetching or storing fai
 test("direct Parro login, refresh rotation, failed snapshot and ownership", async (t) => {
   const db = directDatabase();
   const env = { DB: db.database, PARRO_TOKEN_ENCRYPTION_KEY: btoa("x".repeat(32)), PARRO_SYNC_TOKEN: "legacy" };
-  let state = ""; let challenge = ""; let failMessages = false; let expired = false; let tokenRefreshes = 0; let rejectRefresh = false;
+  let state = ""; let challenge = ""; let failMessages = false; let expired = false; let tokenRefreshes = 0; let rejectRefresh = false; let denyChat = false;
   t.mock.method(globalThis, "fetch", async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     if (url.pathname.endsWith("/authorize")) {
@@ -461,7 +461,7 @@ test("direct Parro login, refresh rotation, failed snapshot and ownership", asyn
     if (failMessages) return new Response(null, { status: 503 });
     if (url.pathname.endsWith("/group")) { assert.equal(url.searchParams.get("dtype"), "identity.RHomeGroup"); return Response.json({ items: [{ id: 12, name: "Class" }] }); }
     if (url.pathname.endsWith("/chatroom")) return Response.json({ items: [{ id: 23, name: "Teacher", unreadCount: 2 }] });
-    if (url.pathname.endsWith("/chatmessage")) return Response.json({ items: [{ id: 34, text: "Chat preview", createdAt: "2026-09-20T10:00:00Z" }] });
+    if (url.pathname.endsWith("/chatmessage")) { if (denyChat) return new Response(null, { status: 403 }); return Response.json({ items: [{ id: 34, text: "Chat preview", createdAt: "2026-09-20T10:00:00Z" }] }); }
     if (url.pathname.endsWith("/event")) { assert.equal(url.searchParams.get("dtype"), "event.RAnnouncementEvent"); assert.equal(url.searchParams.get("group"), "12"); return Response.json({ items: [{ id: 45, title: "Class update", contents: "Announcement preview", createdAt: "2026-09-20T09:00:00Z", read: false }] }); }
     throw new Error(`Unexpected URL ${url.origin}${url.pathname}`);
   });
@@ -481,6 +481,16 @@ test("direct Parro login, refresh rotation, failed snapshot and ownership", asyn
   failMessages = false;
   assert.equal((await handleParroApi(directRequest("refresh"), env))?.status, 200);
   assert.equal(tokenRefreshes, 1, "next request uses rotated access token");
+  const beforeForbidden = JSON.stringify(db.snapshot);
+  denyChat = true;
+  const forbiddenChat = await handleParroApi(directRequest("refresh"), env);
+  assert.equal(forbiddenChat?.status, 502);
+  const forbiddenBody = await forbiddenChat!.json();
+  assert.equal(forbiddenBody.code, "parro_chat_messages_forbidden");
+  assert.equal(forbiddenBody.connectionSaved, true);
+  assert.equal(tokenRefreshes, 1, "resource permission failures must not refresh valid tokens");
+  assert.equal(JSON.stringify(db.snapshot), beforeForbidden, "failed detail read preserves the previous snapshot");
+  denyChat = false;
   assert.equal((await handleParroApi(directRequest("refresh", undefined, { Origin: "https://evil.test" }), env))?.status, 403);
   assert.equal((await handleParroApi(directRequest("refresh", undefined, { "oai-authenticated-user-id": "other" }), env))?.status, 403);
   assert.equal((await handleParroApi(new Request("https://personal.test/api/parro/messages", { headers: { "oai-authenticated-user-id": "other" } }), env))?.status, 403);
@@ -534,4 +544,48 @@ test("rejected reconnect never reports the previous connection as a newly saved 
   assert.equal(diagnostics.length, 2);
   assert.deepEqual(diagnostics[0], ["Parro operation failed", { operation: "connect", stage: "login", status: 401, code: "credentials_rejected", connectionSaved: false }]);
   assert.doesNotMatch(JSON.stringify(diagnostics), /PRIVATE_|private-parent|private-existing/);
+});
+
+test("Parro resource IDs use self links rather than the first related link", async (t) => {
+  const paths: string[] = [];
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    const url = new URL(String(input)); paths.push(url.pathname + url.search);
+    if (url.pathname === "/rest/v2/group") return Response.json({ items: [{ id: 888, links: [{ rel: "organisation", id: 999 }, { rel: "self", id: 12 }], name: "Class" }] });
+    if (url.pathname === "/rest/v2/chatroom") return Response.json({ items: [{ links: [{ rel: "identity", id: 999 }, { rel: "self", id: 23 }], name: "Teacher", unreadCount: 2 }] });
+    if (url.pathname === "/rest/v2/event" && url.searchParams.get("group") === "12") return Response.json({ items: [{ links: [{ rel: "group", id: 999 }, { rel: "self", id: 45 }], title: "Class update", contents: "Announcement" }] });
+    if (url.pathname === "/rest/v2/chatroom/23/chatmessage" && !url.search) return Response.json({ items: [{ links: [{ rel: "self", id: 34 }], text: "Chat preview" }] });
+    return new Response(null, { status: 401 });
+  });
+  const messages = await fetchParroMessages("test-token", "2026-10-22T12:00:00Z");
+  assert.equal(messages.length, 2);
+  assert.equal(messages.find((message) => message.kind === "chatroom")?.body, "Chat preview");
+  assert.ok(paths.includes("/rest/v2/chatroom/23/chatmessage"));
+  assert.ok(paths.includes("/rest/v2/event?dtype=event.RAnnouncementEvent&group=12"));
+  assert.equal(paths.some((path) => path.includes("999")), false);
+});
+
+test("Parro distinguishes forbidden resources from expired access tokens", async (t) => {
+  for (const status of [401, 403]) {
+    t.mock.method(globalThis, "fetch", async () => new Response(null, { status }));
+    await assert.rejects(fetchParroMessages("test-token", "2026-10-22T12:00:00Z"), (error: unknown) => {
+      assert.ok(error instanceof ParroError);
+      assert.equal(error.status, status === 401 ? 401 : 502);
+      assert.match(error.code, status === 401 ? /_unauthorized$/ : /_forbidden$/);
+      return true;
+    });
+  }
+});
+
+test("Parro refuses a related-resource identifier when self is absent", async (t) => {
+  const paths: string[] = [];
+  t.mock.method(globalThis, "fetch", async (input: string | URL | Request) => {
+    const url = new URL(String(input)); paths.push(url.pathname);
+    return Response.json({ items: url.pathname.endsWith("/group") ? [{ links: [{ rel: "organisation", id: 999 }] }] : [] });
+  });
+  await assert.rejects(fetchParroMessages("test-token", "2026-10-22T12:00:00Z"), (error: unknown) => {
+    assert.ok(error instanceof ParroError);
+    assert.equal(error.code, "parro_resource_identifier_missing");
+    return true;
+  });
+  assert.equal(paths.some((path) => path.includes("999")), false);
 });

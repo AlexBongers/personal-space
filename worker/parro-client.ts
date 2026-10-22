@@ -104,7 +104,8 @@ const messageEndpointFailure = (endpoint: MessageEndpoint, error: unknown, signa
 };
 const getJson = async (response: Response, endpoint: MessageEndpoint, signal: AbortSignal): Promise<unknown> => {
   if (!response.ok) {
-    if (response.status === 401 || response.status === 403) throw new ParroError("De Parro-sessie is verlopen. Verbind Parro opnieuw.", 401, `parro_${endpoint}_unauthorized`);
+    if (response.status === 401) throw new ParroError("De Parro-sessie is verlopen. Verbind Parro opnieuw.", 401, `parro_${endpoint}_unauthorized`);
+    if (response.status === 403) throw new ParroError(`Parro geeft dit account geen toegang tot ${messageEndpointName[endpoint]}. De aanmelding blijft behouden.`, 502, `parro_${endpoint}_forbidden`);
     throw new ParroError(`Parro kon ${messageEndpointName[endpoint]} niet ophalen (HTTP ${response.status}). Probeer opnieuw.`, 502, `parro_${endpoint}_http_error`);
   }
   let body: string;
@@ -276,10 +277,14 @@ export async function fetchParroMessages(token: string, syncedAt: string, signal
     return list;
   };
   const id = (value: Record<string, unknown>) => {
+    // Parro's HAL links include related identities and organisations. Only the
+    // self relation identifies the resource; link order has no meaning.
+    const links = Array.isArray(value.links) ? value.links.filter(record) : [];
+    const self = links.find((link) => link.rel === "self");
+    if (self && (typeof self.id === "string" || typeof self.id === "number")) return String(self.id);
     const direct = value.id ?? value._id ?? value.linkId;
     if (typeof direct === "string" || typeof direct === "number") return String(direct);
-    if (Array.isArray(value.links)) for (const link of value.links) if (record(link) && (typeof link.id === "string" || typeof link.id === "number")) return String(link.id);
-    throw new ParroError("Een Parro-bericht heeft geen identificatie.");
+    throw new ParroError("Een Parro-bericht heeft geen eigen identificatie; de vorige berichten blijven bewaard.", 502, "parro_resource_identifier_missing");
   };
   const name = (value: unknown) => typeof value === "string" ? value : record(value) ? String(value.displayName || value.name || value.fullName || "") : "";
   const date = (value: Record<string, unknown>) => String(value.sortDate || value.lastModifiedAt || value.createdAt || syncedAt);

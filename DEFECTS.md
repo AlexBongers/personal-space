@@ -1,3 +1,25 @@
+## DEF-013: Parro chat preview request aborts an otherwise authenticated synchronization
+
+- Status: FIX-READY
+- Severity: HIGH
+- Found by: qa
+- Phase: 2
+
+Steps to reproduce:
+1. Start the deployed Personal Space Site with a Parro account containing unread chatrooms.
+2. Connect or refresh Parro.
+3. Allow login/token exchange, group and chatroom listing, and announcement retrieval to complete.
+4. Observe the subsequent chat-message request and overall synchronization result.
+
+Expected: The authenticated chat-message request uses the actual Parro endpoint and completes synchronization, retaining existing messages if any required upstream operation fails.
+Actual: Production v58 diagnostics consistently return HTTP 401 at stage message_fetch with code parro_chat_messages_unauthorized after login/token exchange and prior listing calls succeed. Current code requests /chatroom/<id>/chatmessage for unread previews; this failure aborts the entire snapshot and is shown as an expired session, even though the earlier login succeeded. The nested endpoint shape is correct according to the primary client references; resource identification incorrectly chooses the first related link rather than the self relation, and upstream HTTP 403 is incorrectly converted into expired-session HTTP 401.
+
+History:
+- orchestrator: backend-dev corrected resource identifiers to use the authoritative self relation, retained the documented nested chat endpoint, and distinguished permission denial from expired authentication; seventeen targeted tests pass, awaiting QA and live retrieval.
+- qa: opened from the orchestrator's new sanitized v58 production diagnostics. This identifies a message-fetch protocol failure separately from DEF-012's reconnect outcome classification. QA has not submitted credentials or asserted successful end-to-end live synchronization.
+- qa: controlled protocol retest passed with final build and 131/131 tests, targeted ESLint and diff check. Related organisation/identity links listed before self no longer redirect requests to the wrong resource, self wins over a conflicting direct ID, and related-only identifiers fail safely. The test checks exact /rest/v2/chatroom/23/chatmessage and group=12. Genuine upstream 401 still requires sign-in; upstream 403 preserves valid tokens and the prior snapshot without attempting token refresh. Status remains FIX-READY pending actual production refresh and a fresh saved snapshot; no real-account synchronization success is asserted.
+
+
 ## DEF-012: Rejected Parro reconnect is reported as a successful connection
 
 - Status: CLOSED

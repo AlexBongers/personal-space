@@ -1,6 +1,6 @@
 ## DEF-013: Parro chat preview request aborts an otherwise authenticated synchronization
 
-- Status: FIX-READY
+- Status: CLOSED
 - Severity: HIGH
 - Found by: qa
 - Phase: 2
@@ -18,6 +18,7 @@ History:
 - orchestrator: backend-dev corrected resource identifiers to use the authoritative self relation, retained the documented nested chat endpoint, and distinguished permission denial from expired authentication; seventeen targeted tests pass, awaiting QA and live retrieval.
 - qa: opened from the orchestrator's new sanitized v58 production diagnostics. This identifies a message-fetch protocol failure separately from DEF-012's reconnect outcome classification. QA has not submitted credentials or asserted successful end-to-end live synchronization.
 - qa: controlled protocol retest passed with final build and 131/131 tests, targeted ESLint and diff check. Related organisation/identity links listed before self no longer redirect requests to the wrong resource, self wins over a conflicting direct ID, and related-only identifiers fail safely. The test checks exact /rest/v2/chatroom/23/chatmessage and group=12. Genuine upstream 401 still requires sign-in; upstream 403 preserves valid tokens and the prior snapshot without attempting token refresh. Status remains FIX-READY pending actual production refresh and a fresh saved snapshot; no real-account synchronization success is asserted.
+- qa: closed after the user confirmed “yes het werkt weer” and the orchestrator verified production POST /api/parro/connect HTTP 200 at 2026-10-22T16:32:33.304Z. The route returns 200 only after successful message retrieval and snapshot storage, confirming the real-account synchronization path after deployment. No private message contents were inspected or recorded.
 
 
 ## DEF-012: Rejected Parro reconnect is reported as a successful connection

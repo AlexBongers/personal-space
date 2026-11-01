@@ -95,6 +95,12 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 const isCalendarWriter = (calendar: GoogleCalendar) => calendar.accessRole === "owner" || calendar.accessRole === "writer";
 
+// GOOGLE_CALENDAR_SYNC_ONLY holds one calendar name or id. When it is empty, every writable calendar syncs.
+export const isSyncedCalendar = (calendar: GoogleCalendar, only: string | undefined) => {
+  const selected = only?.trim();
+  return !selected || calendar.summary === selected || calendar.id === selected;
+};
+
 const calendarSchema = [
   `CREATE TABLE IF NOT EXISTS google_calendar_state (
     id TEXT PRIMARY KEY NOT NULL,
@@ -394,7 +400,7 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
     } as const;
   }
   const token = await getGoogleAccessToken(database, env);
-  const calendars = (await listCalendars(token)).filter(isCalendarWriter);
+  const calendars = await writableCalendars(token, env);
   if (!calendars.length) throw new GoogleCalendarError("No writable Google calendars were found", 400);
   const remoteGroups = await Promise.all(calendars.map(async (calendar) => ({ calendar, events: await listEvents(token, calendar.id) })));
   const storedMappings = await readMappings(database);
@@ -581,7 +587,11 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
   return { workspace: saved.workspace, summary } as const;
 };
 
-type GoogleCalendarEnv = GoogleTasksEnv;
+type GoogleCalendarEnv = GoogleTasksEnv & { GOOGLE_CALENDAR_SYNC_ONLY?: string };
+
+const writableCalendars = async (token: string, env: GoogleCalendarEnv) => (await listCalendars(token))
+  .filter(isCalendarWriter)
+  .filter((calendar) => isSyncedCalendar(calendar, env.GOOGLE_CALENDAR_SYNC_ONLY));
 
 const status = async (env: GoogleCalendarEnv, database: GoogleCalendarDatabase): Promise<Response> => {
   const state = await readState(database);
@@ -589,7 +599,7 @@ const status = async (env: GoogleCalendarEnv, database: GoogleCalendarDatabase):
   if (!stored) return json({ configured: isGoogleTasksConfigured(env), connected: false, calendars: [], lastSyncAt: state?.last_sync_at || null } satisfies GoogleCalendarStatus);
   if (!isGoogleTasksConfigured(env)) return json({ configured: false, connected: true, calendars: [], lastSyncAt: state?.last_sync_at || null } satisfies GoogleCalendarStatus);
   try {
-    const calendars = (await listCalendars(await getGoogleAccessToken(database, env))).filter(isCalendarWriter);
+    const calendars = await writableCalendars(await getGoogleAccessToken(database, env), env);
     return json({ configured: true, connected: true, calendars: calendars.map((calendar) => ({ id: calendar.id, title: calendar.summary || calendar.id, primary: Boolean(calendar.primary) })), lastSyncAt: state?.last_sync_at || null, error: state?.last_error || undefined } satisfies GoogleCalendarStatus);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Google authorization has expired";

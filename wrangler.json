@@ -6,11 +6,14 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
   "images": { "binding": "IMAGES" },
+  "vars": {
+    "GOOGLE_CALENDAR_SYNC_ONLY": "Alex Prive"
+  },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "personal-space",
-      "database_id": "00000000-0000-4000-8000-000000000000",
+      "database_id": "1a6c686b-358e-4e2a-bcde-e8e97becec37",
       "migrations_dir": "drizzle"
     }
   ]

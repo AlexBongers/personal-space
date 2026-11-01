@@ -4,7 +4,7 @@ import {
   createGoogleCalendarDatabase,
   GOOGLE_CALENDAR_PROPERTY_IDS,
 } from "../app/personal-space/model.ts";
-import { googleCalendarPayload, googleCalendarToRow } from "../worker/google-calendar.ts";
+import { googleCalendarPayload, googleCalendarToRow, isSyncedCalendar } from "../worker/google-calendar.ts";
 
 test("Google Calendar database exposes editable event fields", () => {
   const database = createGoogleCalendarDatabase();
@@ -80,4 +80,14 @@ test("Google Calendar event mapping keeps stable identifiers", () => {
   assert.equal(row.values[GOOGLE_CALENDAR_PROPERTY_IDS.allDay], true);
   assert.equal(row.values[GOOGLE_CALENDAR_PROPERTY_IDS.attendees], "laurademooij@gmail.com");
   assert.equal(row.values[GOOGLE_CALENDAR_PROPERTY_IDS.recurrence], "RRULE:FREQ=MONTHLY");
+});
+
+test("sync can be limited to one calendar by name or id", () => {
+  const alexPrive = { id: "alex@example.com", summary: "Alex Prive", accessRole: "owner" } as Parameters<typeof isSyncedCalendar>[0];
+  const work = { id: "work@example.com", summary: "Alex Werk", accessRole: "writer" } as Parameters<typeof isSyncedCalendar>[0];
+  assert.equal(isSyncedCalendar(alexPrive, undefined), true, "empty setting syncs every calendar");
+  assert.equal(isSyncedCalendar(alexPrive, "  "), true, "blank setting syncs every calendar");
+  assert.equal(isSyncedCalendar(alexPrive, "Alex Prive"), true);
+  assert.equal(isSyncedCalendar(work, "Alex Prive"), false);
+  assert.equal(isSyncedCalendar(alexPrive, "alex@example.com"), true, "id also works");
 });

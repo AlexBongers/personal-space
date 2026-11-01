@@ -22,6 +22,7 @@ interface Env {
   GOOGLE_TOKEN_ENCRYPTION_KEY?: string;
   PARRO_SYNC_TOKEN?: string;
   PARRO_TOKEN_ENCRYPTION_KEY?: string;
+  GOOGLE_CALENDAR_SYNC_ONLY?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -174,6 +175,7 @@ const worker = {
           GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
           GOOGLE_REDIRECT_URI: env.GOOGLE_REDIRECT_URI,
           GOOGLE_TOKEN_ENCRYPTION_KEY: env.GOOGLE_TOKEN_ENCRYPTION_KEY,
+          GOOGLE_CALENDAR_SYNC_ONLY: env.GOOGLE_CALENDAR_SYNC_ONLY,
         }, url) || new Response(null, { status: 404 });
       } catch (error) {
         console.error("Google Calendar API failed", error);

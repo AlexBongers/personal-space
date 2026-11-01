@@ -41,7 +41,7 @@ npm run lint
 
 The app is a Vinext build running as a Cloudflare Worker. `wrangler.json` holds the Worker
 configuration: the D1 binding `DB` (migrations in `drizzle/`), the Images binding used for image
-optimization, and `workers_dev: false`.
+optimization, and `workers_dev: true` (the workers.dev address, protected by Cloudflare Access).
 
 The client is split into focused editor, navigation, search, database, dashboard and domain-model
 modules under `app/personal-space/`. The test command builds the production worker, smoke-tests its

@@ -4,7 +4,7 @@
   "main": "./worker/index.ts",
   "compatibility_date": "2026-09-21",
   "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": false,
+  "workers_dev": true,
   "images": { "binding": "IMAGES" },
   "vars": {
     "GOOGLE_CALENDAR_SYNC_ONLY": "Alex Prive"

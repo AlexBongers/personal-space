@@ -73,6 +73,7 @@ export type GoogleCalendarSyncSummary = {
   removed: number;
   conflicts: number;
   calendarCount: number;
+  deferred: number;
 };
 
 class GoogleCalendarError extends Error {
@@ -122,9 +123,21 @@ const calendarSchema = [
   `CREATE INDEX IF NOT EXISTS idx_google_calendar_mapping_calendar ON google_calendar_mapping (calendar_id)`,
 ];
 
-const ensureCalendarSchema = async (database: GoogleCalendarDatabase) => {
+const applyCalendarSchema = async (database: GoogleCalendarDatabase) => {
   for (const statement of calendarSchema) await database.prepare(statement).run();
   await database.prepare(`INSERT OR IGNORE INTO google_calendar_state (id) VALUES (?)`).bind(STATE_ID).run();
+};
+
+// The schema check costs several database calls, so it runs once per database binding.
+const calendarSchemaReady = new WeakMap<object, Promise<void>>();
+const ensureCalendarSchema = (database: GoogleCalendarDatabase) => {
+  let ready = calendarSchemaReady.get(database);
+  if (!ready) {
+    ready = applyCalendarSchema(database);
+    calendarSchemaReady.set(database, ready);
+    ready.catch(() => calendarSchemaReady.delete(database));
+  }
+  return ready;
 };
 
 const readState = (database: GoogleCalendarDatabase) => database.prepare(`SELECT last_sync_at, last_error
@@ -389,6 +402,21 @@ const calendarForRow = (row: Row, calendars: GoogleCalendar[], mapping?: StoredM
   return calendars[0] || null;
 };
 
+// Cloudflare's free plan allows 50 subrequests per request. Google writes and lookups draw from a
+// per-run budget. Work that does not fit is left untouched and picked up by the next sync.
+const SUBREQUEST_LIMIT = 50;
+const RESERVED_SUBREQUESTS = 30; // token, lists, D1 reads and writes, lease, final save
+const CREATE_COST = 5;
+const WRITE_COST = 2;
+const LOOKUP_COST = 1;
+
+type SubrequestBudget = { left: number };
+const spend = (budget: SubrequestBudget, cost: number) => {
+  if (budget.left < cost) return false;
+  budget.left -= cost;
+  return true;
+};
+
 const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], baseRevision: number, env: GoogleCalendarEnv, guard: SyncGuard) => {
   const current = await loadWorkspace(database);
   if (current.revision !== baseRevision) return { conflict: current } as const;
@@ -396,13 +424,17 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
   if (requestedDatabase?.trash) {
     return {
       workspace: current,
-      summary: { imported: 0, exported: 0, updated: 0, removed: 0, conflicts: 0, calendarCount: 0 },
+      summary: { imported: 0, exported: 0, updated: 0, removed: 0, conflicts: 0, calendarCount: 0, deferred: 0 },
     } as const;
   }
   const token = await getGoogleAccessToken(database, env);
   const calendars = await writableCalendars(token, env);
   if (!calendars.length) throw new GoogleCalendarError("No writable Google calendars were found", 400);
   const remoteGroups = await Promise.all(calendars.map(async (calendar) => ({ calendar, events: await listEvents(token, calendar.id) })));
+  // Each recurring series is re-read once while listing, so those reads come off the budget first.
+  const seriesReads = remoteGroups.reduce((total, { events }) => total + new Set(events.map((event) => event.recurringEventId).filter(Boolean)).size, 0);
+  const budget: SubrequestBudget = { left: Math.max(0, SUBREQUEST_LIMIT - RESERVED_SUBREQUESTS - seriesReads) };
+  const summary: GoogleCalendarSyncSummary = { imported: 0, exported: 0, updated: 0, removed: 0, conflicts: 0, calendarCount: calendars.length, deferred: 0 };
   const storedMappings = await readMappings(database);
   const mappingByLocal = new Map(storedMappings.map((entry) => [entry.local_row_id, entry]));
   let nextItems = [...items];
@@ -426,6 +458,7 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
     const event = JSON.parse(resultJson) as GoogleCalendarEvent;
     const row = rows.get(receipt.local_row_id);
     if (!row) {
+      if (!spend(budget, WRITE_COST)) { summary.deferred += 1; continue; }
       await guard.check();
       await deleteEvent(token, receipt.container_id, event.id);
       const group = remoteGroups.find(({ calendar }) => calendar.id === receipt.container_id);
@@ -447,6 +480,10 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
     const listed = new Set(group.events.map((event) => event.id));
     for (const mapping of storedMappings) {
       if (mapping.calendar_id !== group.calendar.id || listed.has(mapping.remote_event_id)) continue;
+      // Only a missing or locally edited row needs its remote event. Unchanged linked events outside the window are left alone.
+      const local = rows.get(mapping.local_row_id);
+      if (local && calendarRowFingerprint(local) === mapping.local_fingerprint) continue;
+      if (!spend(budget, LOOKUP_COST)) { summary.deferred += 1; continue; }
       await guard.check();
       try {
         group.events.push(await apiJson<GoogleCalendarEvent>(`${CALENDAR_API_URL}/calendars/${encodeURIComponent(group.calendar.id)}/events/${encodeURIComponent(mapping.remote_event_id)}`, token));
@@ -466,7 +503,6 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
   });
   const statements: GoogleTasksStatement[] = [];
   const absentRemotes = new Set<string>();
-  const summary: GoogleCalendarSyncSummary = { imported: 0, exported: 0, updated: 0, removed: 0, conflicts: 0, calendarCount: calendars.length };
 
   for (const group of remoteGroups) {
     const { calendar, events } = group;
@@ -491,6 +527,7 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
     const pushLocal = async (row: Row, event: GoogleCalendarEvent | undefined, conflict: boolean) => {
       const payload = googleCalendarPayload(row);
       if (!payload) return false;
+      if (!spend(budget, event ? WRITE_COST : CREATE_COST)) { summary.deferred += 1; return false; }
       await guard.check();
       const result = event
         ? await updateEvent(token, calendar.id, event.id, payload)
@@ -515,6 +552,7 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
       const existing = (mapping && rows.get(mapping.local_row_id)) || rowByRemote.get(remoteKey(calendar.id, event.id));
       if (existing?.trash) continue;
       if (mapping && !existing) {
+        if (event.status !== "cancelled" && !spend(budget, WRITE_COST)) { summary.deferred += 1; continue; }
         if (event.status !== "cancelled") { await guard.check(); await deleteEvent(token, calendar.id, event.id); }
         absentRemotes.add(remoteKey(calendar.id, event.id));
         statements.push(deleteMapping(database, mapping.local_row_id));
@@ -569,6 +607,7 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
   for (const mapping of storedMappings) {
     if (rows.has(mapping.local_row_id)) continue;
     if (!absentRemotes.has(remoteKey(mapping.calendar_id, mapping.remote_event_id))) {
+      if (!spend(budget, WRITE_COST)) { summary.deferred += 1; continue; }
       await guard.check();
       await deleteEvent(token, mapping.calendar_id, mapping.remote_event_id);
     }
@@ -581,7 +620,7 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
   await guard.check();
   const saved = await saveWorkspace(database, nextItems, baseRevision);
   if (saved.ok === false) return { conflict: saved.current } as const;
-  statements.push(updateState(database, new Date().toISOString(), null));
+  statements.push(updateState(database, new Date().toISOString(), summary.deferred ? `Nog ${summary.deferred} wijzigingen wachten; synchroniseer opnieuw.` : null));
   statements.push(database.prepare("DELETE FROM google_sync_creates WHERE service = 'calendar' AND result_json IS NOT NULL"));
   await database.batch(statements);
   return { workspace: saved.workspace, summary } as const;

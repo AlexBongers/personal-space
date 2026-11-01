@@ -320,3 +320,50 @@ test("an expired sync lease cannot resume writing after another sync owns the lo
     });
   } finally { database.sqlite.close(); }
 });
+
+test("calendar: a large sync stays under the free-plan subrequest limit and finishes over several runs", async (t) => {
+  const f = await fixture(t, "calendar");
+  f.integration.rows = Array.from({ length: 30 }, (_, index) => ({
+    id: `local-bulk-${index}`,
+    title: `Bulk event ${index}`,
+    values: { [GOOGLE_CALENDAR_PROPERTY_IDS.start]: "2026-09-05", [GOOGLE_CALENDAR_PROPERTY_IDS.allDay]: true },
+    blocks: [],
+  }));
+
+  // Count database calls the way Workers does: each statement execution is one call, a batch is one call.
+  let databaseCalls = 0;
+  let inBatch = false;
+  const prepare = f.database.prepare.bind(f.database);
+  f.database.prepare = (query: string) => {
+    const statement = prepare(query);
+    const counted = {
+      bind(...values: unknown[]) { statement.bind(...values); return counted; },
+      first: async <T>() => { if (!inBatch) databaseCalls++; return statement.first<T>(); },
+      all: async <T>() => { if (!inBatch) databaseCalls++; return statement.all<T>(); },
+      run: async () => { if (!inBatch) databaseCalls++; return statement.run(); },
+    };
+    return counted;
+  };
+  const batch = f.database.batch.bind(f.database);
+  f.database.batch = async (statements: GoogleTasksStatement[]) => {
+    databaseCalls++;
+    inBatch = true;
+    try { return await batch(statements); } finally { inBatch = false; }
+  };
+
+  let items: Item[] = [f.integration];
+  let finished = false;
+  for (let attempt = 1; attempt <= 15 && !finished; attempt++) {
+    const fetchesBefore = f.requests.length;
+    const callsBefore = databaseCalls;
+    const response = await f.run(items);
+    assert.equal(response.status, 200, `run ${attempt} failed: ${JSON.stringify(response.body)}`);
+    const subrequests = (f.requests.length - fetchesBefore) + (databaseCalls - callsBefore);
+    assert.ok(subrequests <= 50, `run ${attempt} used ${subrequests} subrequests`);
+    items = response.body.workspace.items;
+    finished = response.body.sync.deferred === 0;
+  }
+  assert.ok(finished, "the sync did not finish within 15 runs");
+  assert.equal(f.creates(), 30, "every local event is created exactly once");
+  assert.equal(f.remote.size, 30);
+});

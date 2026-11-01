@@ -360,6 +360,7 @@ export default function Home() {
                 conflicts={conflicts}
                 disabled={!hydrated}
                 onOpenTrash={() => setTrashOpen(true)}
+                onImport={(imported) => setItems(imported)}
               />
             </Suspense>
             <div className="language-switch" role="group" aria-label={t("language.label")}>

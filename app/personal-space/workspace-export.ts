@@ -231,3 +231,18 @@ export const isWorkspaceExport = (value: unknown): value is WorkspaceExportV1 =>
   return Array.isArray(value.items) && typeof value.exportedAt === "string" && value.timeZone === WORKSPACE_EXPORT_TIME_ZONE
     && Number.isInteger(value.sourceRevision) && typeof value.containsUnconfirmedChanges === "boolean";
 };
+
+/**
+ * Read a workspace export file back into items. Recovery material is rejected: it holds several
+ * competing versions and cannot be restored as one workspace.
+ */
+export const parseWorkspaceImport = (text: string): Item[] => {
+  let payload: unknown;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new Error("Workspace import file is not valid JSON");
+  }
+  if (!isWorkspaceExport(payload)) throw new Error("Workspace import file is not a Personal Space export");
+  return validateExportInput(payload.items);
+};

@@ -5,6 +5,7 @@ import {
   createWorkspaceExport,
   createWorkspaceRecoveryExport,
   serializeWorkspaceExport,
+  parseWorkspaceImport,
   workspaceExportFileName,
 } from "../app/personal-space/workspace-export.ts";
 import { markItemSubtreeTrashed } from "../app/personal-space/workspace-trash.ts";
@@ -61,4 +62,30 @@ test("export refuses an invalid workspace tree before download", () => {
     sourceRevision: 1,
     containsUnconfirmedChanges: false,
   }), /root Home page/);
+});
+
+test("workspace import reads an export back and rejects other files", () => {
+  const items = makeSeed();
+  const exported = serializeWorkspaceExport(createWorkspaceExport({
+    items,
+    sourceRevision: 3,
+    containsUnconfirmedChanges: false,
+    exportedAt: "2026-09-06T10:11:12.000Z",
+  }));
+  assert.deepEqual(parseWorkspaceImport(exported), JSON.parse(JSON.stringify(items)));
+
+  assert.throws(() => parseWorkspaceImport("not json"), /not valid JSON/);
+  assert.throws(() => parseWorkspaceImport(JSON.stringify({ format: "other", schemaVersion: 1, items: [] })), /not a Personal Space export/);
+  const recovery = serializeWorkspaceExport(createWorkspaceRecoveryExport({
+    baseItems: items,
+    localItems: items,
+    remoteItems: items,
+    sourceRevision: 3,
+    conflicts: [],
+    exportedAt: "2026-09-06T10:11:12.000Z",
+  }));
+  assert.throws(() => parseWorkspaceImport(recovery), /not a Personal Space export/);
+  const broken = JSON.parse(exported);
+  broken.items[0].id = broken.items[1].id;
+  assert.throws(() => parseWorkspaceImport(JSON.stringify(broken)), /invalid/);
 });

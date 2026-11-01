@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useLanguage } from "./i18n";
 import type { Item } from "./types";
 import type { WorkspaceConflict } from "./workspace-merge.ts";
@@ -8,6 +8,7 @@ import {
   createWorkspaceExport,
   createWorkspaceRecoveryExport,
   downloadWorkspaceExport,
+  parseWorkspaceImport,
 } from "./workspace-export.ts";
 
 type WorkspaceActionsMenuProps = {
@@ -18,6 +19,7 @@ type WorkspaceActionsMenuProps = {
   conflicts: WorkspaceConflict[];
   disabled?: boolean;
   onOpenTrash?: () => void;
+  onImport: (items: Item[]) => void;
 };
 
 const withConflictVersions = (
@@ -47,11 +49,13 @@ export function WorkspaceActionsMenu({
   conflicts,
   disabled = false,
   onOpenTrash,
+  onImport,
 }: WorkspaceActionsMenuProps) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   const container = useRef<HTMLDivElement>(null);
+  const importInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -99,6 +103,25 @@ export function WorkspaceActionsMenu({
     }
   };
 
+  const chooseImportFile = () => {
+    setMessage("");
+    importInput.current?.click();
+  };
+
+  const importWorkspace = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const imported = parseWorkspaceImport(await file.text());
+      if (!window.confirm(t("workspaceActions.importConfirm"))) return;
+      onImport(imported);
+      setMessage(t("workspaceActions.importReady"));
+    } catch {
+      setMessage(t("workspaceActions.importError"));
+    }
+  };
+
   return (
     <div className="workspace-actions" ref={container}>
       <button
@@ -112,10 +135,18 @@ export function WorkspaceActionsMenu({
         <span aria-hidden="true">•••</span>
         <span className="workspace-actions-trigger-label">{t("workspaceActions.label")}</span>
       </button>
+      <input
+        ref={importInput}
+        type="file"
+        accept="application/json,.json"
+        hidden
+        onChange={importWorkspace}
+      />
       {open && (
         <div className="workspace-actions-menu" role="menu">
           {onOpenTrash && <button type="button" role="menuitem" onClick={() => { onOpenTrash(); setOpen(false); }}>{t("workspaceActions.trash")}</button>}
           <button type="button" role="menuitem" onClick={exportWorkspace}>{t("workspaceActions.export")}</button>
+          <button type="button" role="menuitem" onClick={chooseImportFile}>{t("workspaceActions.import")}</button>
           {conflicts.length > 0 && <button type="button" role="menuitem" onClick={exportRecovery}>{t("workspaceActions.recoveryExport")}</button>}
           {message && <p className="workspace-actions-message" role="status">{message}</p>}
         </div>

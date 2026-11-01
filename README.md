@@ -86,6 +86,10 @@ npm run deploy
 
 Run `npm run db:migrate` again whenever `drizzle/` gets a new migration.
 
+To move your existing workspace, export it from the old site with the `•••` menu, then open
+**Import workspace** in the same menu on the new site and choose the file. An import replaces the
+whole workspace, after a confirmation.
+
 The owner identity is now your Access email instead of the old Sites user id, so connect Parro and
 Google once more on the new domain. To test migrations locally
 first, run `npx wrangler d1 migrations apply DB --local`.

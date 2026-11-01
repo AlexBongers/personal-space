@@ -106,7 +106,7 @@ test("D1 public snapshots survive new isolates, upstream failures and separate s
     },
   };
   const freshIsolate = (name: string) => import(new URL(`../worker/news.ts?isolate=d1-${name}`, import.meta.url).href);
-  const request = new Request("https://personal.test/api/tweakers", { headers: { Authorization: "Bearer visitor-secret", "oai-authenticated-user-id": "owner", "Cache-Control": "no-cache" } });
+  const request = new Request("https://personal.test/api/tweakers", { headers: { Authorization: "Bearer visitor-secret", "Cf-Access-Authenticated-User-Email": "owner", "Cache-Control": "no-cache" } });
   let upstreamCalls = 0;
   t.mock.method(globalThis, "fetch", async () => { upstreamCalls++; return new Response(item("https://tweakers.net/nieuws/shared-snapshot")); });
   const first = await (await freshIsolate("first")).handleNewsApi(request, "tweakers", database);

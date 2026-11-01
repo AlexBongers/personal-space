@@ -1,4 +1,5 @@
 import { fetchParroMessages, limitedText, loginParro, ParroError, refreshParroTokens, type ParroTokens } from "./parro-client.ts";
+import { isLocalRequest, signedInUser } from "./access.ts";
 
 export type ParroMessageKind = "announcement" | "chatroom";
 
@@ -165,11 +166,6 @@ const json = (body: unknown, status = 200) => Response.json(body, {
   headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
 });
 
-const isLocalRequest = (request: Request) => {
-  const hostname = new URL(request.url).hostname;
-  return hostname === "localhost" || hostname === "127.0.0.1";
-};
-
 const readMessages = async (database: ParroDatabase, limit: number): Promise<ParroMessagesResponse> => {
   const rows = await database.prepare(`SELECT id, kind, title, body, sender, room_name, published_at, unread, unread_count, external_url, attachment_count, attachment_names_json, synced_at
 FROM parro_messages
@@ -201,7 +197,7 @@ LIMIT ?`).bind(limit).all<StoredMessage>();
 };
 
 const handleRead = async (request: Request, env: ParroEnv, url: URL) => {
-  if (!isLocalRequest(request) && !request.headers.get("oai-authenticated-user-id")) return json({ state: "sign_in_required", messages: [] }, 401);
+  if (!isLocalRequest(request) && !signedInUser(request)) return json({ state: "sign_in_required", messages: [] }, 401);
   if (!env.DB) return json({ state: "unconfigured", messages: [] });
   const requestedLimit = Number(url.searchParams.get("limit"));
   const limit = Number.isInteger(requestedLimit) && requestedLimit >= 1 && requestedLimit <= 20 ? requestedLimit : 20;
@@ -306,7 +302,7 @@ export async function handleParroApi(request: Request, env: ParroEnv, url = new 
 }
 
 const CONNECTION_ID = "parro-connection";
-const ownerId = (request: Request) => request.headers.get("oai-authenticated-user-id") || (isLocalRequest(request) ? "local" : "");
+const ownerId = (request: Request) => signedInUser(request) || (isLocalRequest(request) ? "local" : "");
 const tokenKey = (env: ParroEnv) => env.PARRO_TOKEN_ENCRYPTION_KEY || env.GOOGLE_TOKEN_ENCRYPTION_KEY;
 type Connection = { owner: string; encrypted: string; needsSignIn?: boolean };
 const readConnection = async (database: ParroDatabase): Promise<Connection | null> => {

@@ -1,4 +1,5 @@
 import { getGoogleAccessToken, isGoogleTasksConfigured, type GoogleTasksEnv } from "./google-tasks.ts";
+import { isLocalRequest, signedInUser } from "./access.ts";
 import { decodeEntities } from "./news.ts";
 import type { GmailInboxResponse, GmailMessage, GmailState } from "../app/personal-space/gmail-types.ts";
 
@@ -64,8 +65,7 @@ export async function handleGmailApi(request: Request, env: GoogleTasksEnv): Pro
   const json = (body: GmailInboxResponse, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
   if (request.method !== "GET") return new Response(null, { status: 405, headers: { Allow: "GET" } });
   const url = new URL(request.url);
-  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
-  if (!local && !request.headers.get("oai-authenticated-user-id")) return json({ state: "sign_in_required", messages: [] }, 401);
+  if (!isLocalRequest(request) && !signedInUser(request)) return json({ state: "sign_in_required", messages: [] }, 401);
   if (!env.DB || !isGoogleTasksConfigured(env)) return json({ state: "unconfigured", messages: [] });
   const pageToken = url.searchParams.get("pageToken") || "";
   if (pageToken.length > 2048) return json({ state: "unavailable", messages: [] }, 400);

@@ -27,10 +27,10 @@ with nested pages, a reading list, a project tracker, a travel plan and every ed
 - Optional two-way Google Tasks sync through a dedicated database, with encrypted token storage and all-list synchronization.
 - Optional two-way Google Calendar sync through a dedicated database, covering every writable calendar with encrypted shared OAuth storage.
 
-Workspace content is stored in the private Cloudflare D1 database provisioned by Sites. Changes
-therefore survive browser-storage clearing and are available anywhere the owner opens the private
-site. Browser storage is used only for the theme and language preferences, plus a temporary
-recovery backup if the database cannot be reached.
+Workspace content is stored in a private Cloudflare D1 database bound to the Worker. Changes
+therefore survive browser-storage clearing and are available anywhere the owner signs in. Browser
+storage is used only for the theme and language preferences, plus a temporary recovery backup if
+the database cannot be reached.
 
 ## Build and test
 
@@ -39,14 +39,56 @@ npm test
 npm run lint
 ```
 
-The project uses the Sites-compatible Vinext/Cloudflare worker build. `.openai/hosting.json`
-contains the Sites project and logical D1 bindings so the same source can be published as a private
-self-hosted workspace. Sites provisions the physical database and applies the migration in
-`drizzle/` during deployment.
+The app is a Vinext build running as a Cloudflare Worker. `wrangler.json` holds the Worker
+configuration: the D1 binding `DB` (migrations in `drizzle/`), the Images binding used for image
+optimization, and `workers_dev: false`.
 
 The client is split into focused editor, navigation, search, database, dashboard and domain-model
 modules under `app/personal-space/`. The test command builds the production worker, smoke-tests its
 rendered HTML, and enforces at least 80% line coverage for the domain model.
+
+## Deploy to Cloudflare
+
+The Worker runs on Cloudflare's free plan with a D1 database. Cloudflare Access keeps it private:
+the Worker serves nothing unless the request carries the signed-in Access identity, and localhost
+development is the only exception.
+
+One-time setup, from the repository root:
+
+```bash
+npx wrangler login
+npx wrangler d1 create personal-space
+```
+
+Copy the `database_id` that Wrangler prints into `wrangler.json`, replacing
+`00000000-0000-4000-8000-000000000000`. Then create the tables and store the secrets:
+
+```bash
+npm run db:migrate
+npx wrangler secret put GOOGLE_CLIENT_ID
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+npx wrangler secret put GOOGLE_TOKEN_ENCRYPTION_KEY
+npx wrangler secret put PARRO_TOKEN_ENCRYPTION_KEY
+```
+
+`PARRO_TOKEN_ENCRYPTION_KEY` is optional; leave it out to reuse the Google key.
+
+Attach your own domain under **Workers & Pages > personal-space > Settings > Domains & Routes**.
+In **Cloudflare One (Zero Trust) > Access > Applications**, add a self-hosted application for that
+hostname with a policy that allows only your own email address. Do not expose the `workers.dev`
+address; it is disabled in `wrangler.json`.
+
+Deploy with:
+
+```bash
+npm run deploy
+```
+
+Run `npm run db:migrate` again whenever `drizzle/` gets a new migration.
+
+The owner identity is now your Access email instead of the old Sites user id, so connect Parro and
+Google once more on the new domain. To test migrations locally
+first, run `npx wrangler d1 migrations apply DB --local`.
 
 ## Google Tasks
 
@@ -56,12 +98,12 @@ these redirect URIs to the client:
 
 ```text
 http://localhost:3000/api/google-tasks/callback
-https://personal-space.a-a-t-bongers.chatgpt.site/api/google-tasks/callback
+https://your-domain.example/api/google-tasks/callback
 ```
 
 Copy `.env.example` to `.env` for local development. Set `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`, and a fresh base64url-encoded 32-byte `GOOGLE_TOKEN_ENCRYPTION_KEY`.
-For the hosted Site, set the same values as private Sites runtime secrets; do not commit them.
+For the deployed Worker, set the same values as Cloudflare secrets with `wrangler secret put`; do not commit them.
 The integration uses the full Tasks scope because two-way sync must create, edit, organize and
 delete tasks. The same OAuth client also requests the full Calendar scope so it can create, edit
 and delete events across every writable calendar. Connect or reconnect from either the `Google
@@ -70,7 +112,7 @@ shared by both integrations. Calendar sync covers the last 45 days and the next 
 the personal workspace fast and compact. New local tasks without a list are created in the first
 Google list returned by Google; new local calendar events without a Calendar ID use the first
 writable calendar. Calendar entries without a start date stay local until completed.
-The Site remains private because the workspace and Google authorization are single-user data.
+The site remains private behind Cloudflare Access because the workspace and Google authorization are single-user data.
 
 ## News and Gmail inbox
 
@@ -93,7 +135,7 @@ Opening a message takes you to the connected account in Gmail. The site must rem
 
 ## Parro school messages
 
-Parro now connects directly from the private Site. Open the Parro panel, select
+Parro now connects directly from the private site. Open the Parro panel, select
 **Verbinden**, and enter your Parro credentials. If the login contains multiple
 identities, provide a unique part of the desired person's name or role in Account.
 Login follows Parro's PKCE authorization flow, including the account and application
@@ -105,12 +147,12 @@ periodically while visible, and when you choose **Vernieuwen**. This is page-dri
 synchronization: it does not run while the page is closed.
 
 Set `PARRO_TOKEN_ENCRYPTION_KEY` to a base64/base64url-encoded 32-byte secret in the
-Sites runtime. When omitted, the existing `GOOGLE_TOKEN_ENCRYPTION_KEY` is used with
+Worker secrets. When omitted, the existing `GOOGLE_TOKEN_ENCRYPTION_KEY` is used with
 Parro-specific AES-GCM authenticated context. D1 stores encrypted access/refresh
-tokens bound to the Site owner's identity, and the latest sanitized message snapshot.
+tokens bound to the owner's Cloudflare Access identity, and the latest sanitized message snapshot.
 Never put keys or credentials in frontend code, Git or browser storage. Apply all
 D1 migrations before using the connection. Local development uses the local identity;
-connect separately on the owner-only hosted Site.
+connect separately on the owner-only deployed site.
 
 `POST /api/parro/connect`, `POST /api/parro/refresh`, and
 `DELETE /api/parro/connection` require the signed-in owner's same-origin request.

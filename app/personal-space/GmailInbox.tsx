@@ -73,7 +73,7 @@ export function GmailInbox({ compact = false, onOpenInbox, authorizationError = 
     {needsConsent && <div className="gmail-connect"><p>{t("gmail.connectDescription")}</p><a className="primary-button" href="/api/google-tasks/connect?return=gmail" target="_top">{t("gmail.connect")}</a></div>}
     {inbox?.state === "unconfigured" && <p className="inbox-notice">{t("gmail.unconfigured")}</p>}
     {inbox?.state === "api_disabled" && <div className="gmail-connect"><p>{t("gmail.apiDisabled")}</p><a className="small-button" href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noreferrer">{t("gmail.enableApi")} ↗</a></div>}
-    {inbox?.state === "sign_in_required" && <a className="small-button" href="/signin-with-chatgpt?return_to=%2F" target="_top">{t("gmail.signIn")}</a>}
+    {inbox?.state === "sign_in_required" && <button className="small-button" type="button" onClick={() => window.location.reload()}>{t("gmail.signIn")}</button>}
     {connected && <>
       <ol className="inbox-list">
         {inbox.messages.map((message) => {

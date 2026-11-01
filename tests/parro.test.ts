@@ -40,7 +40,7 @@ test("hosted Parro reads require the Site visitor identity", async () => {
   const unauthorized = await handleParroApi(new Request("https://personal.test/api/parro/messages"), env);
   assert.equal(unauthorized?.status, 401);
   assert.equal((await unauthorized!.json()).state, "sign_in_required");
-  const authorized = await handleParroApi(new Request("https://personal.test/api/parro/messages?limit=6", { headers: { "oai-authenticated-user-id": "owner" } }), env);
+  const authorized = await handleParroApi(new Request("https://personal.test/api/parro/messages?limit=6", { headers: { "Cf-Access-Authenticated-User-Email": "owner" } }), env);
   assert.equal(authorized?.status, 200);
   assert.deepEqual((await authorized!.json()).messages[0], { id: "announcement:one", kind: "announcement", title: "School update", body: "Read me", sender: "School", roomName: "Group 4", publishedAt: "2026-09-05T08:00:00.000Z", unread: true, unreadCount: 1, externalUrl: "", attachmentCount: 2, attachmentNames: ["weekbrief.pdf", "foto.jpg"] });
 });
@@ -128,7 +128,7 @@ function directDatabase(failAt: "connection_save" | "snapshot_store" | "" = "") 
 
 const directRequest = (path: string, body?: unknown, headers: Record<string, string> = {}) => new Request(`https://personal.test/api/parro/${path}`, {
   method: path === "connection" ? "DELETE" : "POST",
-  headers: { Origin: "https://personal.test", "Content-Type": "application/json", "oai-authenticated-user-id": "owner", ...headers },
+  headers: { Origin: "https://personal.test", "Content-Type": "application/json", "Cf-Access-Authenticated-User-Email": "owner", ...headers },
   body: body === undefined ? undefined : JSON.stringify(body),
 });
 
@@ -470,7 +470,7 @@ test("direct Parro login, refresh rotation, failed snapshot and ownership", asyn
   assert.equal(db.snapshot.length, 2); assert.equal(db.lease, false);
   const encrypted = db.state.get("parro-connection")!;
   for (const secret of ["test-password", "parent@example.test", "access-secret", "refresh-secret"]) assert.equal(encrypted.includes(secret), false);
-  const compact = await handleParroApi(new Request("https://personal.test/api/parro/messages?limit=4", { headers: { "oai-authenticated-user-id": "owner" } }), env);
+  const compact = await handleParroApi(new Request("https://personal.test/api/parro/messages?limit=4", { headers: { "Cf-Access-Authenticated-User-Email": "owner" } }), env);
   assert.equal(compact?.status, 200); assert.equal(db.limit, 4);
   const before = JSON.stringify(db.snapshot); const batches = db.batches;
   expired = true; failMessages = true;
@@ -492,8 +492,8 @@ test("direct Parro login, refresh rotation, failed snapshot and ownership", asyn
   assert.equal(JSON.stringify(db.snapshot), beforeForbidden, "failed detail read preserves the previous snapshot");
   denyChat = false;
   assert.equal((await handleParroApi(directRequest("refresh", undefined, { Origin: "https://evil.test" }), env))?.status, 403);
-  assert.equal((await handleParroApi(directRequest("refresh", undefined, { "oai-authenticated-user-id": "other" }), env))?.status, 403);
-  assert.equal((await handleParroApi(new Request("https://personal.test/api/parro/messages", { headers: { "oai-authenticated-user-id": "other" } }), env))?.status, 403);
+  assert.equal((await handleParroApi(directRequest("refresh", undefined, { "Cf-Access-Authenticated-User-Email": "other" }), env))?.status, 403);
+  assert.equal((await handleParroApi(new Request("https://personal.test/api/parro/messages", { headers: { "Cf-Access-Authenticated-User-Email": "other" } }), env))?.status, 403);
   db.lease = true;
   assert.equal((await handleParroApi(directRequest("refresh"), env))?.status, 409); db.lease = false;
   assert.equal((await handleParroApi(new Request("https://personal.test/api/parro/sync", { method: "POST", headers: { Authorization: "Bearer legacy" } }), env))?.status, 409);
@@ -504,11 +504,11 @@ test("direct Parro login, refresh rotation, failed snapshot and ownership", asyn
   assert.equal((await expiredRefresh!.json()).connectionSaved, false, "rejected refresh cannot be reported as a usable saved connection");
   assert.equal(JSON.parse(db.state.get("parro-connection")!).needsSignIn, true);
   assert.equal(JSON.stringify(db.snapshot), beforeExpiry, "expired sessions preserve saved messages");
-  const expiredStatus = await handleParroApi(new Request("https://personal.test/api/parro/messages", { headers: { "oai-authenticated-user-id": "owner" } }), env);
+  const expiredStatus = await handleParroApi(new Request("https://personal.test/api/parro/messages", { headers: { "Cf-Access-Authenticated-User-Email": "owner" } }), env);
   assert.equal((await expiredStatus!.json()).connectionState, "disconnected");
   assert.equal((await handleParroApi(directRequest("refresh"), env))?.status, 401);
   assert.equal(tokenRefreshes, 2, "expired connection is not retried upstream after reload");
-  assert.equal((await handleParroApi(new Request("https://personal.test/api/parro/messages", { headers: { "oai-authenticated-user-id": "other" } }), env))?.status, 403, "expiry retains ownership protection");
+  assert.equal((await handleParroApi(new Request("https://personal.test/api/parro/messages", { headers: { "Cf-Access-Authenticated-User-Email": "other" } }), env))?.status, 403, "expiry retains ownership protection");
   rejectRefresh = false;
   expired = false;
   assert.equal((await handleParroApi(directRequest("connect", { username: "parent@example.test", password: "test-password" }), env))?.status, 200);

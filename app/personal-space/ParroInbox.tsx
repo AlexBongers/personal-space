@@ -119,7 +119,7 @@ export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: 
     {!compact && inbox?.connectionState === "connected" && <div className="parro-connection-actions"><button type="button" className="text-button" disabled={busy} onClick={() => setEditingConnection((current) => !current)}>{t(editingConnection ? "parro.cancelConnect" : "parro.reconnect")}</button><button type="button" className="text-button" disabled={busy} onClick={() => void disconnect()}>{t(disconnecting ? "parro.disconnecting" : "parro.disconnect")}</button></div>}
     {loading && !inbox && <p className="parro-notice">{t("parro.loading")}</p>}
     {failed && <p className="parro-notice" role="status">{connected ? t("parro.stale") : t("parro.unavailable")} <button type="button" className="text-button" onClick={() => void load()} disabled={loading}>{t("overview.tryAgain")}</button></p>}
-    {signInRequired && <a className="small-button" href="/signin-with-chatgpt?return_to=%2F" target="_top">{t("parro.signIn")}</a>}
+    {signInRequired && <button className="small-button" type="button" onClick={() => window.location.reload()}>{t("parro.signIn")}</button>}
     {inbox?.state === "unconfigured" && <p className="parro-notice">{t("parro.unconfigured")}</p>}
     {hasSnapshot && inbox && <>
       <ol className="parro-list">

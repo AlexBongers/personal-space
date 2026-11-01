@@ -1,6 +1,7 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { isAuthorized } from "./access";
 import { handleGoogleTasksApi } from "./google-tasks";
 import { handleGoogleCalendarApi } from "./google-calendar";
 import { handleSlashdotApi } from "./slashdot";
@@ -92,6 +93,14 @@ interface ExecutionContext {
 
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // The workspace is private: Cloudflare Access must sign the owner in before anything is served.
+    if (!isAuthorized(request)) {
+      return new Response("Sign in with Cloudflare Access to open Personal Space.", {
+        status: 403,
+        headers: { "Cache-Control": "no-store", "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+
     const url = new URL(request.url);
 
     if (url.pathname === "/_vinext/image") {

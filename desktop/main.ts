@@ -8,12 +8,13 @@ import { createBackgroundSync } from "./background-sync.ts";
 import { contextMenuTemplate } from "./context-menu.ts";
 import { parseDeepLink, URL_SCHEME } from "./deep-link.ts";
 import { backupDatabase } from "./backup.ts";
-import { DEFAULT_PORT, loadEnv, loadUserConfig } from "./config.ts";
+import { loadEnv, loadSettings, type Settings } from "./config.ts";
 import { D1Database } from "./d1-sqlite.ts";
 import { writeLog } from "./logger.ts";
 import { importMarkdown } from "./markdown-import.ts";
 import { exportMarkdown } from "./markdown-export.ts";
 import { migrate } from "./migrate.ts";
+import { briefingDate, briefingDue, briefingText, freshMessages, loadNotifyState, saveNotifyState, type NotifyState } from "./notifications.ts";
 import { parseReminder } from "./natural-time.ts";
 import { QUICK_NOTE_HTML, addQuickNote } from "./quick-note.ts";
 import { addReminder, dueReminders, loadReminders, removeReminder, saveReminders, settle, snooze } from "./reminders.ts";
@@ -25,10 +26,11 @@ import { startLocalServer } from "./server.ts";
 import { createEmptyPage, GOOGLE_CALENDAR_DATABASE_ID, GOOGLE_TASKS_DATABASE_ID } from "../app/personal-space/model.ts";
 import { loadWorkspace, saveWorkspace, type WorkspaceDatabase } from "../worker/workspace-store.ts";
 
-const SYNC_INTERVAL_MS = 15 * 60 * 1000;
+const SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const GOOGLE_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+const NOTIFIED_AT_ONCE = 3;
 const QUICK_NOTE_SHORTCUT = "CommandOrControl+Alt+N";
 const SHOW_APP_SHORTCUT = "CommandOrControl+Alt+P";
-const REMINDER_LEAD_MINUTES = 10;
 const AGENDA_INTERVAL_MS = 60 * 1000;
 const REMINDER_INTERVAL_MS = 15 * 1000;
 const REMINDERS_SHORTCUT = "CommandOrControl+Alt+R";
@@ -49,6 +51,8 @@ let remindersWindow: BrowserWindow | null = null;
 let searchWindow: BrowserWindow | null = null;
 let initialSearch = "";
 let started = false;
+let settings: Settings;
+let notifyState: NotifyState = { seen: {}, lastBriefing: "" };
 const pendingLinks: string[] = [];
 const announcedEvents = new Set<string>();
 const log = (message: string) => writeLog(dataDir(), message);
@@ -56,6 +60,7 @@ const log = (message: string) => writeLog(dataDir(), message);
 const dataDir = () => app.getPath("userData");
 const boundsFile = () => join(dataDir(), "window.json");
 const remindersFile = () => join(dataDir(), "reminders.json");
+const notifyStateFile = () => join(dataDir(), "notify-state.json");
 const workspaceDb = () => database as unknown as WorkspaceDatabase;
 
 const loadBounds = () => {
@@ -285,6 +290,17 @@ const importFromFolder = async () => {
 const openSettings = () => { void shell.openPath(join(dataDir(), "config.json")); };
 const openLog = () => { void shell.openPath(join(dataDir(), "app.log")); };
 
+/** Daily backup, also into the extra folder from config.json. A missing extra folder is logged, not fatal. */
+const backup = (manual = false) => {
+  if (!database) return false;
+  try {
+    return backupDatabase(database, dataDir(), new Date(), settings.backupDir, manual);
+  } catch (error) {
+    log(`Back-up mislukt: ${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+};
+
 const toggleLaunchAtLogin = () => {
   app.setLoginItemSettings({ openAtLogin: !app.getLoginItemSettings().openAtLogin });
   createMenus();
@@ -307,7 +323,7 @@ const createMenus = () => {
         { label: "Exporteer als Markdown...", click: () => { void exportToFolder(); } },
         { label: "Exporteer als PDF...", click: () => { void exportPdf(); } },
         { label: "Back-up terugzetten...", click: () => { void restoreFromBackup(); } },
-        { label: "Maak back-up nu", click: () => { if (database) backupDatabase(database, dataDir(), new Date()); } },
+        { label: "Maak back-up nu", click: () => { if (backup(true)) notify("Back-up gemaakt", "De back-up staat in de map backups.", () => { void shell.openPath(join(dataDir(), "backups")); }); else notify("Back-up mislukt", "Bekijk het logbestand voor de oorzaak.", openLog); } },
         { label: "Open datamap", click: () => { void shell.openPath(dataDir()); } },
         { label: "Open logbestand", click: openLog },
         { label: "Stuur test-melding", click: sendTestNotification },
@@ -345,7 +361,16 @@ const updateAgenda = async () => {
     ...section("Taken (vandaag en achterstallig)", day.tasks.map((task) => ({ label: task.label, click: () => openItem(GOOGLE_TASKS_DATABASE_ID, task.id) }))),
     { label: "Stop", role: "quit" },
   ]));
-  for (const event of upcomingEvents(items, now, REMINDER_LEAD_MINUTES, announcedEvents)) notify(event.title, `Begint om ${event.time}`, () => openItem(GOOGLE_CALENDAR_DATABASE_ID, event.id));
+  if (settings.eventReminderMinutes > 0) {
+    for (const event of upcomingEvents(items, now, settings.eventReminderMinutes, announcedEvents)) notify(event.title, `Begint om ${event.time}`, () => openItem(GOOGLE_CALENDAR_DATABASE_ID, event.id));
+  }
+  if (briefingDue(now, settings.briefingTime, notifyState.lastBriefing)) {
+    notifyState.lastBriefing = briefingDate(now);
+    saveNotifyState(notifyStateFile(), notifyState);
+    const remindersToday = loadReminders(remindersFile()).filter((reminder) => briefingDate(new Date(reminder.at)) === briefingDate(now)).length;
+    const greeting = now.getHours() < 12 ? "Goedemorgen" : now.getHours() < 18 ? "Goedemiddag" : "Goedenavond";
+    notify(`${greeting}, dit staat er vandaag op je planning`, briefingText(day, remindersToday), () => openItem("home"));
+  }
 };
 
 const createTray = () => {
@@ -359,8 +384,10 @@ const start = async () => {
   mkdirSync(dataDir(), { recursive: true });
   database = new D1Database(join(dataDir(), "personal-space.sqlite"));
   migrate(database, join(import.meta.dirname, "drizzle"));
-  backupDatabase(database, dataDir());
-  const port = loadUserConfig(dataDir()).port || DEFAULT_PORT;
+  settings = loadSettings(dataDir());
+  backup();
+  notifyState = loadNotifyState(notifyStateFile());
+  const port = settings.port;
   origin = `http://localhost:${port}`;
   server = await startLocalServer({ distDir: import.meta.dirname, database, env: await loadEnv(dataDir(), safeStorage), port });
 
@@ -368,14 +395,26 @@ const start = async () => {
     baseUrl: origin,
     isWindowOpen: () => window !== null,
     onError: log,
-    onParroUnread: (unread, increased) => {
+    googleEveryMs: GOOGLE_SYNC_INTERVAL_MS,
+    onParro: (messages, unread) => {
       app.dock?.setBadge(unread > 0 ? String(unread) : "");
-      if (increased) notify("Nieuw Parro-bericht", `${unread} ongelezen ${unread === 1 ? "bericht" : "berichten"}`);
+      const fresh = freshMessages(notifyState, "parro", messages);
+      saveNotifyState(notifyStateFile(), notifyState);
+      if (!settings.notifyParro) return;
+      for (const message of fresh.slice(0, NOTIFIED_AT_ONCE)) notify(message.sender || "Parro", [message.title, message.roomName].filter(Boolean).join(" - "), () => openItem("parro"));
+      if (fresh.length > NOTIFIED_AT_ONCE) notify("Parro", `En nog ${fresh.length - NOTIFIED_AT_ONCE} nieuwe berichten`, () => openItem("parro"));
+    },
+    onGmail: (messages) => {
+      const fresh = freshMessages(notifyState, "gmail", messages);
+      saveNotifyState(notifyStateFile(), notifyState);
+      if (!settings.notifyGmail) return;
+      for (const message of fresh.slice(0, NOTIFIED_AT_ONCE)) notify(message.sender || "Gmail", message.subject || "(geen onderwerp)", () => { if (message.url) void shell.openExternal(message.url); else openItem("gmail"); });
+      if (fresh.length > NOTIFIED_AT_ONCE) notify("Gmail", `En nog ${fresh.length - NOTIFIED_AT_ONCE} nieuwe e-mails`, () => openItem("gmail"));
     },
   });
   syncTimer = setInterval(() => {
     void sync?.run();
-    if (database) backupDatabase(database, dataDir());
+    backup();
   }, SYNC_INTERVAL_MS);
   agendaTimer = setInterval(() => { updateAgenda().catch((error: unknown) => log(`Agenda bijwerken mislukt: ${error instanceof Error ? error.message : String(error)}`)); }, AGENDA_INTERVAL_MS);
   void sync.run();

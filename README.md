@@ -131,45 +131,93 @@ Everything lives in `~/Library/Application Support/personal-space/` (menu **Best
 
 ### Desktop features
 
-The macOS app adds a few things that the Cloudflare site does not have:
+The macOS app adds what a browser tab cannot do. Closing the window keeps the app running in the
+menu bar; `Cmd+Q` or **Stop** in the menu bar quits it.
 
-- **Quick note** (`Cmd+Option+N`, also in the menu bar icon and **Bestand**): a small window that
-  appends a timestamped note to the page "Snelle notities". Press `Cmd+Enter` to save.
-- **Menu bar icon**: open the app, take a quick note, or sync now. Closing the window keeps the app
-  running; `Cmd+Q` or **Stop** quits it.
-- **Background sync**: every 15 minutes Parro is refreshed, and Google Tasks and Calendar are synced
-  while no window is open. With a window open the page does its own syncing, because Google sync
-  sends the whole workspace and a second writer would cause conflicts.
-- **Notifications and Dock badge**: new unread Parro messages show a notification and the Dock badge
-  carries the unread count.
-- **Start at login**: **Bestand > Start bij inloggen**. The app then starts in the menu bar without a window.
-- **Export as Markdown**: **Bestand > Exporteer als Markdown...** writes pages as nested folders and
-  database rows as files with their properties, skipping the trash.
-- **Restore a backup**: **Bestand > Back-up terugzetten...** replaces the database with a chosen backup
-  and keeps the previous database in `backups/` as `before-restore-...`.
-- **Port**: set `port` in `config.json` (default 3210). Add the matching redirect URI in Google Cloud.
+| Shortcut, works in every app | What it does |
+|---|---|
+| `Cmd+Option+N` | Quick note: appends a timestamped note to the page "Snelle notities". `Cmd+Enter` saves. |
+| `Cmd+Option+R` | Reminders: type "morgen 9:00 tandarts bellen" or fill in a date and time. |
+| `Cmd+Option+K` | Search all pages, notes and database rows, including their content. Enter opens the result. |
+| `Cmd+Option+P` | Bring Personal Space to the front. |
+| `Cmd+,` | Open `config.json`. |
 
-- **Today in the menu bar**: the menu bar icon lists today's calendar events and the tasks due today or
-  overdue, and shows the number of due tasks next to the icon. It reads the synced Google data and
-  refreshes every minute.
-- **Event reminders**: a notification 10 minutes before an event starts.
-- **Clipboard as note** (**Bestand**, menu bar and Dock menu): appends the clipboard text to "Snelle notities".
-- **Import Markdown folder**: **Bestand > Importeer Markdown-map...** is the reverse of the export. Files become
-  pages, a folder next to a file of the same name holds its subpages, and everything lands under an "Import" page.
-- **Export as PDF**: **Bestand > Exporteer als PDF...** prints the page that is open in the window.
-- **Reminders and notifications**: **Bestand > Nieuwe herinnering...** (`Cmd+Option+R`) opens a window to add reminders
-  with a time, optionally repeating daily or weekly. Each one arrives as a macOS notification. With
-  "Pop-up die blijft staan" it also opens a dialog that stays until you press Klaar or postpone it by
-  10 minutes or an hour. Reminders are stored in `reminders.json`, checked every 15 seconds, and one
-  that came due while the app was closed fires at the next start. **Stuur test-melding** checks that
-  notifications work. The first notification makes macOS ask for permission; if it never shows up,
-  enable Personal Space under System Settings > Notifications. Focus modes silence notifications but
-  not pop-ups.
-- **Show the app** from anywhere with `Cmd+Option+P`.
-- **Settings and log**: `Cmd+,` opens `config.json`; **Open logbestand** opens `app.log`, which records
-  failed background syncs. The daily backup is also checked while the app keeps running.
+**Notifications.** Everything below arrives as a real macOS notification; clicking one opens the
+matching page, calendar event, task or e-mail.
 
-A quick note, a clipboard note and an import reload the main window to show the new page, so finish typing before you save one.
+- Reminders, once or repeating daily or weekly. With "Pop-up die blijft staan" a dialog also stays on
+  screen until you press Klaar or postpone it by 10 minutes or an hour. A reminder that came due while
+  the app was closed fires at the next start.
+- Reminders understand Dutch: "over 20 min thee", "om 16:00 boodschappen", "vrijdag 14:30 rapport",
+  "overmorgen ophalen", "vanavond vuilnis buiten", "12-7 verjaardag Sanne", "3 maart 2027 10:00 APK".
+  A day without a time means 09:00; "vanavond" means 20:00.
+- A daily overview at 07:30 with today's events, due tasks and reminders. When the Mac is opened later,
+  it comes at the first moment after that.
+- A notification 10 minutes before each calendar event.
+- New Parro messages (sender, title, group) and new Gmail messages (sender, subject). Each message is
+  announced once, also across restarts; existing messages are not announced when you first connect.
+  The Dock badge shows the number of unread Parro messages.
+
+The first notification makes macOS ask for permission. Use **Bestand > Stuur test-melding** to check;
+if nothing shows, enable Personal Space under System Settings > Notifications. Focus modes silence
+notifications but not pop-ups.
+
+**Menu bar.** The icon lists today's calendar events, due and overdue tasks and the next reminders,
+with the number of due tasks next to it. Clicking an event or task opens it.
+
+**Background sync.** Every 5 minutes Parro is refreshed and Gmail is checked. Every 15 minutes Google
+Tasks and Calendar are synced while no window is open; with the window open the page syncs itself.
+Changes made outside the window, such as a quick note, a background sync or a link, are merged into
+the open window without a reload, so nothing you are typing is lost.
+
+**Links for Shortcuts, Siri and Raycast.** The app registers `personal-space://`:
+
+```text
+personal-space://note?text=Melk%20kopen
+personal-space://reminder?text=morgen%209:00%20tandarts%20bellen
+personal-space://reminder?text=Tandarts&at=2026-06-11T09:00:00%2B02:00
+personal-space://search?q=japan
+personal-space://open?id=<page id>
+```
+
+In the Shortcuts app, use the **Open URL** action with one of these and give the shortcut a name such
+as "Notitie in Personal Space" to use it with Siri.
+
+**Files.**
+
+- **Bestand > Exporteer als Markdown...** writes pages as nested folders and database rows as files
+  with their properties, skipping the trash. **Importeer Markdown-map...** reads such a folder (or an
+  Obsidian vault) back in under a new "Import" page.
+- **Bestand > Exporteer als PDF...** prints the open page.
+- **Klembord als notitie** (File menu, menu bar and Dock menu) saves the copied text as a quick note.
+- Right-click offers spelling suggestions, cut, copy and paste, and opening or copying links.
+
+**Backups.** A backup is made every day while the app runs (`backups/`, the latest 14 are kept).
+**Maak back-up nu** always makes an extra one. Set `backupDir` to also copy the daily backup to a
+folder such as iCloud Drive, so a copy lives outside the Mac. **Back-up terugzetten...** replaces the
+database with a chosen backup and keeps the previous one as `before-restore-...`.
+
+**Settings** in `config.json`, all optional:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `port` | `3210` | Local port. Add the matching Google redirect URI when you change it. |
+| `briefingTime` | `"07:30"` | Time of the daily overview; `""` turns it off. |
+| `eventReminderMinutes` | `10` | Minutes before a calendar event; `0` turns it off. |
+| `notifyParro`, `notifyGmail` | `true` | Notifications for new messages. |
+| `backupDir` | `""` | Extra backup folder, for example `/Users/you/Library/Mobile Documents/com~apple~CloudDocs/Personal Space`. |
+
+Restart the app after editing it. `app.log` (**Open logbestand**) records failed syncs and backups.
+**Start bij inloggen** in the File menu starts the app in the menu bar when you log in.
+
+The app is not signed, so after installing a new build macOS may ask whether Personal Space may use
+its key in the Keychain. Choose **Always Allow**; when it is denied the app explains this and stops.
+
+### Desktop tests
+
+`npm test` covers the desktop modules. `npm run test:desktop` starts the real Electron app with its own
+data folder and drives the windows, menus, links and reminders; on Linux without a display run it
+under `xvfb-run -a`.
 
 Moving over from the Cloudflare site:
 

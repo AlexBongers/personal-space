@@ -9,8 +9,12 @@ const blockText = (blocks: Block[]) => blocks.map((block) => block.text).join(" 
 const snippetAround = (text: string, word: string) => {
   const at = text.toLowerCase().indexOf(word);
   if (at < 0) return "";
-  const start = Math.max(0, at - 40);
-  return `${start > 0 ? "..." : ""}${text.slice(start, at + word.length + 60).trim()}${at + word.length + 60 < text.length ? "..." : ""}`;
+  // Start and end on word boundaries so the snippet never begins halfway a word.
+  const space = text.indexOf(" ", Math.max(0, at - 40));
+  const start = at > 40 && space >= 0 && space < at ? space + 1 : 0;
+  const stop = text.indexOf(" ", at + word.length + 60);
+  const end = stop < 0 ? text.length : stop;
+  return `${start > 0 ? "..." : ""}${text.slice(start, end).trim()}${end < text.length ? "..." : ""}`;
 };
 
 /** Every word must appear in the title or the content. Title matches rank first, then title prefixes, then content. */

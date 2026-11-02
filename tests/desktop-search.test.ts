@@ -87,3 +87,12 @@ test("deep links", () => {
   assert.deepEqual(parseDeepLink("https://evil.example/note?text=x"), { action: "show" });
   assert.deepEqual(parseDeepLink("geen url"), { action: "show" });
 });
+
+test("search snippets start and end on whole words", () => {
+  const text = "Dit is een lange inleiding over van alles en nog wat voordat het woord Kyoto eindelijk opduikt in deze zin die daarna nog heel lang doorgaat met allerlei woorden.";
+  const [hit] = searchWorkspace([{ id: "p", kind: "page", title: "Lang", icon: "x", parentId: null, blocks: [{ id: "b", type: "paragraph", text }] }], "kyoto");
+  assert.match(hit.snippet, /^\.\.\.[A-Za-z]/);
+  assert.match(hit.snippet, /Kyoto/);
+  const words = text.split(" ");
+  for (const part of hit.snippet.replace(/^\.\.\.|\.\.\.$/g, "").split(" ")) assert.ok(words.includes(part), part);
+});

@@ -1,7 +1,7 @@
 // End-to-end tests for the macOS app shell. They start the real Electron app with its own data folder.
 // Run with `npm run test:desktop`; on Linux without a display, wrap it in `xvfb-run -a`.
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -11,10 +11,10 @@ import { _electron } from "playwright-core";
 const root = new URL("..", import.meta.url).pathname;
 let nextPort = 3400 + Math.floor(Math.random() * 400);
 
-const launch = async ({ reminders } = {}) => {
+const launch = async ({ reminders, config = {} } = {}) => {
   const dataDir = mkdtempSync(join(tmpdir(), "ps-e2e-"));
   const port = nextPort++;
-  writeFileSync(join(dataDir, "config.json"), JSON.stringify({ googleClientId: "", googleClientSecret: "", googleCalendarSyncOnly: "", port }));
+  writeFileSync(join(dataDir, "config.json"), JSON.stringify({ googleClientId: "", googleClientSecret: "", googleCalendarSyncOnly: "", port, ...config }));
   if (reminders) writeFileSync(join(dataDir, "reminders.json"), JSON.stringify(reminders));
   const app = await _electron.launch({
     executablePath: electronPath,
@@ -135,8 +135,10 @@ describe("Personal Space desktop app", () => {
 
 describe("reminders that came due while the app was closed", () => {
   let session;
+  let extraBackups;
   before(async () => {
-    session = await launch({ reminders: [
+    extraBackups = join(mkdtempSync(join(tmpdir(), "ps-icloud-")), "Personal Space");
+    session = await launch({ config: { briefingTime: "00:00", backupDir: extraBackups }, reminders: [
       { id: "past", text: "Was gemist", at: "2020-01-01T09:00:00.000Z", repeat: "none", popup: false },
       { id: "daily", text: "Elke dag", at: "2020-01-01T09:00:00.000Z", repeat: "daily", popup: false },
     ] });
@@ -148,5 +150,20 @@ describe("reminders that came due while the app was closed", () => {
     const stored = JSON.parse(readFileSync(join(session.dataDir, "reminders.json"), "utf8"));
     assert.deepEqual(stored.map((reminder) => reminder.id), ["daily"]);
     assert.ok(new Date(stored[0].at) > new Date());
+  });
+
+  test("the daily briefing is given once and the backup also lands in the extra folder", async () => {
+    const today = new Date();
+    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    await until(async () => existsSync(join(session.dataDir, "notify-state.json")), "no briefing state was written");
+    assert.equal(JSON.parse(readFileSync(join(session.dataDir, "notify-state.json"), "utf8")).lastBriefing, date);
+    assert.equal(readdirSync(extraBackups).length, 1);
+  });
+
+  test("a manual backup is always made", async () => {
+    await clickMenu(session.app, "Maak back-up nu");
+    await until(async () => readdirSync(join(session.dataDir, "backups")).length === 2, "the manual backup was not written");
+    const notified = await recorded(session.app, "notified");
+    assert.ok(notified.some((entry) => entry.title === "Back-up gemaakt"));
   });
 });

@@ -10,9 +10,26 @@ export type SecretStorage = {
 };
 
 type Keys = { google: string; parro: string };
-type UserConfig = { googleClientId: string; googleClientSecret: string; googleCalendarSyncOnly: string; port?: number };
+type UserConfig = {
+  googleClientId: string;
+  googleClientSecret: string;
+  googleCalendarSyncOnly: string;
+  port?: number;
+  /** Time of the daily overview notification, such as "07:30"; empty turns it off. */
+  briefingTime?: string;
+  notifyParro?: boolean;
+  notifyGmail?: boolean;
+  /** Minutes before a calendar event that its notification appears; 0 turns it off. */
+  eventReminderMinutes?: number;
+  /** An extra folder that also receives the daily backup, for example in iCloud Drive. */
+  backupDir?: string;
+};
 
-export const DEFAULT_PORT = 3210;
+export type Settings = Required<Omit<UserConfig, "googleClientId" | "googleClientSecret" | "googleCalendarSyncOnly">>;
+
+export const DEFAULT_SETTINGS: Settings = { port: 3210, briefingTime: "07:30", notifyParro: true, notifyGmail: true, eventReminderMinutes: 10, backupDir: "" };
+
+export const DEFAULT_PORT = DEFAULT_SETTINGS.port;
 
 const newKey = () => randomBytes(32).toString("base64url");
 
@@ -36,11 +53,19 @@ const loadKeys = async (dataDir: string, storage: SecretStorage): Promise<Keys> 
 export const loadUserConfig = (dataDir: string): UserConfig => {
   const path = join(dataDir, "config.json");
   if (!existsSync(path)) {
-    const template: UserConfig = { googleClientId: "", googleClientSecret: "", googleCalendarSyncOnly: "", port: DEFAULT_PORT };
+    const template: UserConfig = { googleClientId: "", googleClientSecret: "", googleCalendarSyncOnly: "", ...DEFAULT_SETTINGS };
     writeFileSync(path, `${JSON.stringify(template, null, 2)}\n`, { mode: 0o600 });
     return template;
   }
   return JSON.parse(readFileSync(path, "utf8")) as UserConfig;
+};
+
+/** The desktop settings from config.json, with defaults for everything that is missing. */
+export const loadSettings = (dataDir: string): Settings => {
+  const config = loadUserConfig(dataDir);
+  const pick = <K extends keyof Settings>(key: K): Settings[K] =>
+    typeof config[key] === typeof DEFAULT_SETTINGS[key] ? config[key] as Settings[K] : DEFAULT_SETTINGS[key];
+  return { port: pick("port"), briefingTime: pick("briefingTime"), notifyParro: pick("notifyParro"), notifyGmail: pick("notifyGmail"), eventReminderMinutes: pick("eventReminderMinutes"), backupDir: pick("backupDir") };
 };
 
 export const loadEnv = async (dataDir: string, storage: SecretStorage): Promise<LocalEnv> => {

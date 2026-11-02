@@ -84,7 +84,7 @@ test("a folder export imports back with the same page hierarchy", () => {
 
 test("background sync reports failures instead of throwing", async () => {
   const messages: string[] = [];
-  const sync = createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => false, onParroUnread: () => {}, onError: (message) => messages.push(message), fetchImpl: (async () => { throw new Error("down"); }) as unknown as typeof fetch });
+  const sync = createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => false, onParro: () => {}, onGmail: () => {}, onError: (message) => messages.push(message), fetchImpl: (async () => { throw new Error("down"); }) as unknown as typeof fetch });
   await sync.run();
-  assert.deepEqual(messages, ["Parro-sync mislukt: down", "Google-sync mislukt: down"]);
+  assert.deepEqual(messages, ["Parro-sync mislukt: down", "Gmail controleren mislukt: down", "Google-sync mislukt: down"]);
 });

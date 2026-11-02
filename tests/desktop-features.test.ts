@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createBackgroundSync } from "../desktop/background-sync.ts";
+import { createBackgroundSync, type InboxMessage } from "../desktop/background-sync.ts";
 import { backupDatabase } from "../desktop/backup.ts";
 import { DEFAULT_PORT, loadUserConfig } from "../desktop/config.ts";
 import { D1Database } from "../desktop/d1-sqlite.ts";
@@ -105,13 +105,34 @@ const fakeApp = (responses: Record<string, unknown>) => {
   return { calls, fetchImpl };
 };
 
-test("background sync refreshes Parro, reports new unread messages and sends the origin", async () => {
-  const { calls, fetchImpl } = fakeApp({ "/api/parro/messages": { connectionState: "connected", unread: 2 }, "/api/parro/refresh": {} });
-  const reports: [number, boolean][] = [];
-  const sync = createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => true, onParroUnread: (unread, increased) => reports.push([unread, increased]), fetchImpl });
+test("background sync refreshes Parro, hands over the messages and sends the origin", async () => {
+  const messages = [{ id: "m1", unread: true, title: "Schoolreis", sender: "Juf Anna" }];
+  const { calls, fetchImpl } = fakeApp({ "/api/parro/messages": { connectionState: "connected", unread: 1, messages }, "/api/parro/refresh": {} });
+  const reports: unknown[] = [];
+  const sync = createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => true, onParro: (list, unread) => reports.push([list, unread]), onGmail: () => {}, fetchImpl });
   await sync.run();
-  assert.deepEqual(reports, [[2, false]]);
+  assert.deepEqual(reports, [[messages, 1]]);
   assert.ok(calls.some((call) => call.path === "/api/parro/refresh" && call.method === "POST" && call.origin === "http://localhost:3210"));
+});
+
+test("Gmail is only reported when it is connected", async () => {
+  const inbox: InboxMessage[] = [{ id: "g1", unread: true, subject: "Factuur", sender: "Bank" }];
+  const connected = fakeApp({ "/api/gmail/inbox": { state: "connected", messages: inbox } });
+  const reported: unknown[] = [];
+  await createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => true, onParro: () => {}, onGmail: (list) => reported.push(list), fetchImpl: connected.fetchImpl }).run();
+  assert.deepEqual(reported, [inbox]);
+  const unconfigured = fakeApp({ "/api/gmail/inbox": { state: "unconfigured", messages: [] } });
+  await createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => true, onParro: () => {}, onGmail: (list) => reported.push(list), fetchImpl: unconfigured.fetchImpl }).run();
+  assert.equal(reported.length, 1);
+});
+
+test("Google sync waits for its own interval", async () => {
+  const responses = { "/api/google-tasks/status": { connected: true }, "/api/workspace": { items: [], revision: 1 }, "/api/google-tasks/sync": {} };
+  const app = fakeApp(responses);
+  const sync = createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => false, onParro: () => {}, onGmail: () => {}, googleEveryMs: 60_000, fetchImpl: app.fetchImpl });
+  await sync.run();
+  await sync.run();
+  assert.equal(app.calls.filter((call) => call.path === "/api/google-tasks/sync").length, 1);
 });
 
 test("Google sync is skipped while a window is open and runs when it is closed", async () => {
@@ -123,18 +144,37 @@ test("Google sync is skipped while a window is open and runs when it is closed",
     "/api/google-tasks/sync": {},
   };
   const open = fakeApp(responses);
-  await createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => true, onParroUnread: () => {}, fetchImpl: open.fetchImpl }).run();
+  await createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => true, onParro: () => {}, onGmail: () => {}, fetchImpl: open.fetchImpl }).run();
   assert.ok(!open.calls.some((call) => call.path.endsWith("/sync")));
 
   const closed = fakeApp(responses);
-  await createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => false, onParroUnread: () => {}, fetchImpl: closed.fetchImpl }).run();
+  await createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => false, onParro: () => {}, onGmail: () => {}, fetchImpl: closed.fetchImpl }).run();
   const sent = closed.calls.find((call) => call.path === "/api/google-tasks/sync");
   assert.equal(JSON.parse(sent?.body ?? "{}").baseRevision, 7);
   assert.ok(!closed.calls.some((call) => call.path === "/api/google-calendar/sync"));
 });
 
 test("a failing server does not stop background sync", async () => {
-  const sync = createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => false, onParroUnread: () => {}, fetchImpl: (async () => { throw new Error("down"); }) as unknown as typeof fetch });
+  const sync = createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => false, onParro: () => {}, onGmail: () => {}, fetchImpl: (async () => { throw new Error("down"); }) as unknown as typeof fetch });
   await sync.run();
   await sync.run();
+});
+
+test("the daily backup is also copied to an extra folder and pruned there", () => {
+  const dir = tempDir("extra-backup");
+  const extra = join(dir, "iCloud", "Personal Space");
+  const database = migrated();
+  for (let day = 1; day <= 16; day++) backupDatabase(database, dir, new Date(Date.UTC(2026, 0, day)), extra);
+  assert.equal(readdirSync(extra).length, 14);
+  assert.ok(readdirSync(extra).includes("personal-space-2026-01-16.sqlite"));
+  assert.deepEqual(readdirSync(extra).sort(), readdirSync(join(dir, "backups")).sort());
+});
+
+test("a manual backup is always made, next to the daily one", () => {
+  const dir = tempDir("manual-backup");
+  const database = migrated();
+  const now = new Date("2026-03-04T15:27:00Z");
+  assert.equal(backupDatabase(database, dir, now), true);
+  assert.equal(backupDatabase(database, dir, now, "", true), true);
+  assert.deepEqual(readdirSync(join(dir, "backups")).sort(), ["personal-space-2026-03-04-1527.sqlite", "personal-space-2026-03-04.sqlite"]);
 });

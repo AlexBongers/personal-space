@@ -4,21 +4,26 @@ export type BackgroundSyncOptions = {
   baseUrl: string;
   /** Google sync sends the whole workspace, so it only runs when no window holds a copy of it. */
   isWindowOpen: () => boolean;
-  /** Called after each Parro check with the unread count; `increased` is true when new messages arrived. */
-  onParroUnread: (unread: number, increased: boolean) => void;
+  /** Called after each Parro check with the latest messages and the unread count. */
+  onParro: (messages: InboxMessage[], unread: number) => void;
+  /** Called after each Gmail check with the latest inbox messages. */
+  onGmail: (messages: InboxMessage[]) => void;
+  /** Google Tasks and Calendar sync at most this often; Parro and Gmail are checked on every pass. */
+  googleEveryMs?: number;
   /** Called with a short description when a pass fails; the next interval tries again. */
   onError?: (message: string) => void;
   fetchImpl?: Fetch;
 };
 
 type Workspace = { items: unknown[]; revision: number };
+export type InboxMessage = { id: string; unread: boolean; title?: string; subject?: string; sender?: string; roomName?: string; url?: string };
 const WRITER = { protocolVersion: 2, capabilities: ["trash"] };
 
 const describe = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 /** Runs the page-driven syncs from the app itself, so Parro and Google stay current while the window is closed. */
-export const createBackgroundSync = ({ baseUrl, isWindowOpen, onParroUnread, onError = () => {}, fetchImpl = fetch }: BackgroundSyncOptions) => {
-  let lastUnread: number | null = null;
+export const createBackgroundSync = ({ baseUrl, isWindowOpen, onParro, onGmail, onError = () => {}, googleEveryMs = 0, fetchImpl = fetch }: BackgroundSyncOptions) => {
+  let lastGoogle = 0;
   let running = false;
 
   const call = (path: string, init: RequestInit = {}) => fetchImpl(`${baseUrl}${path}`, {
@@ -35,10 +40,13 @@ export const createBackgroundSync = ({ baseUrl, isWindowOpen, onParroUnread, onE
     const current = await json<{ connectionState?: string }>("/api/parro/messages?limit=1");
     if (current?.connectionState !== "connected") return;
     await call("/api/parro/refresh", { method: "POST" });
-    const refreshed = await json<{ unread?: number }>("/api/parro/messages?limit=1");
-    const unread = Number(refreshed?.unread ?? 0);
-    onParroUnread(unread, lastUnread !== null && unread > lastUnread);
-    lastUnread = unread;
+    const refreshed = await json<{ unread?: number; messages?: InboxMessage[] }>("/api/parro/messages?limit=20");
+    onParro(refreshed?.messages ?? [], Number(refreshed?.unread ?? 0));
+  };
+
+  const checkGmail = async () => {
+    const inbox = await json<{ state?: string; messages?: InboxMessage[] }>("/api/gmail/inbox?limit=5");
+    if (inbox?.state === "connected") onGmail(inbox.messages ?? []);
   };
 
   const syncGoogle = async () => {
@@ -58,7 +66,11 @@ export const createBackgroundSync = ({ baseUrl, isWindowOpen, onParroUnread, onE
     running = true;
     try {
       await syncParro().catch((error: unknown) => onError(`Parro-sync mislukt: ${describe(error)}`));
-      if (!isWindowOpen()) await syncGoogle().catch((error: unknown) => onError(`Google-sync mislukt: ${describe(error)}`));
+      await checkGmail().catch((error: unknown) => onError(`Gmail controleren mislukt: ${describe(error)}`));
+      if (!isWindowOpen() && Date.now() - lastGoogle >= googleEveryMs) {
+        lastGoogle = Date.now();
+        await syncGoogle().catch((error: unknown) => onError(`Google-sync mislukt: ${describe(error)}`));
+      }
     } finally {
       running = false;
     }

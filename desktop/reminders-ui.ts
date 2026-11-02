@@ -28,6 +28,7 @@ export const REMINDERS_HTML = `<!doctype html>
     <button class="primary" id="add">Toevoegen</button>
   </div>
   <div id="error"></div>
+  <strong id="heading">Gepland</strong>
   <ul id="list"></ul>
   <script>
     const $ = (id) => document.getElementById(id);
@@ -35,6 +36,7 @@ export const REMINDERS_HTML = `<!doctype html>
     const setIn = (minutes) => { $("at").value = local(new Date(Date.now() + minutes * 60000)); };
     const labels = { none: "", daily: " (dagelijks)", weekly: " (wekelijks)" };
     const render = (reminders) => {
+      $("heading").textContent = reminders.length ? "Gepland" : "Nog geen herinneringen gepland.";
       $("list").replaceChildren(...reminders.map((reminder) => {
         const li = document.createElement("li");
         const info = document.createElement("span");

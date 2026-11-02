@@ -129,6 +129,28 @@ Everything lives in `~/Library/Application Support/personal-space/` (menu **Best
 - `keys.bin`: the token encryption keys, created on first start and encrypted with the macOS Keychain.
 - `backups/`: a copy of the database once per day, the latest 14 are kept.
 
+### Desktop features
+
+The macOS app adds a few things that the Cloudflare site does not have:
+
+- **Quick note** (`Cmd+Option+N`, also in the menu bar icon and **Bestand**): a small window that
+  appends a timestamped note to the page "Snelle notities". Press `Cmd+Enter` to save.
+- **Menu bar icon**: open the app, take a quick note, or sync now. Closing the window keeps the app
+  running; `Cmd+Q` or **Stop** quits it.
+- **Background sync**: every 15 minutes Parro is refreshed, and Google Tasks and Calendar are synced
+  while no window is open. With a window open the page does its own syncing, because Google sync
+  sends the whole workspace and a second writer would cause conflicts.
+- **Notifications and Dock badge**: new unread Parro messages show a notification and the Dock badge
+  carries the unread count.
+- **Start at login**: **Bestand > Start bij inloggen**. The app then starts in the menu bar without a window.
+- **Export as Markdown**: **Bestand > Exporteer als Markdown...** writes pages as nested folders and
+  database rows as files with their properties, skipping the trash.
+- **Restore a backup**: **Bestand > Back-up terugzetten...** replaces the database with a chosen backup
+  and keeps the previous database in `backups/` as `before-restore-...`.
+- **Port**: set `port` in `config.json` (default 3210). Add the matching redirect URI in Google Cloud.
+
+A quick note reloads the main window to show the new page, so finish typing before you save one.
+
 Moving over from the Cloudflare site:
 
 1. Export the workspace there with the `•••` menu.

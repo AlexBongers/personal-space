@@ -10,7 +10,9 @@ export type SecretStorage = {
 };
 
 type Keys = { google: string; parro: string };
-type UserConfig = { googleClientId: string; googleClientSecret: string; googleCalendarSyncOnly: string };
+type UserConfig = { googleClientId: string; googleClientSecret: string; googleCalendarSyncOnly: string; port?: number };
+
+export const DEFAULT_PORT = 3210;
 
 const newKey = () => randomBytes(32).toString("base64url");
 
@@ -24,10 +26,10 @@ const loadKeys = (dataDir: string, storage: SecretStorage): Keys => {
 };
 
 /** config.json is for the user to edit: it holds the Google OAuth client. A template is written on first start. */
-const loadUserConfig = (dataDir: string): UserConfig => {
+export const loadUserConfig = (dataDir: string): UserConfig => {
   const path = join(dataDir, "config.json");
   if (!existsSync(path)) {
-    const template: UserConfig = { googleClientId: "", googleClientSecret: "", googleCalendarSyncOnly: "" };
+    const template: UserConfig = { googleClientId: "", googleClientSecret: "", googleCalendarSyncOnly: "", port: DEFAULT_PORT };
     writeFileSync(path, `${JSON.stringify(template, null, 2)}\n`, { mode: 0o600 });
     return template;
   }

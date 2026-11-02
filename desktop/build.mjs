@@ -15,6 +15,8 @@ const common = {
 };
 
 await build({ ...common, entryPoints: ["desktop/main.ts"], outfile: `${out}/main.mjs`, external: ["electron"] });
+await build({ ...common, entryPoints: ["desktop/preload.ts"], outfile: `${out}/preload.cjs`, format: "cjs", banner: {}, external: ["electron"] });
 await build({ ...common, entryPoints: ["dist/server/index.js"], outfile: `${out}/server/index.js` });
 cpSync("dist/client", `${out}/client`, { recursive: true });
+cpSync("desktop/icon.png", `${out}/icon.png`);
 cpSync("drizzle", `${out}/drizzle`, { recursive: true });

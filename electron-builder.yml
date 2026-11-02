@@ -7,6 +7,10 @@ files:
   - desktop-build/**
   - package.json
   - "!node_modules/**"
+protocols:
+  - name: Personal Space
+    schemes:
+      - personal-space
 mac:
   category: public.app-category.productivity
   icon: desktop/icon.png

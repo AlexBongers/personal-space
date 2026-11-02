@@ -8,17 +8,17 @@ const stamp = (now: Date) => new Intl.DateTimeFormat("nl-NL", {
   timeZone: "Europe/Amsterdam", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
 }).format(now);
 
-/** Appends a note to the top-level page "Snelle notities", creating it when needed. Retries once on a revision conflict. */
+/** Appends a note to the top-level page "Snelle notities", creating it when needed. Returns the page id, or null for an empty note. Retries once on a revision conflict. */
 export const addQuickNote = async (database: WorkspaceDatabase, text: string, now = new Date()) => {
   const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
-  if (!lines.length) return false;
+  if (!lines.length) return null;
   for (let attempt = 0; attempt < 2; attempt++) {
     const { items, revision } = await loadWorkspace(database);
     const existing = items.find((item): item is Page => item.kind === "page" && item.parentId === null && !item.trash && item.title === PAGE_TITLE);
     const page = existing ?? { ...createEmptyPage(null), title: PAGE_TITLE, icon: "📝", blocks: [] };
     const blocks = [...page.blocks, createBlock("paragraph", `${stamp(now)} ${lines[0]}`), ...lines.slice(1).map((line) => createBlock("paragraph", line))];
     const next = existing ? items.map((item) => item.id === page.id ? { ...page, blocks } : item) : [...items, { ...page, blocks }];
-    if ((await saveWorkspace(database, next, revision)).ok) return true;
+    if ((await saveWorkspace(database, next, revision)).ok) return page.id;
   }
   throw new Error("De workspace veranderde tijdens het opslaan. Probeer opnieuw.");
 };

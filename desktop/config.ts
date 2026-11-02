@@ -5,8 +5,8 @@ import type { LocalEnv } from "./server.ts";
 
 /** The part of Electron's safeStorage that is used here, so the logic can be tested without Electron. */
 export type SecretStorage = {
-  encryptString(value: string): Buffer;
-  decryptString(value: Buffer): string;
+  encryptStringAsync(value: string): Promise<Buffer>;
+  decryptStringAsync(value: Buffer): Promise<{ result: string; shouldReEncrypt: boolean }>;
 };
 
 type Keys = { google: string; parro: string };
@@ -16,12 +16,19 @@ export const DEFAULT_PORT = 3210;
 
 const newKey = () => randomBytes(32).toString("base64url");
 
+const KEYCHAIN_HELP = "Personal Space kon zijn sleutels niet uit de macOS-sleutelhanger lezen. Start de app opnieuw en kies 'Sta altijd toe' als macOS om toegang vraagt.";
+
 /** Encryption keys are created once and kept encrypted with the macOS Keychain. */
-const loadKeys = (dataDir: string, storage: SecretStorage): Keys => {
+const loadKeys = async (dataDir: string, storage: SecretStorage): Promise<Keys> => {
   const path = join(dataDir, "keys.bin");
-  if (existsSync(path)) return JSON.parse(storage.decryptString(readFileSync(path))) as Keys;
+  if (existsSync(path)) {
+    const decrypted = await storage.decryptStringAsync(readFileSync(path)).catch(() => { throw new Error(KEYCHAIN_HELP); });
+    if (decrypted.shouldReEncrypt) writeFileSync(path, await storage.encryptStringAsync(decrypted.result), { mode: 0o600 });
+    return JSON.parse(decrypted.result) as Keys;
+  }
   const keys = { google: newKey(), parro: newKey() };
-  writeFileSync(path, storage.encryptString(JSON.stringify(keys)), { mode: 0o600 });
+  const encrypted = await storage.encryptStringAsync(JSON.stringify(keys)).catch(() => { throw new Error(KEYCHAIN_HELP); });
+  writeFileSync(path, encrypted, { mode: 0o600 });
   return keys;
 };
 
@@ -36,8 +43,8 @@ export const loadUserConfig = (dataDir: string): UserConfig => {
   return JSON.parse(readFileSync(path, "utf8")) as UserConfig;
 };
 
-export const loadEnv = (dataDir: string, storage: SecretStorage): LocalEnv => {
-  const keys = loadKeys(dataDir, storage);
+export const loadEnv = async (dataDir: string, storage: SecretStorage): Promise<LocalEnv> => {
+  const keys = await loadKeys(dataDir, storage);
   const config = loadUserConfig(dataDir);
   return {
     GOOGLE_CLIENT_ID: config.googleClientId || undefined,

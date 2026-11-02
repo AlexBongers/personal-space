@@ -8,7 +8,7 @@ const time = (date: Date) => new Intl.DateTimeFormat("nl-NL", { timeZone: "Europ
 
 export type DaySummary = {
   events: { id: string; label: string }[];
-  tasks: string[];
+  tasks: { id: string; label: string }[];
   /** Tasks due today or overdue; shown next to the menu bar icon. */
   dueCount: number;
 };
@@ -22,7 +22,7 @@ export const summarizeDay = (items: Item[], now = new Date()): DaySummary => {
   const due = selection ? [...selection.overdue, ...selection.today] : [];
   return {
     events: events.map((event) => ({ id: event.row.id, label: `${event.start ? time(event.start) : "Hele dag"}  ${event.row.title}` })),
-    tasks: due.map((row) => row.title),
+    tasks: due.map((row) => ({ id: row.id, label: row.title })),
     dueCount: due.length,
   };
 };
@@ -35,5 +35,5 @@ export const upcomingEvents = (items: Item[], now: Date, leadMinutes: number, an
   const limit = now.getTime() + leadMinutes * 60_000;
   const soon = today.filter((event) => event.start && event.start.getTime() > now.getTime() && event.start.getTime() <= limit && !announced.has(event.row.id));
   for (const event of soon) announced.add(event.row.id);
-  return soon.map((event) => ({ title: event.row.title, time: time(event.start as Date) }));
+  return soon.map((event) => ({ id: event.row.id, title: event.row.title, time: time(event.start as Date) }));
 };

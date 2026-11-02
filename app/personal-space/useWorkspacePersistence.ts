@@ -84,9 +84,13 @@ export function useWorkspacePersistence() {
     const retry = () => {
       if (document.visibilityState === "visible") void controller.retry();
     };
+    // The desktop app dispatches this after it changed the workspace itself, for example a quick note.
+    const refresh = () => { void controller.refresh().catch(() => {}); };
+    window.addEventListener("personal-space:refresh", refresh);
     window.addEventListener("online", retry);
     document.addEventListener("visibilitychange", retry);
     return () => {
+      window.removeEventListener("personal-space:refresh", refresh);
       window.removeEventListener("online", retry);
       document.removeEventListener("visibilitychange", retry);
     };

@@ -9,13 +9,15 @@ export const REMINDERS_HTML = `<!doctype html>
   input, select, button { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid #8886; background: transparent; color: inherit; }
   button { cursor: pointer; } button.primary { background: #0c79d8; color: white; border-color: #0c79d8; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  #text { flex: 1; min-width: 200px; }
+  #text, #quick { flex: 1; min-width: 200px; }
   ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
   li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #8884; border-radius: 8px; }
   small { opacity: .65; } #error { color: #d33; min-height: 1em; }
 </style></head>
 <body>
-  <div class="row"><input id="text" placeholder="Waaraan moet ik je herinneren?" autofocus></div>
+  <div class="row"><input id="quick" placeholder="Snel: morgen 9:00 tandarts bellen" autofocus><button class="primary" id="quickAdd">Toevoegen</button></div>
+  <small>Of vul het zelf in:</small>
+  <div class="row"><input id="text" placeholder="Waaraan moet ik je herinneren?"></div>
   <div class="row">
     <input id="at" type="datetime-local">
     <button data-in="10">+10 min</button><button data-in="60">+1 uur</button><button data-tomorrow>Morgen 09:00</button>
@@ -55,7 +57,16 @@ export const REMINDERS_HTML = `<!doctype html>
       if (result.error) { $("error").textContent = result.error; return; }
       $("text").value = ""; render(result.reminders);
     };
-    addEventListener("keydown", (event) => { if (event.key === "Enter") $("add").click(); if (event.key === "Escape") window.reminders.close(); });
+    $("quickAdd").onclick = async () => {
+      $("error").textContent = "";
+      const result = await window.reminders.quick($("quick").value, $("popup").checked);
+      if (result.error) { $("error").textContent = result.error; return; }
+      $("quick").value = ""; render(result.reminders);
+    };
+    addEventListener("keydown", (event) => {
+      if (event.key === "Enter") (document.activeElement === $("quick") ? $("quickAdd") : $("add")).click();
+      if (event.key === "Escape") window.reminders.close();
+    });
     setIn(60);
     window.reminders.list().then(render);
   </script>

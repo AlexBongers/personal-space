@@ -71,15 +71,40 @@ test("backups are written once per day and pruned to fourteen", () => {
   assert.ok(statSync(join(dir, "backups", files[0])).size > 0);
 });
 
-test("config creates keys once, keeps them encrypted and reads config.json", () => {
+test("config creates keys once, keeps them encrypted and reads config.json", async () => {
   const dir = mkdtempSync(join(tmpdir(), "ps-config-"));
-  const storage = { encryptString: (value: string) => Buffer.from(`enc:${value}`), decryptString: (value: Buffer) => value.toString().slice(4) };
-  const first = loadEnv(dir, storage);
-  const second = loadEnv(dir, storage);
+  const storage = {
+    encryptStringAsync: async (value: string) => Buffer.from(`enc:${value}`),
+    decryptStringAsync: async (value: Buffer) => ({ result: value.toString().slice(4), shouldReEncrypt: false }),
+  };
+  const first = await loadEnv(dir, storage);
+  const second = await loadEnv(dir, storage);
   assert.equal(Buffer.from(first.GOOGLE_TOKEN_ENCRYPTION_KEY || "", "base64url").length, 32);
   assert.equal(first.GOOGLE_TOKEN_ENCRYPTION_KEY, second.GOOGLE_TOKEN_ENCRYPTION_KEY);
   assert.notEqual(first.GOOGLE_TOKEN_ENCRYPTION_KEY, first.PARRO_TOKEN_ENCRYPTION_KEY);
   assert.equal(first.GOOGLE_CLIENT_ID, undefined);
   assert.ok(readFileSync(join(dir, "keys.bin"), "utf8").startsWith("enc:"));
   assert.ok(existsSync(join(dir, "config.json")));
+});
+
+test("a denied Keychain gives a clear message instead of a crash", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ps-keychain-"));
+  const working = { encryptStringAsync: async (value: string) => Buffer.from(value), decryptStringAsync: async (value: Buffer) => ({ result: value.toString(), shouldReEncrypt: false }) };
+  await loadEnv(dir, working);
+  const denied = { ...working, decryptStringAsync: async () => { throw new Error("User canceled"); } };
+  await assert.rejects(loadEnv(dir, denied), /Sta altijd toe/);
+});
+
+test("keys are re-encrypted when the Keychain asks for it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ps-reencrypt-"));
+  let version = "v1";
+  const storage = {
+    encryptStringAsync: async (value: string) => Buffer.from(`${version}:${value}`),
+    decryptStringAsync: async (value: Buffer) => ({ result: value.toString().slice(3), shouldReEncrypt: !value.toString().startsWith(version) }),
+  };
+  const first = await loadEnv(dir, storage);
+  version = "v2";
+  const second = await loadEnv(dir, storage);
+  assert.equal(first.GOOGLE_TOKEN_ENCRYPTION_KEY, second.GOOGLE_TOKEN_ENCRYPTION_KEY);
+  assert.ok(readFileSync(join(dir, "keys.bin"), "utf8").startsWith("v2:"));
 });

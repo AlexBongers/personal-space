@@ -24,18 +24,19 @@ const tempDir = (name: string) => mkdtempSync(join(tmpdir(), `ps-${name}-`));
 test("a quick note creates the notes page and appends to it afterwards", async () => {
   const database = migrated();
   const before = (await loadWorkspace(database as never)).items.length;
-  assert.equal(await addQuickNote(database as never, "eerste\ntweede", new Date("2026-03-01T10:30:00Z")), true);
-  assert.equal(await addQuickNote(database as never, "derde", new Date("2026-03-01T11:00:00Z")), true);
+  const pageId = await addQuickNote(database as never, "eerste\ntweede", new Date("2026-03-01T10:30:00Z"));
+  assert.equal(await addQuickNote(database as never, "derde", new Date("2026-03-01T11:00:00Z")), pageId);
   const { items } = await loadWorkspace(database as never);
   assert.equal(items.length, before + 1);
   const page = items.find((item) => item.title === "Snelle notities");
   assert.equal(page?.kind, "page");
+  assert.equal(page?.id, pageId);
   const texts = page?.kind === "page" ? page.blocks.map((block) => block.text) : [];
   assert.deepEqual(texts, ["01-03-2026, 11:30 eerste", "tweede", "01-03-2026, 12:00 derde"]);
 });
 
 test("an empty quick note is ignored", async () => {
-  assert.equal(await addQuickNote(migrated() as never, "  \n "), false);
+  assert.equal(await addQuickNote(migrated() as never, "  \n "), null);
 });
 
 test("blocks convert to Markdown", () => {

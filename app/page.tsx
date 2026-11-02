@@ -99,6 +99,12 @@ export default function Home() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
+      const openId = params.get("open");
+      if (openId) {
+        setSelectedId(openId);
+        setSelectedRowId(params.get("row"));
+        window.history.replaceState({}, "", window.location.pathname);
+      }
       if (params.get("google") === "connected" || params.get("google") === "error") {
         if (params.get("service") === "gmail") {
           setSelectedId("gmail");
@@ -109,6 +115,20 @@ export default function Home() {
       }
     }, 0);
     return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    // The desktop app opens a page or database row from a notification, the menu bar or a search.
+    const open = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: string; rowId?: string }>).detail;
+      if (!detail?.id) return;
+      setSelectedId(detail.id);
+      setSelectedRowId(detail.rowId || null);
+      setSearchOpen(false);
+      setSidebarOpen(false);
+    };
+    window.addEventListener("personal-space:open", open);
+    return () => window.removeEventListener("personal-space:open", open);
   }, []);
 
   useEffect(() => {

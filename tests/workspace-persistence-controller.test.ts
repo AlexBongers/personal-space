@@ -208,3 +208,27 @@ test("recovery drafts from another tab are available and can be adopted or disca
   secondController.discardRecovery("first");
   assert.equal(secondController.snapshot.recoveryRecords.some((record) => record.draftId === "first"), false);
 });
+
+test("refresh merges a newer server revision without losing unsaved local edits", async () => {
+  const transport = new FakeTransport();
+  const app = await load(transport, "app");
+  const other = await load(transport, "desktop");
+  changeTitle(other, "personal", "From the desktop");
+  await other.flush();
+  changeTitle(app, "work", "Typed but not saved");
+  await app.refresh();
+  assert.equal(app.snapshot.items.find((item) => item.id === "personal")?.title, "From the desktop");
+  assert.equal(app.snapshot.items.find((item) => item.id === "work")?.title, "Typed but not saved");
+  await app.flush();
+  assert.equal(transport.envelope.items.find((item) => item.id === "work")?.title, "Typed but not saved");
+  assert.equal(transport.envelope.items.find((item) => item.id === "personal")?.title, "From the desktop");
+});
+
+test("refresh does nothing when the server has no newer revision", async () => {
+  const transport = new FakeTransport();
+  const app = await load(transport, "app");
+  const before = app.snapshot.items;
+  await app.refresh();
+  assert.equal(app.snapshot.items, before);
+  assert.equal(transport.saves.length, 0);
+});

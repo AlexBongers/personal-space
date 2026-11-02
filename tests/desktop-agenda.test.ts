@@ -26,7 +26,7 @@ const items: Item[] = [
 test("the day summary lists today's events and the due tasks", () => {
   const day = summarizeDay(items, NOW);
   assert.deepEqual(day.events.map((entry) => entry.label), ["12:05  Teamoverleg", "16:00  Tandarts"]);
-  assert.deepEqual(day.tasks.sort(), ["Boodschappen", "Te laat"]);
+  assert.deepEqual(day.tasks.map((entry) => entry.label).sort(), ["Boodschappen", "Te laat"]);
   assert.equal(day.dueCount, 2);
 });
 
@@ -36,9 +36,9 @@ test("a workspace without Google data gives an empty summary", () => {
 
 test("reminders fire once for events starting within the lead time", () => {
   const announced = new Set<string>();
-  assert.deepEqual(upcomingEvents(items, NOW, 10, announced), [{ title: "Teamoverleg", time: "12:05" }]);
+  assert.deepEqual(upcomingEvents(items, NOW, 10, announced), [{ id: "e1", title: "Teamoverleg", time: "12:05" }]);
   assert.deepEqual(upcomingEvents(items, NOW, 10, announced), []);
-  assert.deepEqual(upcomingEvents(items, new Date("2026-06-10T13:55:00Z"), 10, announced), [{ title: "Tandarts", time: "16:00" }]);
+  assert.deepEqual(upcomingEvents(items, new Date("2026-06-10T13:55:00Z"), 10, announced), [{ id: "e2", title: "Tandarts", time: "16:00" }]);
 });
 
 test("the log appends lines and rotates when it grows large", () => {

@@ -121,7 +121,7 @@ xattr -dr com.apple.quarantine "/Applications/Personal Space.app"
 `npm run local` runs the same server without Electron (data in `.local-data/`, configuration from
 the environment variables in `.env.example`), which is handy for development.
 
-Everything lives in `~/Library/Application Support/Personal Space/` (menu **Bestand > Open datamap**):
+Everything lives in `~/Library/Application Support/personal-space/` (menu **Bestand > Open datamap**):
 
 - `personal-space.sqlite`: the workspace plus the Google and Parro connections.
 - `config.json`: your Google OAuth client (`googleClientId`, `googleClientSecret`) and the optional

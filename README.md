@@ -217,9 +217,11 @@ key cannot be read at all, the app offers to make new keys; your pages stay inta
 Parro must be connected again. Keep the internal name `personal-space` in `package.json`: the Keychain
 key is stored under it.
 
-The app icon (`desktop/icon.svg`, rendered to `icon.png`) follows the macOS icon grid; electron-builder
-makes every size from it. The menu bar uses `trayTemplate.png`, a black template image that macOS tints
-for light and dark menu bars.
+The app icon is your own little planet: a smiling ringed planet with a moon on a starry night tile
+(`desktop/icon.svg`, rendered to `icon.png`, following the macOS icon grid; electron-builder makes every
+size from it). The menu bar shows the same ringed planet as `trayTemplate.png`, a black template image
+that macOS tints for light and dark menu bars. After editing an SVG, render it to PNG again at
+1024 px (`icon.png`) and 18 and 36 px (`trayTemplate.png`, `trayTemplate@2x.png`).
 
 ### How the desktop app is built
 

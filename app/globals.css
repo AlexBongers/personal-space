@@ -933,3 +933,66 @@ td { height: 56px; font-size: .9375rem; }
 .parro-connect-error { padding: 9px 11px; border-radius: var(--control-radius); background: var(--surface-soft); color: var(--ink); }
 
 .parro-connection-actions { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+
+/* Task and appointment editors: a compact dialog above the list or calendar. */
+.editor-overlay { display: grid; place-items: start center; position: fixed; z-index: 30; inset: 0; padding: 9vh 15px 15px; overflow-y: auto; background: rgba(13, 20, 24, .42); backdrop-filter: blur(4px); }
+.editor-dialog { display: flex; flex-direction: column; width: min(560px, 100%); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); background: var(--surface); }
+.editor-dialog-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 0 20px; }
+.editor-dialog-title { color: var(--muted); font-size: .8125rem; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+.editor-dialog-body { display: grid; gap: 16px; padding: 8px 20px 18px; }
+.editor-dialog-footer { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.editor-dialog-footer .primary-button:disabled { opacity: .4; cursor: not-allowed; }
+.editor-dialog-spacer { flex: 1; }
+.text-link-button { min-height: 36px; padding: 0 8px; border: 0; color: var(--muted); background: transparent; font-size: .8125rem; }
+.text-link-button:hover { color: var(--ink); text-decoration: underline; }
+.editor-title-row { display: flex; align-items: center; gap: 10px; }
+.editor-title-input { width: 100%; padding: 6px 0; border: 0; border-bottom: 2px solid var(--line); color: var(--ink); background: transparent; font-size: 1.375rem; font-weight: 600; letter-spacing: -.01em; }
+.editor-title-input:focus, .editor-title-input:focus-visible { outline: none; border-bottom-color: var(--blue); }
+.editor-title-row .task-check.is-checked { color: #fff; background: var(--green); border-color: var(--green); }
+.editor-field { display: grid; gap: 6px; min-width: 0; }
+.editor-label { color: var(--muted); font-size: .75rem; font-weight: 600; }
+.editor-input { width: 100%; min-height: 38px; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--control-radius); color: var(--ink); background: var(--surface); font-size: .9375rem; }
+.editor-input:disabled { color: var(--muted); background: var(--surface-soft); }
+.editor-notes { min-height: 70px; resize: vertical; }
+.editor-when { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 10px; }
+.editor-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.editor-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: -6px; }
+.editor-check { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); font-size: .875rem; }
+.editor-warning { margin: -6px 0 0; color: var(--red); font-size: .8125rem; }
+.choice-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.choice-chips > button, .chip-date { position: relative; display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); background: var(--surface); font-size: .8125rem; cursor: pointer; }
+.choice-chips > button:hover, .chip-date:hover { background: var(--surface-soft); }
+.choice-chips > button.is-selected, .chip-date.is-selected { border-color: var(--ink); color: var(--surface); background: var(--ink); }
+.chip-date input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.chip-date input::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; }
+
+/* Tasks: quick add per list, and dragging tasks between lists. */
+.tasks-interface .task-item { grid-template-columns: 26px minmax(0, 1fr) 28px; cursor: grab; }
+.tasks-interface .task-item[draggable="false"] { cursor: default; }
+.task-item.is-dragging { opacity: .4; }
+.task-group.is-drop-target { border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 22%, transparent); }
+.task-group.is-drop-target .task-group-heading { background: color-mix(in srgb, var(--blue) 12%, var(--surface-soft)); }
+.task-group-empty { margin: 0; padding: 18px; color: var(--muted); font-size: .875rem; text-align: center; }
+.task-quick-add { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 18px; border-top: 1px solid var(--line); color: var(--muted); }
+.task-quick-add input { flex: 1; min-height: 38px; border: 0; color: var(--ink); background: transparent; font-size: .9375rem; }
+.task-quick-add input:focus { outline: none; }
+.task-quick-add:focus-within { background: var(--surface-soft); }
+
+/* Calendar: add on a day, and dragging appointments to another day. */
+.calendar-day, .calendar-week-day { position: relative; }
+.calendar-add { position: absolute; top: 6px; right: 6px; z-index: 1; display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 7px; color: var(--muted); background: var(--surface-soft); font-size: 18px; line-height: 1; opacity: 0; transition: opacity .12s; }
+.calendar-day:hover .calendar-add, .calendar-week-day:hover .calendar-add, .calendar-add:focus-visible { opacity: 1; }
+.calendar-add:hover { color: var(--ink); }
+.calendar-event[draggable="true"] { cursor: grab; }
+.calendar-day.is-drop-target, .calendar-week-day.is-drop-target { background: color-mix(in srgb, var(--blue) 10%, var(--surface)); box-shadow: inset 0 0 0 2px var(--blue); }
+
+@media (max-width: 640px) {
+  .editor-overlay { padding: 0; }
+  .editor-dialog { min-height: 100dvh; border: 0; border-radius: 0; }
+  .editor-when, .editor-columns { grid-template-columns: 1fr; }
+  .calendar-add { opacity: 1; }
+}
+.calendar-week-day .calendar-add { top: 13px; right: 42px; }
+/* Text fields in the editors show focus with their own border instead of the app-wide focus ring. */
+.app-shell .editor-title-input:focus-visible, .app-shell .task-quick-add input:focus-visible { outline: none; }
+.app-shell .editor-input:focus-visible { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 20%, transparent); }

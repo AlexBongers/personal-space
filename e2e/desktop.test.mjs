@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import electronPath from "electron";
 import { _electron } from "playwright-core";
+import { createGoogleTasksDatabase, GOOGLE_CALENDAR_PROPERTY_IDS as CAL, GOOGLE_TASK_PROPERTY_IDS as TASK } from "../app/personal-space/model.ts";
 
 const root = new URL("..", import.meta.url).pathname;
 let nextPort = 3400 + Math.floor(Math.random() * 400);
@@ -174,5 +175,77 @@ describe("reminders that came due while the app was closed", () => {
     await until(async () => readdirSync(join(session.dataDir, "backups")).length === 2, "the manual backup was not written");
     const notified = await recorded(session.app, "notified");
     assert.ok(notified.some((entry) => entry.title === "Back-up gemaakt"));
+  });
+});
+
+describe("task and appointment editors", () => {
+  let session;
+  let base;
+  const workspace = async () => (await fetch(`${base}/api/workspace`)).json();
+  const rowsOf = async (id) => (await workspace()).items.find((item) => item.id === id).rows;
+
+  before(async () => {
+    session = await launch();
+    base = `http://localhost:${session.port}`;
+    // Add to the workspace the app already saved, instead of replacing its calendar database.
+    await until(async () => (await workspace()).items.some((item) => item.id === "google-calendar"), "the app did not create its calendar database");
+    const current = await workspace();
+    const tasks = createGoogleTasksDatabase();
+    tasks.rows = [
+      { id: "t1", title: "Mail aan team", blocks: [], values: { [TASK.status]: "Open", [TASK.list]: "Werk" } },
+      { id: "t2", title: "Boodschappen", blocks: [], values: { [TASK.status]: "Open", [TASK.list]: "Privé" } },
+    ];
+    const saved = await fetch(`${base}/api/workspace`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: [...current.items, tasks], baseRevision: current.revision, protocolVersion: 2, capabilities: ["trash"] }) });
+    assert.equal(saved.status, 200);
+    await session.main.goto(`${base}/?open=google-tasks`);
+    await session.main.locator(".task-group").first().waitFor();
+  });
+  after(async () => { await session?.app.close(); });
+
+  test("a new task is only created when it is saved", async () => {
+    const page = session.main;
+    await page.getByRole("button", { name: /Nieuwe taak/ }).click();
+    await page.locator(".editor-title-input").fill("Wordt geannuleerd");
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: /Nieuwe taak/ }).click();
+    await page.locator(".editor-title-input").fill("Cadeau kopen");
+    await page.getByRole("radio", { name: "Privé" }).click();
+    await page.getByRole("button", { name: "Morgen" }).click();
+    await page.keyboard.press("Control+Enter");
+    await until(async () => (await rowsOf("google-tasks")).some((row) => row.title === "Cadeau kopen"), "the task was not saved");
+    const rows = await rowsOf("google-tasks");
+    assert.ok(!rows.some((row) => row.title === "Wordt geannuleerd" || /Naamloze|Untitled/.test(row.title)));
+    assert.equal(rows.find((row) => row.title === "Cadeau kopen").values[TASK.list], "Privé");
+  });
+
+  test("a task dragged to another list moves there", async () => {
+    const page = session.main;
+    await page.locator(".task-item", { hasText: "Mail aan team" }).dragTo(page.locator(".task-group", { hasText: "Privé" }).locator(".task-group-heading"));
+    await until(async () => (await rowsOf("google-tasks")).find((row) => row.id === "t1").values[TASK.list] === "Privé", "the task did not move");
+  });
+
+  test("quick add puts a task in that list", async () => {
+    const page = session.main;
+    await page.locator(".task-group", { hasText: "Werk" }).locator(".task-quick-add input").fill("Notulen sturen");
+    await page.keyboard.press("Enter");
+    await until(async () => (await rowsOf("google-tasks")).some((row) => row.title === "Notulen sturen" && row.values[TASK.list] === "Werk"), "the quick task was not added");
+  });
+
+  test("an appointment added on a day starts at 09:00 for an hour and can be dragged to another day", async () => {
+    const page = session.main;
+    await page.goto(`${base}/?open=google-calendar`);
+    const day = page.locator(".calendar-day:not(.outside-month)").nth(14);
+    await day.locator(".calendar-add").click({ force: true });
+    await page.locator(".editor-title-input").fill("Etentje");
+    await page.keyboard.press("Control+Enter");
+    await until(async () => (await rowsOf("google-calendar")).some((row) => row.title === "Etentje"), "the appointment was not saved");
+    const saved = (await rowsOf("google-calendar")).find((row) => row.title === "Etentje");
+    assert.equal(saved.values[CAL.allDay], false);
+    assert.equal((new Date(saved.values[CAL.end]) - new Date(saved.values[CAL.start])) / 60_000, 60);
+    assert.equal(new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", hour: "2-digit", minute: "2-digit" }).format(new Date(saved.values[CAL.start])), "09:00");
+    await page.locator(".calendar-event", { hasText: "Etentje" }).dragTo(page.locator(".calendar-day:not(.outside-month)").nth(16));
+    await until(async () => (await rowsOf("google-calendar")).find((row) => row.title === "Etentje").values[CAL.start] !== saved.values[CAL.start], "the appointment did not move");
+    const moved = (await rowsOf("google-calendar")).find((row) => row.title === "Etentje");
+    assert.equal((new Date(moved.values[CAL.start]) - new Date(saved.values[CAL.start])) / 86_400_000, 2);
   });
 });

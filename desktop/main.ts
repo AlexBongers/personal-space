@@ -1,4 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import { join } from "node:path";
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, safeStorage, shell, Tray } from "electron";
@@ -12,6 +13,8 @@ import { importMarkdown } from "./markdown-import.ts";
 import { exportMarkdown } from "./markdown-export.ts";
 import { migrate } from "./migrate.ts";
 import { QUICK_NOTE_HTML, addQuickNote } from "./quick-note.ts";
+import { addReminder, dueReminders, loadReminders, removeReminder, saveReminders, settle, snooze } from "./reminders.ts";
+import { REMINDERS_HTML } from "./reminders-ui.ts";
 import { restoreBackup } from "./restore.ts";
 import { startLocalServer } from "./server.ts";
 import { createEmptyPage } from "../app/personal-space/model.ts";
@@ -22,6 +25,8 @@ const QUICK_NOTE_SHORTCUT = "CommandOrControl+Alt+N";
 const SHOW_APP_SHORTCUT = "CommandOrControl+Alt+P";
 const REMINDER_LEAD_MINUTES = 10;
 const AGENDA_INTERVAL_MS = 60 * 1000;
+const REMINDER_INTERVAL_MS = 15 * 1000;
+const REMINDERS_SHORTCUT = "CommandOrControl+Alt+R";
 
 let window: BrowserWindow | null = null;
 let noteWindow: BrowserWindow | null = null;
@@ -33,11 +38,14 @@ let waitingForGoogle = false;
 let syncTimer: NodeJS.Timeout | null = null;
 let sync: ReturnType<typeof createBackgroundSync> | null = null;
 let agendaTimer: NodeJS.Timeout | null = null;
+let reminderTimer: NodeJS.Timeout | null = null;
+let remindersWindow: BrowserWindow | null = null;
 const announcedEvents = new Set<string>();
 const log = (message: string) => writeLog(dataDir(), message);
 
 const dataDir = () => app.getPath("userData");
 const boundsFile = () => join(dataDir(), "window.json");
+const remindersFile = () => join(dataDir(), "reminders.json");
 const workspaceDb = () => database as unknown as WorkspaceDatabase;
 
 const loadBounds = () => {
@@ -140,6 +148,50 @@ const restoreFromBackup = async () => {
   app.exit(0);
 };
 
+const openReminders = () => {
+  if (remindersWindow) { remindersWindow.focus(); return; }
+  remindersWindow = new BrowserWindow({
+    width: 560,
+    height: 520,
+    title: "Herinneringen",
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, preload: join(import.meta.dirname, "preload.cjs") },
+  });
+  remindersWindow.on("closed", () => { remindersWindow = null; });
+  void remindersWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(REMINDERS_HTML)}`);
+};
+
+/** A pop-up stays on screen until it is handled; it can be snoozed instead of dismissed. */
+const showPopup = async (text: string) => {
+  app.focus({ steal: true });
+  const snoozeMinutes = [0, 10, 60];
+  const { response } = await dialog.showMessageBox({ type: "info", message: text, detail: "Herinnering van Personal Space", buttons: ["Klaar", "Over 10 minuten", "Over 1 uur"], defaultId: 0, cancelId: 0 });
+  if (snoozeMinutes[response] > 0) {
+    const now = new Date();
+    saveReminders(remindersFile(), settle(loadReminders(remindersFile()), [], now, [snooze({ id: randomUUID(), text, at: "", repeat: "none", popup: true }, snoozeMinutes[response], now)]));
+  }
+};
+
+const checkReminders = () => {
+  const now = new Date();
+  const all = loadReminders(remindersFile());
+  const due = dueReminders(all, now);
+  if (!due.length) return;
+  // Save the next state before showing anything, so a pop-up that stays open is never fired twice.
+  saveReminders(remindersFile(), settle(all, due, now));
+  for (const reminder of due) {
+    notify("Herinnering", reminder.text);
+    if (reminder.popup) void showPopup(reminder.text);
+  }
+};
+
+const sendTestNotification = () => {
+  if (!Notification.isSupported()) {
+    void dialog.showMessageBox({ type: "warning", message: "Meldingen worden niet ondersteund op dit systeem." });
+    return;
+  }
+  notify("Personal Space", "Meldingen werken. Staat deze niet in beeld? Zet ze aan bij Systeeminstellingen, Meldingen.");
+};
+
 const noteFromClipboard = async () => {
   const text = await clipboard.readText();
   if (!text.trim()) { notify("Klembord is leeg", "Kopieer eerst wat tekst."); return; }
@@ -185,6 +237,7 @@ const createMenus = () => {
       submenu: [
         { label: "Snelle notitie", accelerator: QUICK_NOTE_SHORTCUT, click: openQuickNote },
         { label: "Klembord als notitie", click: () => { void noteFromClipboard(); } },
+        { label: "Nieuwe herinnering...", accelerator: REMINDERS_SHORTCUT, click: openReminders },
         { label: "Nu synchroniseren", click: () => { void sync?.run(); } },
         { type: "separator" },
         { label: "Importeer Markdown-map...", click: () => { void importFromFolder(); } },
@@ -194,6 +247,7 @@ const createMenus = () => {
         { label: "Maak back-up nu", click: () => { if (database) backupDatabase(database, dataDir(), new Date()); } },
         { label: "Open datamap", click: () => { void shell.openPath(dataDir()); } },
         { label: "Open logbestand", click: openLog },
+        { label: "Stuur test-melding", click: sendTestNotification },
         { label: "Instellingen...", accelerator: "CommandOrControl+,", click: openSettings },
         { type: "separator" },
         { label: "Start bij inloggen", type: "checkbox", checked: openAtLogin, click: toggleLaunchAtLogin },
@@ -218,8 +272,10 @@ const updateAgenda = async () => {
     { label: "Open Personal Space", click: showWindow },
     { label: "Snelle notitie", click: openQuickNote },
     { label: "Klembord als notitie", click: () => { void noteFromClipboard(); } },
+    { label: "Nieuwe herinnering...", click: openReminders },
     { label: "Nu synchroniseren", click: () => { void sync?.run(); } },
     { type: "separator" },
+    ...section("Herinneringen", loadReminders(remindersFile()).slice(0, 3).map((reminder) => `${new Date(reminder.at).toLocaleString("nl-NL", { dateStyle: "short", timeStyle: "short" })}  ${reminder.text}`)),
     ...section("Agenda vandaag", day.events.map((event) => event.label)),
     ...section("Taken (vandaag en achterstallig)", day.tasks),
     { label: "Stop", role: "quit" },
@@ -265,11 +321,34 @@ const start = async () => {
     return true;
   });
   ipcMain.on("quick-note:close", () => noteWindow?.close());
+  ipcMain.handle("reminders:list", () => loadReminders(remindersFile()));
+  ipcMain.handle("reminders:add", (_event, input: Parameters<typeof addReminder>[1]) => {
+    try {
+      const reminders = addReminder(loadReminders(remindersFile()), input, randomUUID());
+      saveReminders(remindersFile(), reminders);
+      void updateAgenda();
+      return { reminders };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle("reminders:remove", (_event, id: string) => {
+    const reminders = removeReminder(loadReminders(remindersFile()), String(id));
+    saveReminders(remindersFile(), reminders);
+    void updateAgenda();
+    return reminders;
+  });
+  ipcMain.on("reminders:close", () => remindersWindow?.close());
+  // Reminders that came due while the app was closed fire right away.
+  checkReminders();
+  reminderTimer = setInterval(checkReminders, REMINDER_INTERVAL_MS);
   globalShortcut.register(QUICK_NOTE_SHORTCUT, openQuickNote);
   globalShortcut.register(SHOW_APP_SHORTCUT, showWindow);
+  globalShortcut.register(REMINDERS_SHORTCUT, openReminders);
   app.dock?.setMenu(Menu.buildFromTemplate([
     { label: "Snelle notitie", click: openQuickNote },
     { label: "Klembord als notitie", click: () => { void noteFromClipboard(); } },
+    { label: "Nieuwe herinnering...", click: openReminders },
   ]));
 
   createMenus();
@@ -288,6 +367,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("will-quit", () => {
     if (syncTimer) clearInterval(syncTimer);
     if (agendaTimer) clearInterval(agendaTimer);
+    if (reminderTimer) clearInterval(reminderTimer);
     globalShortcut.unregisterAll();
     server?.close();
     database?.close();

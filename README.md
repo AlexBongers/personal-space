@@ -157,6 +157,14 @@ The macOS app adds a few things that the Cloudflare site does not have:
 - **Import Markdown folder**: **Bestand > Importeer Markdown-map...** is the reverse of the export. Files become
   pages, a folder next to a file of the same name holds its subpages, and everything lands under an "Import" page.
 - **Export as PDF**: **Bestand > Exporteer als PDF...** prints the page that is open in the window.
+- **Reminders and notifications**: **Bestand > Nieuwe herinnering...** (`Cmd+Option+R`) opens a window to add reminders
+  with a time, optionally repeating daily or weekly. Each one arrives as a macOS notification. With
+  "Pop-up die blijft staan" it also opens a dialog that stays until you press Klaar or postpone it by
+  10 minutes or an hour. Reminders are stored in `reminders.json`, checked every 15 seconds, and one
+  that came due while the app was closed fires at the next start. **Stuur test-melding** checks that
+  notifications work. The first notification makes macOS ask for permission; if it never shows up,
+  enable Personal Space under System Settings > Notifications. Focus modes silence notifications but
+  not pop-ups.
 - **Show the app** from anywhere with `Cmd+Option+P`.
 - **Settings and log**: `Cmd+,` opens `config.json`; **Open logbestand** opens `app.log`, which records
   failed background syncs. The daily backup is also checked while the app keeps running.

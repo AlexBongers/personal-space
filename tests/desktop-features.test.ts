@@ -96,12 +96,11 @@ test("the port defaults to 3210 and can be set in config.json", () => {
 type Call = { path: string; method: string; body?: string; origin?: string };
 const fakeApp = (responses: Record<string, unknown>) => {
   const calls: Call[] = [];
-  const fetchImpl = (async (url: string, init: RequestInit = {}) => {
-    const path = url.replace("http://localhost:3210", "");
+  const fetchImpl = (async (path: string, init: RequestInit = {}) => {
     calls.push({ path, method: init.method ?? "GET", body: init.body as string | undefined, origin: (init.headers as Record<string, string>).Origin });
     const body = responses[path.split("?")[0]];
     return body === undefined ? new Response("{}", { status: 404 }) : new Response(JSON.stringify(body));
-  }) as unknown as typeof fetch;
+  });
   return { calls, fetchImpl };
 };
 
@@ -109,7 +108,7 @@ test("background sync refreshes Parro, hands over the messages and sends the ori
   const messages = [{ id: "m1", unread: true, title: "Schoolreis", sender: "Juf Anna" }];
   const { calls, fetchImpl } = fakeApp({ "/api/parro/messages": { connectionState: "connected", unread: 1, messages }, "/api/parro/refresh": {} });
   const reports: unknown[] = [];
-  const sync = createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => true, onParro: (list, unread) => reports.push([list, unread]), onGmail: () => {}, fetchImpl });
+  const sync = createBackgroundSync({ origin: "http://localhost:3210", isWindowOpen: () => true, onParro: (list, unread) => reports.push([list, unread]), onGmail: () => {}, fetch: fetchImpl });
   await sync.run();
   assert.deepEqual(reports, [[messages, 1]]);
   assert.ok(calls.some((call) => call.path === "/api/parro/refresh" && call.method === "POST" && call.origin === "http://localhost:3210"));
@@ -119,17 +118,17 @@ test("Gmail is only reported when it is connected", async () => {
   const inbox: InboxMessage[] = [{ id: "g1", unread: true, subject: "Factuur", sender: "Bank" }];
   const connected = fakeApp({ "/api/gmail/inbox": { state: "connected", messages: inbox } });
   const reported: unknown[] = [];
-  await createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => true, onParro: () => {}, onGmail: (list) => reported.push(list), fetchImpl: connected.fetchImpl }).run();
+  await createBackgroundSync({ origin: "http://localhost:3210", isWindowOpen: () => true, onParro: () => {}, onGmail: (list) => reported.push(list), fetch: connected.fetchImpl }).run();
   assert.deepEqual(reported, [inbox]);
   const unconfigured = fakeApp({ "/api/gmail/inbox": { state: "unconfigured", messages: [] } });
-  await createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => true, onParro: () => {}, onGmail: (list) => reported.push(list), fetchImpl: unconfigured.fetchImpl }).run();
+  await createBackgroundSync({ origin: "http://localhost:3210", isWindowOpen: () => true, onParro: () => {}, onGmail: (list) => reported.push(list), fetch: unconfigured.fetchImpl }).run();
   assert.equal(reported.length, 1);
 });
 
 test("Google sync waits for its own interval", async () => {
   const responses = { "/api/google-tasks/status": { connected: true }, "/api/workspace": { items: [], revision: 1 }, "/api/google-tasks/sync": {} };
   const app = fakeApp(responses);
-  const sync = createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => false, onParro: () => {}, onGmail: () => {}, googleEveryMs: 60_000, fetchImpl: app.fetchImpl });
+  const sync = createBackgroundSync({ origin: "http://localhost:3210", isWindowOpen: () => false, onParro: () => {}, onGmail: () => {}, googleEveryMs: 60_000, fetch: app.fetchImpl });
   await sync.run();
   await sync.run();
   assert.equal(app.calls.filter((call) => call.path === "/api/google-tasks/sync").length, 1);
@@ -144,18 +143,18 @@ test("Google sync is skipped while a window is open and runs when it is closed",
     "/api/google-tasks/sync": {},
   };
   const open = fakeApp(responses);
-  await createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => true, onParro: () => {}, onGmail: () => {}, fetchImpl: open.fetchImpl }).run();
+  await createBackgroundSync({ origin: "http://localhost:3210", isWindowOpen: () => true, onParro: () => {}, onGmail: () => {}, fetch: open.fetchImpl }).run();
   assert.ok(!open.calls.some((call) => call.path.endsWith("/sync")));
 
   const closed = fakeApp(responses);
-  await createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => false, onParro: () => {}, onGmail: () => {}, fetchImpl: closed.fetchImpl }).run();
+  await createBackgroundSync({ origin: "http://localhost:3210", isWindowOpen: () => false, onParro: () => {}, onGmail: () => {}, fetch: closed.fetchImpl }).run();
   const sent = closed.calls.find((call) => call.path === "/api/google-tasks/sync");
   assert.equal(JSON.parse(sent?.body ?? "{}").baseRevision, 7);
   assert.ok(!closed.calls.some((call) => call.path === "/api/google-calendar/sync"));
 });
 
 test("a failing server does not stop background sync", async () => {
-  const sync = createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => false, onParro: () => {}, onGmail: () => {}, fetchImpl: (async () => { throw new Error("down"); }) as unknown as typeof fetch });
+  const sync = createBackgroundSync({ origin: "http://localhost:3210", isWindowOpen: () => false, onParro: () => {}, onGmail: () => {}, fetch: async () => { throw new Error("down"); } });
   await sync.run();
   await sync.run();
 });

@@ -40,7 +40,7 @@ test("the briefing comes once per day from the configured time", () => {
 });
 
 test("the briefing text counts the day", () => {
-  const day = { events: [{ id: "e", label: "09:00  Teamoverleg" }, { id: "f", label: "14:00  Tandarts" }], tasks: [{ id: "t", label: "Boodschappen" }], dueCount: 1 };
+  const day = { events: [{ id: "e", title: "Teamoverleg", label: "09:00  Teamoverleg", start: 0 }, { id: "f", title: "Tandarts", label: "14:00  Tandarts", start: 0 }], tasks: [{ id: "t", label: "Boodschappen" }], dueCount: 1 };
   assert.equal(briefingText(day, 1), "2 afspraken, 1 taak, 1 herinnering. Eerste: 09:00 Teamoverleg.");
   assert.equal(briefingText({ events: [], tasks: [], dueCount: 0 }, 0), "Niets gepland vandaag. Geniet ervan.");
 });

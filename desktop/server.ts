@@ -23,15 +23,21 @@ export type LocalServerOptions = {
   port: number;
 };
 
+export type LocalServer = {
+  server: Server;
+  origin: string;
+  /** Calls the Worker inside this process, without a socket. Used by the app's own background work. */
+  fetch: (path: string, init?: RequestInit) => Promise<Response>;
+  close: () => void;
+};
+
+export class PortInUseError extends Error {}
+
 /** Serves the built client assets first, then hands everything else to the Worker, like Cloudflare does. */
-export const startLocalServer = async ({ distDir, database, env, port }: LocalServerOptions): Promise<Server> => {
+export const startLocalServer = async ({ distDir, database, env, port }: LocalServerOptions): Promise<LocalServer> => {
   const { default: worker } = await import(pathToFileURL(resolve(distDir, "server", "index.js")).href) as { default: Worker };
   const serveAsset = sirv(join(distDir, "client"), { etag: true, dev: false });
-  const pending = new Set<Promise<unknown>>();
-  const context = {
-    waitUntil: (promise: Promise<unknown>) => { pending.add(promise); promise.finally(() => pending.delete(promise)).catch(() => {}); },
-    passThroughOnException: () => {},
-  };
+  const context = { waitUntil: (promise: Promise<unknown>) => { promise.catch(() => {}); }, passThroughOnException: () => {} };
   const workerEnv = { ...env, DB: database, ASSETS: { fetch: (request: Request) => worker.fetch(request, workerEnv, context) } };
 
   const handleWorker = getRequestListener((request) => worker.fetch(request, workerEnv, context));
@@ -43,12 +49,20 @@ export const startLocalServer = async ({ distDir, database, env, port }: LocalSe
     }
     handleWorker(request, response);
   });
-  server.on("close", () => { void Promise.allSettled(pending); });
   await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
+    server.once("error", (error: NodeJS.ErrnoException) => reject(error.code === "EADDRINUSE"
+      ? new PortInUseError(`Poort ${port} is al in gebruik. Draait Personal Space al, of 'npm run local'? Kies anders een andere poort in config.json.`)
+      : error));
     server.listen(port, "127.0.0.1", resolve);
   });
-  return server;
+
+  const origin = `http://localhost:${port}`;
+  return {
+    server,
+    origin,
+    fetch: (path, init) => worker.fetch(new Request(`${origin}${path}`, init), workerEnv, context),
+    close: () => { server.closeAllConnections(); server.close(); },
+  };
 };
 
 const isLocalHost = (host = "") => /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host);

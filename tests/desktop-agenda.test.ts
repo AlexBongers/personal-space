@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { summarizeDay, upcomingEvents } from "../desktop/agenda.ts";
+import { createDayCache, createEventAnnouncer, summarizeDay } from "../desktop/agenda.ts";
 import { createBackgroundSync } from "../desktop/background-sync.ts";
 import { writeLog } from "../desktop/logger.ts";
 import { exportMarkdown } from "../desktop/markdown-export.ts";
@@ -34,11 +34,30 @@ test("a workspace without Google data gives an empty summary", () => {
   assert.deepEqual(summarizeDay([], NOW), { events: [], tasks: [], dueCount: 0 });
 });
 
-test("reminders fire once for events starting within the lead time", () => {
-  const announced = new Set<string>();
-  assert.deepEqual(upcomingEvents(items, NOW, 10, announced), [{ id: "e1", title: "Teamoverleg", time: "12:05" }]);
-  assert.deepEqual(upcomingEvents(items, NOW, 10, announced), []);
-  assert.deepEqual(upcomingEvents(items, new Date("2026-06-10T13:55:00Z"), 10, announced), [{ id: "e2", title: "Tandarts", time: "16:00" }]);
+test("event notifications fire once and are forgotten the next day", () => {
+  const announce = createEventAnnouncer();
+  const day = summarizeDay(items, NOW);
+  assert.deepEqual(announce(day, NOW, 10), [{ id: "e1", title: "Teamoverleg", time: "12:05" }]);
+  assert.deepEqual(announce(day, NOW, 10), []);
+  const later = new Date("2026-06-10T13:55:00Z");
+  assert.deepEqual(announce(summarizeDay(items, later), later, 10), [{ id: "e2", title: "Tandarts", time: "16:00" }]);
+  const tomorrow = new Date("2026-06-11T10:00:00Z");
+  const repeat = { events: [{ id: "e1", title: "Teamoverleg", label: "", start: tomorrow.getTime() + 5 * 60_000 }], tasks: [], dueCount: 0 };
+  assert.deepEqual(announce(repeat, tomorrow, 10).map((event) => event.id), ["e1"]);
+});
+
+test("the day summary is rebuilt only when the revision or the date changes", async () => {
+  let revision = 1;
+  let reads = 0;
+  const today = createDayCache(() => revision, async () => { reads++; return items; });
+  await today(NOW);
+  await today(new Date(NOW.getTime() + 60_000));
+  assert.equal(reads, 1);
+  revision = 2;
+  await today(NOW);
+  assert.equal(reads, 2);
+  assert.equal((await today(new Date("2026-06-11T10:00:00Z"))).dueCount, 2);
+  assert.equal(reads, 3);
 });
 
 test("the log appends lines and rotates when it grows large", () => {
@@ -84,7 +103,7 @@ test("a folder export imports back with the same page hierarchy", () => {
 
 test("background sync reports failures instead of throwing", async () => {
   const messages: string[] = [];
-  const sync = createBackgroundSync({ baseUrl: "http://localhost:3210", isWindowOpen: () => false, onParro: () => {}, onGmail: () => {}, onError: (message) => messages.push(message), fetchImpl: (async () => { throw new Error("down"); }) as unknown as typeof fetch });
+  const sync = createBackgroundSync({ origin: "http://localhost:3210", isWindowOpen: () => false, onParro: () => {}, onGmail: () => {}, onError: (message) => messages.push(message), fetch: async () => { throw new Error("down"); } });
   await sync.run();
   assert.deepEqual(messages, ["Parro-sync mislukt: down", "Gmail controleren mislukt: down", "Google-sync mislukt: down"]);
 });

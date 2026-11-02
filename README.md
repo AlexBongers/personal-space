@@ -221,6 +221,30 @@ The app icon (`desktop/icon.svg`, rendered to `icon.png`) follows the macOS icon
 makes every size from it. The menu bar uses `trayTemplate.png`, a black template image that macOS tints
 for light and dark menu bars.
 
+### How the desktop app is built
+
+`desktop/main.ts` only wires things together and handles the app's lifecycle. Each concern has a small
+module: `server.ts` (local server and in-process Worker calls), `windows.ts`, `tray.ts`, `menus.ts`,
+`notifier.ts`, `commands.ts` (everything a menu item does), `ipc.ts` (the only channels the tool windows
+can use), `scheduler.ts` (one timer for reminders, the menu bar, backups and syncs) and the testable logic
+in `agenda.ts`, `reminder-service.ts`, `background-sync.ts`, `notifications.ts`, `search.ts`,
+`natural-time.ts` and `deep-link.ts`.
+
+It is built to run for weeks:
+
+- A closed window is destroyed, so its renderer process and memory are released. With the window closed the
+  app is two processes; Chromium's network service runs inside the main process.
+- The menu bar reads one revision number per minute and only parses the workspace when it changed; its
+  menu is only rebuilt when its content changes. Reminders live in memory. Background syncs call the
+  Worker in process instead of over a socket, read every response to the end, and a pass that hangs is
+  abandoned after five minutes.
+- Unexpected errors are logged to `app.log` instead of showing crash dialogs, a crashed window reloads,
+  the scheduler catches up after the Mac wakes from sleep, a window saved on a disconnected display
+  opens on screen, and a port that is taken gives a clear message.
+
+A soak test of 60 tool windows and 300 links left the window and process count unchanged and the main
+process heap at about 9 MB.
+
 ### Desktop tests
 
 `npm test` covers the desktop modules. `npm run test:desktop` starts the real Electron app with its own

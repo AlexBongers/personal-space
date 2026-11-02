@@ -4,17 +4,19 @@ import { D1Database } from "../desktop/d1-sqlite.ts";
 import { migrate } from "../desktop/migrate.ts";
 import { startLocalServer } from "../desktop/server.ts";
 
+let local;
 let server;
 let base;
 
 before(async () => {
   const database = new D1Database(":memory:");
   migrate(database, "drizzle");
-  server = await startLocalServer({ distDir: "dist", database, env: {}, port: 0 });
+  local = await startLocalServer({ distDir: "dist", database, env: {}, port: 0 });
+  server = local.server;
   base = `http://localhost:${server.address().port}`;
 });
 
-after(() => server.close());
+after(() => local.close());
 
 test("serves the app shell", async () => {
   const response = await fetch(`${base}/`);
@@ -55,4 +57,15 @@ test("rejects a foreign Host header (DNS rebinding)", async () => {
     req.end();
   });
   assert.equal(status, 403);
+});
+
+test("the app can call the Worker in process, without a socket", async () => {
+  const response = await local.fetch("/api/workspace");
+  assert.equal(response.status, 200);
+  assert.ok((await response.json()).items.length > 0);
+});
+
+test("a port that is taken gives a clear message", async () => {
+  const database = new D1Database(":memory:");
+  await assert.rejects(startLocalServer({ distDir: "dist", database, env: {}, port: server.address().port }), /Poort \d+ is al in gebruik/);
 });

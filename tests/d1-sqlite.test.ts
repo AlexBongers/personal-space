@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { backupDatabase } from "../desktop/backup.ts";
-import { loadEnv } from "../desktop/config.ts";
+import { KeychainError, loadEnv, setKeysAside } from "../desktop/config.ts";
 import { D1Database } from "../desktop/d1-sqlite.ts";
 import { migrate } from "../desktop/migrate.ts";
 import { loadWorkspace, saveWorkspace } from "../worker/workspace-store.ts";
@@ -92,7 +92,17 @@ test("a denied Keychain gives a clear message instead of a crash", async () => {
   const working = { encryptStringAsync: async (value: string) => Buffer.from(value), decryptStringAsync: async (value: Buffer) => ({ result: value.toString(), shouldReEncrypt: false }) };
   await loadEnv(dir, working);
   const denied = { ...working, decryptStringAsync: async () => { throw new Error("User canceled"); } };
-  await assert.rejects(loadEnv(dir, denied), /Sta altijd toe/);
+  await assert.rejects(loadEnv(dir, denied), KeychainError);
+});
+
+test("unreadable keys can be set aside so new ones are made", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ps-recover-"));
+  const working = { encryptStringAsync: async (value: string) => Buffer.from(value), decryptStringAsync: async (value: Buffer) => ({ result: value.toString(), shouldReEncrypt: false }) };
+  const old = await loadEnv(dir, working);
+  setKeysAside(dir, new Date("2026-11-03T08:00:00Z"));
+  const fresh = await loadEnv(dir, working);
+  assert.notEqual(fresh.GOOGLE_TOKEN_ENCRYPTION_KEY, old.GOOGLE_TOKEN_ENCRYPTION_KEY);
+  assert.ok(existsSync(join(dir, "keys.bin.unreadable-2026-11-03T08-00-00.000Z")));
 });
 
 test("keys are re-encrypted when the Keychain asks for it", async () => {

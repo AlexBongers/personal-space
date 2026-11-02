@@ -64,8 +64,9 @@ describe("Personal Space desktop app", () => {
   after(async () => { await session?.app.close(); });
 
   test("starts as Personal Space with its data in the chosen folder", async () => {
-    const name = await session.app.evaluate(({ app }) => [app.getName(), app.getPath("userData")]);
-    assert.deepEqual(name, ["Personal Space", session.dataDir]);
+    // The internal name must stay "personal-space": the Keychain key that unlocks keys.bin is stored under it.
+    const name = await session.app.evaluate(({ app, Menu }) => [app.getName(), app.getPath("userData"), Menu.getApplicationMenu().items[0].label]);
+    assert.deepEqual(name, ["personal-space", session.dataDir, "Personal Space"]);
     for (const file of ["personal-space.sqlite", "keys.bin", "config.json"]) assert.ok(existsSync(join(session.dataDir, file)), file);
     assert.equal(new URL(session.main.url()).port, String(session.port));
   });

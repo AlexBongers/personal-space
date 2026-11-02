@@ -8,7 +8,7 @@ import { createBackgroundSync } from "./background-sync.ts";
 import { contextMenuTemplate } from "./context-menu.ts";
 import { parseDeepLink, URL_SCHEME } from "./deep-link.ts";
 import { backupDatabase } from "./backup.ts";
-import { loadEnv, loadSettings, type Settings } from "./config.ts";
+import { KeychainError, loadEnv, loadSettings, setKeysAside, type Settings } from "./config.ts";
 import { D1Database } from "./d1-sqlite.ts";
 import { writeLog } from "./logger.ts";
 import { importMarkdown } from "./markdown-import.ts";
@@ -309,7 +309,23 @@ const toggleLaunchAtLogin = () => {
 const createMenus = () => {
   const openAtLogin = app.getLoginItemSettings().openAtLogin;
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    { role: "appMenu" },
+    {
+      // Spelled out because the internal app name stays "personal-space"; see the note at app.setPath.
+      label: "Personal Space",
+      submenu: [
+        { label: "Over Personal Space", role: "about" },
+        { type: "separator" },
+        { label: "Instellingen...", accelerator: "CommandOrControl+,", click: openSettings },
+        { type: "separator" },
+        { role: "services" },
+        { type: "separator" },
+        { label: "Verberg Personal Space", role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { label: "Stop Personal Space", role: "quit" },
+      ],
+    },
     {
       label: "Bestand",
       submenu: [
@@ -327,7 +343,6 @@ const createMenus = () => {
         { label: "Open datamap", click: () => { void shell.openPath(dataDir()); } },
         { label: "Open logbestand", click: openLog },
         { label: "Stuur test-melding", click: sendTestNotification },
-        { label: "Instellingen...", accelerator: "CommandOrControl+,", click: openSettings },
         { type: "separator" },
         { label: "Start bij inloggen", type: "checkbox", checked: openAtLogin, click: toggleLaunchAtLogin },
         { role: "close" },
@@ -380,6 +395,27 @@ const createTray = () => {
   void updateAgenda();
 };
 
+/** When the Keychain cannot unlock keys.bin, offer new keys instead of a dead end. */
+const loadKeysOrRecover = async () => {
+  try {
+    return await loadEnv(dataDir(), safeStorage);
+  } catch (error) {
+    if (!(error instanceof KeychainError)) throw error;
+    const { response } = await dialog.showMessageBox({
+      type: "warning",
+      message: "De sleutels konden niet worden gelezen",
+      detail: `${error.message}\n\nJe pagina's en databases zijn veilig; die zijn niet versleuteld. Met nieuwe sleutels moet je Google en Parro opnieuw koppelen. De oude sleutels blijven bewaard in de datamap.`,
+      buttons: ["Nieuwe sleutels maken", "Stop"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response !== 0) throw new Error("Gestopt zonder sleutels.");
+    log("Onleesbare sleutels apart gezet; nieuwe sleutels gemaakt.");
+    setKeysAside(dataDir());
+    return loadEnv(dataDir(), safeStorage);
+  }
+};
+
 const start = async () => {
   mkdirSync(dataDir(), { recursive: true });
   database = new D1Database(join(dataDir(), "personal-space.sqlite"));
@@ -389,7 +425,7 @@ const start = async () => {
   notifyState = loadNotifyState(notifyStateFile());
   const port = settings.port;
   origin = `http://localhost:${port}`;
-  server = await startLocalServer({ distDir: import.meta.dirname, database, env: await loadEnv(dataDir(), safeStorage), port });
+  server = await startLocalServer({ distDir: import.meta.dirname, database, env: await loadKeysOrRecover(), port });
 
   sync = createBackgroundSync({
     baseUrl: origin,
@@ -477,11 +513,10 @@ const start = async () => {
   for (const link of pendingLinks.splice(0)) receiveLink(link);
 };
 
-// The data folder keeps its original name (~/Library/Application Support/personal-space) while menus say "Personal Space".
+// The internal app name stays "personal-space": macOS keeps the key that unlocks keys.bin in the Keychain under
+// "<app name> Safe Storage", so renaming the app would lose the Google and Parro keys. Menus spell out "Personal Space".
 // PERSONAL_SPACE_DATA_DIR lets tests and a second profile use their own folder.
-const userData = process.env.PERSONAL_SPACE_DATA_DIR || app.getPath("userData");
-app.setName("Personal Space");
-app.setPath("userData", userData);
+if (process.env.PERSONAL_SPACE_DATA_DIR) app.setPath("userData", process.env.PERSONAL_SPACE_DATA_DIR);
 
 app.on("web-contents-created", (_event, contents) => {
   contents.on("context-menu", (_menuEvent, params) => {

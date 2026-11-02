@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LocalEnv } from "./server.ts";
 
@@ -33,21 +33,31 @@ export const DEFAULT_PORT = DEFAULT_SETTINGS.port;
 
 const newKey = () => randomBytes(32).toString("base64url");
 
-const KEYCHAIN_HELP = "Personal Space kon zijn sleutels niet uit de macOS-sleutelhanger lezen. Start de app opnieuw en kies 'Sta altijd toe' als macOS om toegang vraagt.";
+/** The stored keys could not be decrypted: the Keychain refused access, or its key is not the one keys.bin was made with. */
+export class KeychainError extends Error {}
+
+const KEYCHAIN_HELP = "Personal Space kon zijn sleutels niet ontsleutelen met de macOS-sleutelhanger. Dat gebeurt als de toegang werd geweigerd of als de sleutel in de sleutelhanger niet meer dezelfde is.";
 
 /** Encryption keys are created once and kept encrypted with the macOS Keychain. */
 const loadKeys = async (dataDir: string, storage: SecretStorage): Promise<Keys> => {
   const path = join(dataDir, "keys.bin");
   if (existsSync(path)) {
-    const decrypted = await storage.decryptStringAsync(readFileSync(path)).catch(() => { throw new Error(KEYCHAIN_HELP); });
+    const decrypted = await storage.decryptStringAsync(readFileSync(path)).catch(() => { throw new KeychainError(KEYCHAIN_HELP); });
     if (decrypted.shouldReEncrypt) writeFileSync(path, await storage.encryptStringAsync(decrypted.result), { mode: 0o600 });
     return JSON.parse(decrypted.result) as Keys;
   }
   const keys = { google: newKey(), parro: newKey() };
-  const encrypted = await storage.encryptStringAsync(JSON.stringify(keys)).catch(() => { throw new Error(KEYCHAIN_HELP); });
+  const encrypted = await storage.encryptStringAsync(JSON.stringify(keys)).catch(() => { throw new KeychainError(KEYCHAIN_HELP); });
   writeFileSync(path, encrypted, { mode: 0o600 });
   return keys;
 };
+
+/**
+ * Sets unreadable keys aside so new ones are made on the next load. The workspace is not encrypted and stays intact;
+ * only the Google and Parro connections must be made again. The old file is kept in case the Keychain key comes back.
+ */
+export const setKeysAside = (dataDir: string, now = new Date()) =>
+  renameSync(join(dataDir, "keys.bin"), join(dataDir, `keys.bin.unreadable-${now.toISOString().replaceAll(":", "-")}`));
 
 /** config.json is for the user to edit: it holds the Google OAuth client. A template is written on first start. */
 export const loadUserConfig = (dataDir: string): UserConfig => {

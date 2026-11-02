@@ -6,14 +6,18 @@ export type BackgroundSyncOptions = {
   isWindowOpen: () => boolean;
   /** Called after each Parro check with the unread count; `increased` is true when new messages arrived. */
   onParroUnread: (unread: number, increased: boolean) => void;
+  /** Called with a short description when a pass fails; the next interval tries again. */
+  onError?: (message: string) => void;
   fetchImpl?: Fetch;
 };
 
 type Workspace = { items: unknown[]; revision: number };
 const WRITER = { protocolVersion: 2, capabilities: ["trash"] };
 
+const describe = (error: unknown) => error instanceof Error ? error.message : String(error);
+
 /** Runs the page-driven syncs from the app itself, so Parro and Google stay current while the window is closed. */
-export const createBackgroundSync = ({ baseUrl, isWindowOpen, onParroUnread, fetchImpl = fetch }: BackgroundSyncOptions) => {
+export const createBackgroundSync = ({ baseUrl, isWindowOpen, onParroUnread, onError = () => {}, fetchImpl = fetch }: BackgroundSyncOptions) => {
   let lastUnread: number | null = null;
   let running = false;
 
@@ -53,8 +57,8 @@ export const createBackgroundSync = ({ baseUrl, isWindowOpen, onParroUnread, fet
     if (running) return;
     running = true;
     try {
-      await syncParro().catch(() => {});
-      if (!isWindowOpen()) await syncGoogle().catch(() => {});
+      await syncParro().catch((error: unknown) => onError(`Parro-sync mislukt: ${describe(error)}`));
+      if (!isWindowOpen()) await syncGoogle().catch((error: unknown) => onError(`Google-sync mislukt: ${describe(error)}`));
     } finally {
       running = false;
     }

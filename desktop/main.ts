@@ -1,20 +1,27 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import { join } from "node:path";
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, safeStorage, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, safeStorage, shell, Tray } from "electron";
+import { summarizeDay, upcomingEvents } from "./agenda.ts";
 import { createBackgroundSync } from "./background-sync.ts";
 import { backupDatabase } from "./backup.ts";
 import { DEFAULT_PORT, loadEnv, loadUserConfig } from "./config.ts";
 import { D1Database } from "./d1-sqlite.ts";
+import { writeLog } from "./logger.ts";
+import { importMarkdown } from "./markdown-import.ts";
 import { exportMarkdown } from "./markdown-export.ts";
 import { migrate } from "./migrate.ts";
 import { QUICK_NOTE_HTML, addQuickNote } from "./quick-note.ts";
 import { restoreBackup } from "./restore.ts";
 import { startLocalServer } from "./server.ts";
-import { loadWorkspace, type WorkspaceDatabase } from "../worker/workspace-store.ts";
+import { createEmptyPage } from "../app/personal-space/model.ts";
+import { loadWorkspace, saveWorkspace, type WorkspaceDatabase } from "../worker/workspace-store.ts";
 
 const SYNC_INTERVAL_MS = 15 * 60 * 1000;
 const QUICK_NOTE_SHORTCUT = "CommandOrControl+Alt+N";
+const SHOW_APP_SHORTCUT = "CommandOrControl+Alt+P";
+const REMINDER_LEAD_MINUTES = 10;
+const AGENDA_INTERVAL_MS = 60 * 1000;
 
 let window: BrowserWindow | null = null;
 let noteWindow: BrowserWindow | null = null;
@@ -25,6 +32,9 @@ let origin = "";
 let waitingForGoogle = false;
 let syncTimer: NodeJS.Timeout | null = null;
 let sync: ReturnType<typeof createBackgroundSync> | null = null;
+let agendaTimer: NodeJS.Timeout | null = null;
+const announcedEvents = new Set<string>();
+const log = (message: string) => writeLog(dataDir(), message);
 
 const dataDir = () => app.getPath("userData");
 const boundsFile = () => join(dataDir(), "window.json");
@@ -130,6 +140,37 @@ const restoreFromBackup = async () => {
   app.exit(0);
 };
 
+const noteFromClipboard = async () => {
+  const text = await clipboard.readText();
+  if (!text.trim()) { notify("Klembord is leeg", "Kopieer eerst wat tekst."); return; }
+  await addQuickNote(workspaceDb(), text);
+  window?.webContents.reload();
+  notify("Notitie bewaard", "Het klembord staat op de pagina Snelle notities.");
+};
+
+const exportPdf = async () => {
+  if (!window) { notify("Geen venster", "Open eerst de pagina die je wilt exporteren."); return; }
+  const target = await dialog.showSaveDialog(window, { title: "Exporteer als PDF", defaultPath: join(app.getPath("documents"), "Personal Space.pdf"), filters: [{ name: "PDF", extensions: ["pdf"] }] });
+  if (target.canceled || !target.filePath) return;
+  writeFileSync(target.filePath, await window.webContents.printToPDF({ printBackground: true }));
+  void shell.showItemInFolder(target.filePath);
+};
+
+const importFromFolder = async () => {
+  const chosen = await dialog.showOpenDialog({ title: "Kies een map met Markdown-bestanden", properties: ["openDirectory"] });
+  if (chosen.canceled || !database) return;
+  const container = { ...createEmptyPage(null), title: `Import ${new Date().toLocaleDateString("nl-NL")}`, icon: "📥" };
+  const pages = importMarkdown(chosen.filePaths[0], container.id);
+  const { items, revision } = await loadWorkspace(workspaceDb());
+  const saved = await saveWorkspace(workspaceDb(), [...items, container, ...pages], revision);
+  if (!saved.ok) { notify("Import mislukt", "De workspace veranderde tijdens het importeren. Probeer opnieuw."); return; }
+  window?.webContents.reload();
+  notify("Import klaar", `${pages.length} pagina's toegevoegd onder "${container.title}".`);
+};
+
+const openSettings = () => { void shell.openPath(join(dataDir(), "config.json")); };
+const openLog = () => { void shell.openPath(join(dataDir(), "app.log")); };
+
 const toggleLaunchAtLogin = () => {
   app.setLoginItemSettings({ openAtLogin: !app.getLoginItemSettings().openAtLogin });
   createMenus();
@@ -143,12 +184,17 @@ const createMenus = () => {
       label: "Bestand",
       submenu: [
         { label: "Snelle notitie", accelerator: QUICK_NOTE_SHORTCUT, click: openQuickNote },
+        { label: "Klembord als notitie", click: () => { void noteFromClipboard(); } },
         { label: "Nu synchroniseren", click: () => { void sync?.run(); } },
         { type: "separator" },
+        { label: "Importeer Markdown-map...", click: () => { void importFromFolder(); } },
         { label: "Exporteer als Markdown...", click: () => { void exportToFolder(); } },
+        { label: "Exporteer als PDF...", click: () => { void exportPdf(); } },
         { label: "Back-up terugzetten...", click: () => { void restoreFromBackup(); } },
         { label: "Maak back-up nu", click: () => { if (database) backupDatabase(database, dataDir(), new Date()); } },
         { label: "Open datamap", click: () => { void shell.openPath(dataDir()); } },
+        { label: "Open logbestand", click: openLog },
+        { label: "Instellingen...", accelerator: "CommandOrControl+,", click: openSettings },
         { type: "separator" },
         { label: "Start bij inloggen", type: "checkbox", checked: openAtLogin, click: toggleLaunchAtLogin },
         { role: "close" },
@@ -160,17 +206,32 @@ const createMenus = () => {
   ]));
 };
 
+const updateAgenda = async () => {
+  if (!database || !tray) return;
+  const { items } = await loadWorkspace(workspaceDb());
+  const now = new Date();
+  const day = summarizeDay(items, now);
+  tray.setTitle(day.dueCount > 0 ? String(day.dueCount) : "");
+  const section = (title: string, lines: string[]): Electron.MenuItemConstructorOptions[] =>
+    lines.length ? [{ label: title, enabled: false }, ...lines.slice(0, 8).map((label) => ({ label, enabled: false })), { type: "separator" as const }] : [];
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: "Open Personal Space", click: showWindow },
+    { label: "Snelle notitie", click: openQuickNote },
+    { label: "Klembord als notitie", click: () => { void noteFromClipboard(); } },
+    { label: "Nu synchroniseren", click: () => { void sync?.run(); } },
+    { type: "separator" },
+    ...section("Agenda vandaag", day.events.map((event) => event.label)),
+    ...section("Taken (vandaag en achterstallig)", day.tasks),
+    { label: "Stop", role: "quit" },
+  ]));
+  for (const event of upcomingEvents(items, now, REMINDER_LEAD_MINUTES, announcedEvents)) notify(event.title, `Begint om ${event.time}`);
+};
+
 const createTray = () => {
   const icon = nativeImage.createFromPath(join(import.meta.dirname, "icon.png")).resize({ width: 18, height: 18 });
   tray = new Tray(icon);
   tray.setToolTip("Personal Space");
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: "Open Personal Space", click: showWindow },
-    { label: "Snelle notitie", click: openQuickNote },
-    { label: "Nu synchroniseren", click: () => { void sync?.run(); } },
-    { type: "separator" },
-    { label: "Stop", role: "quit" },
-  ]));
+  void updateAgenda();
 };
 
 const start = async () => {
@@ -185,12 +246,17 @@ const start = async () => {
   sync = createBackgroundSync({
     baseUrl: origin,
     isWindowOpen: () => window !== null,
+    onError: log,
     onParroUnread: (unread, increased) => {
       app.dock?.setBadge(unread > 0 ? String(unread) : "");
       if (increased) notify("Nieuw Parro-bericht", `${unread} ongelezen ${unread === 1 ? "bericht" : "berichten"}`);
     },
   });
-  syncTimer = setInterval(() => { void sync?.run(); }, SYNC_INTERVAL_MS);
+  syncTimer = setInterval(() => {
+    void sync?.run();
+    if (database) backupDatabase(database, dataDir());
+  }, SYNC_INTERVAL_MS);
+  agendaTimer = setInterval(() => { updateAgenda().catch((error: unknown) => log(`Agenda bijwerken mislukt: ${error instanceof Error ? error.message : String(error)}`)); }, AGENDA_INTERVAL_MS);
   void sync.run();
 
   ipcMain.handle("quick-note:save", async (_event, text: string) => {
@@ -200,6 +266,11 @@ const start = async () => {
   });
   ipcMain.on("quick-note:close", () => noteWindow?.close());
   globalShortcut.register(QUICK_NOTE_SHORTCUT, openQuickNote);
+  globalShortcut.register(SHOW_APP_SHORTCUT, showWindow);
+  app.dock?.setMenu(Menu.buildFromTemplate([
+    { label: "Snelle notitie", click: openQuickNote },
+    { label: "Klembord als notitie", click: () => { void noteFromClipboard(); } },
+  ]));
 
   createMenus();
   createTray();
@@ -216,6 +287,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("window-all-closed", () => {});
   app.on("will-quit", () => {
     if (syncTimer) clearInterval(syncTimer);
+    if (agendaTimer) clearInterval(agendaTimer);
     globalShortcut.unregisterAll();
     server?.close();
     database?.close();

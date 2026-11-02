@@ -149,7 +149,19 @@ The macOS app adds a few things that the Cloudflare site does not have:
   and keeps the previous database in `backups/` as `before-restore-...`.
 - **Port**: set `port` in `config.json` (default 3210). Add the matching redirect URI in Google Cloud.
 
-A quick note reloads the main window to show the new page, so finish typing before you save one.
+- **Today in the menu bar**: the menu bar icon lists today's calendar events and the tasks due today or
+  overdue, and shows the number of due tasks next to the icon. It reads the synced Google data and
+  refreshes every minute.
+- **Event reminders**: a notification 10 minutes before an event starts.
+- **Clipboard as note** (**Bestand**, menu bar and Dock menu): appends the clipboard text to "Snelle notities".
+- **Import Markdown folder**: **Bestand > Importeer Markdown-map...** is the reverse of the export. Files become
+  pages, a folder next to a file of the same name holds its subpages, and everything lands under an "Import" page.
+- **Export as PDF**: **Bestand > Exporteer als PDF...** prints the page that is open in the window.
+- **Show the app** from anywhere with `Cmd+Option+P`.
+- **Settings and log**: `Cmd+,` opens `config.json`; **Open logbestand** opens `app.log`, which records
+  failed background syncs. The daily backup is also checked while the app keeps running.
+
+A quick note, a clipboard note and an import reload the main window to show the new page, so finish typing before you save one.
 
 Moving over from the Cloudflare site:
 

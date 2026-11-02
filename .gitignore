@@ -11,3 +11,6 @@ dist/
 .dev.vars
 .dev.vars.*
 *.tsbuildinfo
+desktop-build/
+release/
+.local-data/

@@ -1,0 +1,16 @@
+appId: nl.bongers.personal-space
+productName: Personal Space
+asar: false
+directories:
+  output: release
+files:
+  - desktop-build/**
+  - package.json
+  - "!node_modules/**"
+mac:
+  category: public.app-category.productivity
+  icon: desktop/icon.png
+  target: dir
+  identity: null
+dmg:
+  title: Personal Space

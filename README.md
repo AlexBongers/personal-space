@@ -94,6 +94,53 @@ The owner identity is now your Access email instead of the old Sites user id, so
 Google once more on the new domain. To test migrations locally
 first, run `npx wrangler d1 migrations apply DB --local`.
 
+## macOS app (local, Apple Silicon)
+
+Personal Space also runs as a standalone macOS app. The app is an Electron shell around the same
+Worker build: a local server on `127.0.0.1:3210` serves the client assets and hands every other
+request to the Worker, with a SQLite file instead of Cloudflare D1. No Cloudflare account or
+Access login is involved, and `app/` and `worker/` are unchanged, so the Cloudflare deployment keeps
+working.
+
+Build on your Mac (Node 22.13 or newer):
+
+```bash
+npm install
+npm run desktop:build
+```
+
+This produces `release/mac-arm64/Personal Space.app`; drag it to `/Applications`. Use
+`npm run desktop:dmg` for a disk image and `npm run desktop:dev` to run it without packaging.
+The app is not notarized, which is fine for a build made on your own Mac. If you copy a build
+from somewhere else, clear the quarantine flag once:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Personal Space.app"
+```
+
+`npm run local` runs the same server without Electron (data in `.local-data/`, configuration from
+the environment variables in `.env.example`), which is handy for development.
+
+Everything lives in `~/Library/Application Support/Personal Space/` (menu **Bestand > Open datamap**):
+
+- `personal-space.sqlite`: the workspace plus the Google and Parro connections.
+- `config.json`: your Google OAuth client (`googleClientId`, `googleClientSecret`) and the optional
+  `googleCalendarSyncOnly` calendar name. Restart the app after editing it.
+- `keys.bin`: the token encryption keys, created on first start and encrypted with the macOS Keychain.
+- `backups/`: a copy of the database once per day, the latest 14 are kept.
+
+Moving over from the Cloudflare site:
+
+1. Export the workspace there with the `•••` menu.
+2. In the app, open **Import workspace** in the `•••` menu and choose the file.
+3. Add `http://localhost:3210/api/google-tasks/callback` as a redirect URI to your Google OAuth
+   client, fill in `config.json`, and connect Tasks, Calendar and Gmail again. Google sign-in opens
+   in your default browser, because Google refuses OAuth in embedded windows.
+4. Connect Parro again; tokens are encrypted per installation and cannot be carried over.
+
+Sync stays page-driven, so it only runs while the app is open. After the move the Mac is the
+source of truth; there is no sync with the Cloudflare copy.
+
 ## Google Tasks
 
 The Google Tasks integration is optional and is disabled until its runtime configuration is present.

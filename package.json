@@ -9,18 +9,25 @@
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run build && node --experimental-test-coverage --test-coverage-include=app/personal-space/model.ts --test-coverage-include=worker/workspace-store.ts --test-coverage-lines=80 --test tests/model.test.ts tests/home-model.test.ts tests/calendar-model.test.ts tests/workspace-store.test.ts tests/workspace-trash.test.ts tests/workspace-export.test.ts tests/workspace-merge.test.ts tests/workspace-recovery.test.ts tests/workspace-persistence-controller.test.ts tests/google-tasks.test.ts tests/google-calendar.test.ts tests/google-sync.test.ts tests/slashdot.test.ts tests/news.test.ts tests/gmail.test.ts tests/parro.test.ts tests/parro-status.test.ts tests/rendered-html.test.mjs tests/performance.test.mjs tests/remote-json.test.ts tests/access.test.ts",
+    "test": "npm run build && node --experimental-test-coverage --test-coverage-include=app/personal-space/model.ts --test-coverage-include=worker/workspace-store.ts --test-coverage-lines=80 --test tests/model.test.ts tests/home-model.test.ts tests/calendar-model.test.ts tests/workspace-store.test.ts tests/workspace-trash.test.ts tests/workspace-export.test.ts tests/workspace-merge.test.ts tests/workspace-recovery.test.ts tests/workspace-persistence-controller.test.ts tests/google-tasks.test.ts tests/google-calendar.test.ts tests/google-sync.test.ts tests/slashdot.test.ts tests/news.test.ts tests/gmail.test.ts tests/parro.test.ts tests/parro-status.test.ts tests/rendered-html.test.mjs tests/performance.test.mjs tests/remote-json.test.ts tests/access.test.ts tests/d1-sqlite.test.ts tests/local-server.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "deploy": "npm run build && wrangler deploy -c dist/server/wrangler.json",
     "db:migrate": "wrangler d1 migrations apply DB --remote",
-    "db:migrate:local": "wrangler d1 migrations apply DB --local"
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "local": "npm run build && node --no-warnings desktop/serve.ts",
+    "desktop:bundle": "npm run build && node desktop/build.mjs",
+    "desktop:dev": "npm run desktop:bundle && electron .",
+    "desktop:build": "npm run desktop:bundle && electron-builder --mac --arm64 --dir",
+    "desktop:dmg": "npm run desktop:bundle && electron-builder --mac --arm64 --dmg"
   },
   "dependencies": {
+    "@hono/node-server": "2.1.6",
     "drizzle-orm": "0.45.2",
     "next": "16.3.5",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "sirv": "3.0.2"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.57.1",
@@ -31,6 +38,9 @@
     "@vitejs/plugin-react": "6.0.2",
     "@vitejs/plugin-rsc": "0.5.26",
     "drizzle-kit": "0.31.10",
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0",
+    "esbuild": "0.28.2",
     "eslint": "9.39.4",
     "eslint-config-next": "16.3.5",
     "react-server-dom-webpack": "19.2.8",
@@ -43,5 +53,6 @@
   "type": "module",
   "overrides": {
     "image-size": "2.0.4"
-  }
+  },
+  "main": "desktop-build/main.mjs"
 }

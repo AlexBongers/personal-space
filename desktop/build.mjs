@@ -18,5 +18,5 @@ await build({ ...common, entryPoints: ["desktop/main.ts"], outfile: `${out}/main
 await build({ ...common, entryPoints: ["desktop/preload.ts"], outfile: `${out}/preload.cjs`, format: "cjs", banner: {}, external: ["electron"] });
 await build({ ...common, entryPoints: ["dist/server/index.js"], outfile: `${out}/server/index.js` });
 cpSync("dist/client", `${out}/client`, { recursive: true });
-cpSync("desktop/icon.png", `${out}/icon.png`);
+for (const file of ["icon.png", "trayTemplate.png", "trayTemplate@2x.png"]) cpSync(`desktop/${file}`, `${out}/${file}`);
 cpSync("drizzle", `${out}/drizzle`, { recursive: true });

@@ -141,7 +141,9 @@ const openQuickNote = () => {
 const notify = (title: string, body: string, onClick: () => void = showWindow) => {
   const notification = new Notification({ title, body });
   notification.on("click", onClick);
+  notification.on("failed", (_event, error) => log(`Melding niet getoond (${title}): ${error}`));
   notification.show();
+  return notification;
 };
 
 const exportToFolder = async () => {
@@ -251,12 +253,26 @@ const checkReminders = () => {
   }
 };
 
+const NOTIFICATION_HELP = "Open Systeeminstellingen > Meldingen > Personal Space en zet 'Sta meldingen toe' aan. Staat Personal Space daar niet, bouw de app dan opnieuw met npm run desktop:build: macOS toont alleen meldingen van ondertekende apps. Een Focus-stand kan meldingen ook verbergen.";
+
+/** Reports back what macOS did with the test notification, instead of failing silently. */
 const sendTestNotification = () => {
   if (!Notification.isSupported()) {
     void dialog.showMessageBox({ type: "warning", message: "Meldingen worden niet ondersteund op dit systeem." });
     return;
   }
-  notify("Personal Space", "Meldingen werken. Staat deze niet in beeld? Zet ze aan bij Systeeminstellingen, Meldingen.");
+  const notification = notify("Personal Space", "Meldingen werken. Je ziet herinneringen, Parro en Gmail voortaan hier.");
+  let answered = false;
+  notification.on("show", () => { answered = true; });
+  notification.on("failed", (_event, error) => {
+    answered = true;
+    void dialog.showMessageBox({ type: "warning", message: "macOS weigerde de melding", detail: `${error}\n\n${NOTIFICATION_HELP}` });
+  });
+  setTimeout(() => {
+    if (!answered) void dialog.showMessageBox({ type: "info", message: "Geen melding gezien?", detail: NOTIFICATION_HELP, buttons: ["Open Meldingen-instellingen", "Sluit"], defaultId: 0, cancelId: 1 }).then(({ response }) => {
+      if (response === 0) void shell.openExternal("x-apple.systempreferences:com.apple.Notifications-Settings.extension");
+    });
+  }, 4000);
 };
 
 const noteFromClipboard = async () => {
@@ -389,7 +405,9 @@ const updateAgenda = async () => {
 };
 
 const createTray = () => {
-  const icon = nativeImage.createFromPath(join(import.meta.dirname, "icon.png")).resize({ width: 18, height: 18 });
+  // A "Template" image is black with transparency; macOS tints it for light and dark menu bars and picks @2x itself.
+  const icon = nativeImage.createFromPath(join(import.meta.dirname, "trayTemplate.png"));
+  icon.setTemplateImage(true);
   tray = new Tray(icon);
   tray.setToolTip("Personal Space");
   void updateAgenda();
@@ -504,6 +522,8 @@ const start = async () => {
     { label: "Zoeken...", click: () => openSearch() },
   ]));
 
+  // The packaged app takes its icon from the bundle; `npm run desktop:dev` runs Electron's own, so set it here.
+  if (process.defaultApp) app.dock?.setIcon(join(import.meta.dirname, "icon.png"));
   createMenus();
   createTray();
   // When macOS starts the app at login it stays in the menu bar until you open it.

@@ -210,8 +210,16 @@ database with a chosen backup and keeps the previous one as `before-restore-...`
 Restart the app after editing it. `app.log` (**Open logbestand**) records failed syncs and backups.
 **Start bij inloggen** in the File menu starts the app in the menu bar when you log in.
 
-The app is not signed, so after installing a new build macOS may ask whether Personal Space may use
-its key in the Keychain. Choose **Always Allow**; when it is denied the app explains this and stops.
+The build is ad-hoc signed (`identity: "-"` in `electron-builder.yml`). That needs no Apple account, and
+macOS only delivers notifications from signed apps. Every new build has a new signature, so macOS asks
+once per build whether Personal Space may use its key in the Keychain: choose **Always Allow**. If the
+key cannot be read at all, the app offers to make new keys; your pages stay intact and only Google and
+Parro must be connected again. Keep the internal name `personal-space` in `package.json`: the Keychain
+key is stored under it.
+
+The app icon (`desktop/icon.svg`, rendered to `icon.png`) follows the macOS icon grid; electron-builder
+makes every size from it. The menu bar uses `trayTemplate.png`, a black template image that macOS tints
+for light and dark menu bars.
 
 ### Desktop tests
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { useLanguage } from "./i18n";
 import type { Item } from "./types";
 import type { WorkspaceConflict } from "./workspace-merge.ts";
@@ -20,6 +20,8 @@ type WorkspaceActionsMenuProps = {
   disabled?: boolean;
   onOpenTrash?: () => void;
   onImport: (items: Item[]) => void;
+  /** Language and theme controls, shown at the top of the menu. */
+  appearance?: ReactNode;
 };
 
 const withConflictVersions = (
@@ -50,6 +52,7 @@ export function WorkspaceActionsMenu({
   disabled = false,
   onOpenTrash,
   onImport,
+  appearance,
 }: WorkspaceActionsMenuProps) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
@@ -133,7 +136,6 @@ export function WorkspaceActionsMenu({
         onClick={() => { setOpen((value) => !value); setMessage(""); }}
       >
         <span aria-hidden="true">•••</span>
-        <span className="workspace-actions-trigger-label">{t("workspaceActions.label")}</span>
       </button>
       <input
         ref={importInput}
@@ -144,6 +146,7 @@ export function WorkspaceActionsMenu({
       />
       {open && (
         <div className="workspace-actions-menu" role="menu">
+          {appearance && <div className="workspace-actions-appearance">{appearance}</div>}
           {onOpenTrash && <button type="button" role="menuitem" onClick={() => { onOpenTrash(); setOpen(false); }}>{t("workspaceActions.trash")}</button>}
           <button type="button" role="menuitem" onClick={exportWorkspace}>{t("workspaceActions.export")}</button>
           <button type="button" role="menuitem" onClick={chooseImportFile}>{t("workspaceActions.import")}</button>

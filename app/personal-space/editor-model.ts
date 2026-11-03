@@ -45,22 +45,54 @@ const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T
 
 /* ---------------------------------------------------------------- Tasks */
 
-export type TaskDraft = { title: string; list: string; due: string; notes: string; done: boolean };
+/**
+ * A reminder time on a task, as an ISO moment. Google Tasks only knows a due date, so the time stays in this
+ * app: the sync keeps it, and the desktop app shows a notification when it comes.
+ */
+export const TASK_REMINDER = "task-reminder";
+
+export const taskReminder = (row: Row) => text(row, TASK_REMINDER);
+
+export type TaskDraft = { title: string; list: string; due: string; notes: string; done: boolean; reminder: string };
 
 const isDone = (row: Row) => ["done", "completed", "complete"].includes(text(row, TASK.status).toLowerCase());
 
 export const taskDraft = (row?: Row, defaults: Partial<TaskDraft> = {}): TaskDraft => row
-  ? { title: row.title, list: text(row, TASK.list), due: text(row, TASK.due).slice(0, 10), notes: text(row, TASK.notes), done: isDone(row) }
-  : { title: "", list: "", due: "", notes: "", done: false, ...defaults };
+  ? { title: row.title, list: text(row, TASK.list), due: text(row, TASK.due).slice(0, 10), notes: text(row, TASK.notes), done: isDone(row), reminder: taskReminder(row) }
+  : { title: "", list: "", due: "", notes: "", done: false, reminder: "", ...defaults };
 
 export const taskValues = (draft: TaskDraft): Record<string, CellValue> => ({
   [TASK.status]: draft.done ? "Done" : "Open",
   [TASK.list]: draft.list.trim(),
   [TASK.due]: draft.due,
   [TASK.notes]: draft.notes.trim(),
+  [TASK_REMINDER]: draft.reminder,
 });
 
-export const canSaveTask = (draft: TaskDraft) => draft.title.trim() !== "" && (!draft.due || isDateKey(draft.due));
+export const canSaveTask = (draft: TaskDraft) => draft.title.trim() !== "" && (!draft.due || isDateKey(draft.due))
+  && (!draft.reminder || !Number.isNaN(Date.parse(draft.reminder)));
+
+export type ReminderShortcut = { key: "inHour" | "tonight" | "tomorrowMorning"; value: string };
+
+/** In an hour (on the quarter), tonight at 20:00 (or tomorrow evening when it is later), and tomorrow at 09:00. */
+export const reminderShortcuts = (now = new Date()): ReminderShortcut[] => {
+  const today = localDateKey(now);
+  const inHour = new Date(Math.ceil((now.getTime() + 60 * 60_000) / (15 * 60_000)) * 15 * 60_000);
+  const tonight = instant(today, "20:00");
+  return [
+    { key: "inHour", value: inHour.toISOString() },
+    { key: "tonight", value: (tonight > now ? tonight : instant(addDays(today, 1), "20:00")).toISOString() },
+    { key: "tomorrowMorning", value: instant(addDays(today, 1), "09:00").toISOString() },
+  ];
+};
+
+/** The Amsterdam date and time of a reminder, for a datetime-local field, and back. */
+export const reminderInput = (value: string) => {
+  if (!value || Number.isNaN(Date.parse(value))) return "";
+  const local = zoned(new Date(value));
+  return `${local.date}T${local.time}`;
+};
+export const reminderFromInput = (value: string) => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) ? instant(value.slice(0, 10), value.slice(11, 16)).toISOString() : "";
 
 /** The lists the tasks use, in alphabetical order. */
 export const taskListNames = (rows: Row[]) => [...new Set(rows.map((row) => text(row, TASK.list)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -182,8 +214,11 @@ export const withDuration = (draft: EventDraft, minutes: number): EventDraft => 
 export const durationMinutes = (draft: EventDraft) =>
   draft.allDay ? 0 : Math.round((new Date(iso(draft.endDate, draft.endTime)).getTime() - new Date(iso(draft.date, draft.startTime)).getTime()) / 60_000);
 
-/** Recurring appointments are not dragged: moving one would move the whole series in Google. */
-export const canMoveEvent = (row: Row) => !text(row, CAL.recurrence);
+/** Events from a read-only calendar such as Birthdays come from Google and cannot be changed here. */
+export const isReadOnlyEvent = (row: Row) => getValue(row, CAL.readOnly) === true;
+
+/** Recurring and read-only appointments are not dragged: moving one would move a whole series, or cannot reach Google. */
+export const canMoveEvent = (row: Row) => !text(row, CAL.recurrence) && !isReadOnlyEvent(row);
 
 /** Moves an appointment from one day to another, keeping its times and length. */
 export const moveEventValues = (row: Row, fromDay: string, toDay: string): Record<string, CellValue> => {

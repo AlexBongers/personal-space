@@ -21,8 +21,10 @@ test("renders the Personal Space workspace shell", async () => {
   assert.match(html, /Personal Space/);
   assert.match(html, /A calm place for busy minds/);
   assert.match(html, /Zoek in je ruimte/);
-  assert.match(html, />EN<|>EN<\/button>/);
-  assert.match(html, />NL<|>NL<\/button>/);
+  // Language and theme live in the workspace menu; the sidebar is grouped.
+  assert.match(html, /workspace-actions-trigger/);
+  assert.match(html, /nav-section-label">Inbox</);
+  assert.match(html, />Nieuws</);
   assert.match(html, /role="separator"/);
   assert.match(html, /Zijbalk aanpassen/);
   assert.match(html, /Hoogte van navigatie aanpassen/);

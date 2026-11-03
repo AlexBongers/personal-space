@@ -58,6 +58,8 @@ export const GOOGLE_CALENDAR_PROPERTY_IDS = {
   allDay: "calendar-all-day",
   calendar: "calendar-name",
   calendarId: "calendar-id",
+  /** True for events from a read-only calendar such as Birthdays: imported, never written back. */
+  readOnly: "calendar-read-only",
   location: "calendar-location",
   attendees: "calendar-attendees",
   recurrence: "calendar-recurrence",

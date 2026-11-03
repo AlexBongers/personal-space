@@ -23,6 +23,7 @@ export type GoogleCalendarDatabase = GoogleTasksDatabase;
 type GoogleCalendar = {
   id: string;
   summary?: string;
+  summaryOverride?: string;
   description?: string;
   accessRole?: string;
   timeZone?: string;
@@ -96,10 +97,33 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 const isCalendarWriter = (calendar: GoogleCalendar) => calendar.accessRole === "owner" || calendar.accessRole === "writer";
 
-// GOOGLE_CALENDAR_SYNC_ONLY holds one calendar name or id. When it is empty, every writable calendar syncs.
+const BIRTHDAY_NAMES = new Set(["verjaardagen", "birthdays"]);
+const isBirthdayCalendar = (calendar: GoogleCalendar) => calendar.id.endsWith("#contacts@group.v.calendar.google.com");
+
+/** The calendar names or ids in GOOGLE_CALENDAR_SYNC_ONLY, separated by commas, semicolons or new lines. */
+const selectedCalendars = (only: string | undefined) => (only || "").split(/[,;\n]/).map((name) => name.trim()).filter(Boolean);
+
+const isNamed = (calendar: GoogleCalendar, name: string) =>
+  calendar.summary === name || calendar.summaryOverride === name || calendar.id === name
+  // Google names the contacts' birthday calendar in the account's language; its id is the same everywhere.
+  || (BIRTHDAY_NAMES.has(name.toLowerCase()) && isBirthdayCalendar(calendar));
+
+// GOOGLE_CALENDAR_SYNC_ONLY holds calendar names or ids, such as "Alex Prive, Verjaardagen". When it is empty,
+// every writable calendar syncs.
 export const isSyncedCalendar = (calendar: GoogleCalendar, only: string | undefined) => {
-  const selected = only?.trim();
-  return !selected || calendar.summary === selected || calendar.id === selected;
+  const selected = selectedCalendars(only);
+  return !selected.length || selected.some((name) => isNamed(calendar, name));
+};
+
+/**
+ * The calendars a sync covers: the writable ones that are selected, plus read-only ones (such as Birthdays)
+ * that are named explicitly. Read-only calendars are only imported, never written to.
+ */
+export const syncedCalendars = (calendars: GoogleCalendar[], only: string | undefined) => {
+  const selected = selectedCalendars(only);
+  return calendars.filter((calendar) => isCalendarWriter(calendar)
+    ? isSyncedCalendar(calendar, only)
+    : selected.some((name) => isNamed(calendar, name)));
 };
 
 const calendarSchema = [
@@ -228,7 +252,7 @@ const hydrateRecurringEvents = async (token: string, calendarId: string, events:
   });
 };
 
-const listEvents = async (token: string, calendarId: string) => {
+const listEvents = async (token: string, calendarId: string, hydrate = true) => {
   const events: GoogleCalendarEvent[] = [];
   let pageToken = "";
   const now = Date.now();
@@ -248,7 +272,8 @@ const listEvents = async (token: string, calendarId: string) => {
     events.push(...(result.items || []));
     pageToken = result.nextPageToken || "";
   } while (pageToken);
-  return hydrateRecurringEvents(token, calendarId, events);
+  // Series details are only needed to edit recurring events, so read-only calendars skip those extra requests.
+  return hydrate ? hydrateRecurringEvents(token, calendarId, events) : events;
 };
 
 const textValue = (row: Row, id: string) => {
@@ -340,6 +365,7 @@ export const googleCalendarToRow = (event: GoogleCalendarEvent, calendar: Google
       [GOOGLE_CALENDAR_PROPERTY_IDS.allDay]: allDay,
       [GOOGLE_CALENDAR_PROPERTY_IDS.calendar]: calendar.summary || calendar.id,
       [GOOGLE_CALENDAR_PROPERTY_IDS.calendarId]: calendar.id,
+      [GOOGLE_CALENDAR_PROPERTY_IDS.readOnly]: Boolean(calendar.accessRole) && !isCalendarWriter(calendar),
       [GOOGLE_CALENDAR_PROPERTY_IDS.location]: event.location || "",
       [GOOGLE_CALENDAR_PROPERTY_IDS.attendees]: event.attendees?.map((attendee) => attendee.email?.trim()).filter((email): email is string => Boolean(email)).join(", ") || "",
       [GOOGLE_CALENDAR_PROPERTY_IDS.recurrence]: event.recurrence?.join("\n") || "",
@@ -393,8 +419,10 @@ ON CONFLICT(local_row_id) DO UPDATE SET calendar_id = excluded.calendar_id, remo
 const deleteMapping = (database: GoogleCalendarDatabase, localRowId: string) => database.prepare(`DELETE FROM google_calendar_mapping WHERE local_row_id = ?`).bind(localRowId);
 const replaceDatabase = (items: Item[], nextDatabase: Database) => items.map((item) => item.id === nextDatabase.id ? nextDatabase : item);
 
-const calendarForRow = (row: Row, calendars: GoogleCalendar[], mapping?: StoredMapping) => {
-  if (mapping) return calendars.find((calendar) => calendar.id === mapping.calendar_id) || null;
+const calendarForRow = (row: Row, allCalendars: GoogleCalendar[], mapping?: StoredMapping) => {
+  if (mapping) return allCalendars.find((calendar) => calendar.id === mapping.calendar_id) || null;
+  // A new local appointment always goes to a calendar that can be written to.
+  const calendars = allCalendars.filter(isCalendarWriter);
   const id = textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.calendarId).trim();
   if (id) return calendars.find((calendar) => calendar.id === id) || null;
   const title = textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.calendar).trim();
@@ -428,11 +456,12 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
     } as const;
   }
   const token = await getGoogleAccessToken(database, env);
-  const calendars = await writableCalendars(token, env);
-  if (!calendars.length) throw new GoogleCalendarError("No writable Google calendars were found", 400);
-  const remoteGroups = await Promise.all(calendars.map(async (calendar) => ({ calendar, events: await listEvents(token, calendar.id) })));
-  // Each recurring series is re-read once while listing, so those reads come off the budget first.
-  const seriesReads = remoteGroups.reduce((total, { events }) => total + new Set(events.map((event) => event.recurringEventId).filter(Boolean)).size, 0);
+  const calendars = syncedCalendars(await listCalendars(token), env.GOOGLE_CALENDAR_SYNC_ONLY);
+  if (!calendars.some(isCalendarWriter)) throw new GoogleCalendarError("No writable Google calendars were found", 400);
+  const remoteGroups = await Promise.all(calendars.map(async (calendar) => ({ calendar, events: await listEvents(token, calendar.id, isCalendarWriter(calendar)) })));
+  // Each recurring series of a writable calendar is re-read once while listing, so those reads come off the budget first.
+  const seriesReads = remoteGroups.filter(({ calendar }) => isCalendarWriter(calendar))
+    .reduce((total, { events }) => total + new Set(events.map((event) => event.recurringEventId).filter(Boolean)).size, 0);
   const budget: SubrequestBudget = { left: Math.max(0, SUBREQUEST_LIMIT - RESERVED_SUBREQUESTS - seriesReads) };
   const summary: GoogleCalendarSyncSummary = { imported: 0, exported: 0, updated: 0, removed: 0, conflicts: 0, calendarCount: calendars.length, deferred: 0 };
   const storedMappings = await readMappings(database);
@@ -506,6 +535,7 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
 
   for (const group of remoteGroups) {
     const { calendar, events } = group;
+    const readOnly = !isCalendarWriter(calendar);
     const localRows = rowsByCalendar.get(calendar.id) || [];
     const rowByRemote = new Map(localRows
       .map((row) => [remoteKey(calendar.id, textValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.id)), row] as const)
@@ -551,6 +581,8 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
       const mapping = mappingsByRemote.get(remoteKey(calendar.id, event.id));
       const existing = (mapping && rows.get(mapping.local_row_id)) || rowByRemote.get(remoteKey(calendar.id, event.id));
       if (existing?.trash) continue;
+      // A read-only event removed in the app stays removed here; Google keeps it.
+      if (mapping && !existing && readOnly) continue;
       if (mapping && !existing) {
         if (event.status !== "cancelled" && !spend(budget, WRITE_COST)) { summary.deferred += 1; continue; }
         if (event.status !== "cancelled") { await guard.check(); await deleteEvent(token, calendar.id, event.id); }
@@ -581,8 +613,13 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
       const remoteChanged = mapping
         ? event.updated !== mapping.remote_updated || event.etag !== mapping.remote_etag || remoteDataChanged
         : true;
-      if (localChanged) {
+      if (localChanged && !readOnly) {
         await pushLocal(existing, event, remoteChanged);
+      } else if (readOnly) {
+        // Local edits to a read-only event cannot reach Google, so Google's version is restored.
+        rows.set(existing.id, nextRemoteRow);
+        saveMapping(nextRemoteRow, event);
+        if ((remoteChanged || localChanged) && mapping) summary.updated += 1;
       } else {
         const nextRow = remoteChanged ? nextRemoteRow : existing;
         rows.set(existing.id, nextRow);
@@ -592,7 +629,7 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
     }
 
     for (const row of localRows) {
-      if (row.trash) continue;
+      if (row.trash || readOnly) continue;
       const mapping = mappingByLocal.get(row.id);
       if (mapping && mapping.calendar_id === calendar.id && !remoteById.has(mapping.remote_event_id)) {
         summary.conflicts += 1;
@@ -606,6 +643,9 @@ const syncWorkspace = async (database: GoogleCalendarDatabase, items: Item[], ba
   // is deleted as well. This keeps deletion genuinely two-way.
   for (const mapping of storedMappings) {
     if (rows.has(mapping.local_row_id)) continue;
+    const mappedCalendar = calendars.find((calendar) => calendar.id === mapping.calendar_id);
+    // Only events of a synced, writable calendar are deleted in Google; others keep their mapping and stay.
+    if (!mappedCalendar || !isCalendarWriter(mappedCalendar)) continue;
     if (!absentRemotes.has(remoteKey(mapping.calendar_id, mapping.remote_event_id))) {
       if (!spend(budget, WRITE_COST)) { summary.deferred += 1; continue; }
       await guard.check();

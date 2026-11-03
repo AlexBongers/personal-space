@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useState, type DragEvent } from "react";
-import { canMoveEvent, canMoveTask, eventValues, moveEventValues, taskListNames, taskValues, type EventDraft } from "./editor-model.ts";
+import { canMoveEvent, canMoveTask, eventValues, moveEventValues, taskListNames, taskReminder, taskValues, type EventDraft } from "./editor-model.ts";
 import { EventDialog } from "./EventDialog";
 import { TaskDialog } from "./TaskDialog";
 import {
@@ -37,6 +37,8 @@ type IntegrationViewProps = {
   /** Creates a row (rowId null) or updates its title and values; returns the row id. */
   onSaveRow: (rowId: string | null, title: string, values: Record<string, CellValue>) => string;
   onDeleteRow: (rowId: string, confirmation?: string) => boolean;
+  /** Opens the Google connection and sync dialog. */
+  onOpenSync?: () => void;
 };
 
 const TASK_DRAG = "application/x-personal-space-task";
@@ -82,7 +84,7 @@ function TaskQuickAdd({ list, onAdd }: { list: string; onAdd: (title: string) =>
   );
 }
 
-export function GoogleTasksInterface({ database, rows, initialRowId, onOpenDetails, onUpdateCell, onSaveRow, onDeleteRow }: IntegrationViewProps) {
+export function GoogleTasksInterface({ database, rows, initialRowId, onOpenDetails, onUpdateCell, onSaveRow, onDeleteRow, onOpenSync }: IntegrationViewProps) {
   const { language, t } = useLanguage();
   const [statusFilter, setStatusFilter] = useState<"open" | "all" | "done">("open");
   const [query, setQuery] = useState("");
@@ -91,6 +93,7 @@ export function GoogleTasksInterface({ database, rows, initialRowId, onOpenDetai
   const [dropList, setDropList] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query);
   const dueFormatter = useMemo(() => new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", { day: "numeric", month: "short", year: "numeric" }), [language]);
+  const reminderFormatter = useMemo(() => new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", { timeZone: CALENDAR_TIME_ZONE, weekday: "short", hour: "2-digit", minute: "2-digit" }), [language]);
   const liveRows = useMemo(() => database.rows.filter((row) => !row.trash), [database.rows]);
   const rowLists = useMemo(() => taskListNames(liveRows), [liveRows]);
   // Lists stay visible when their last task is dragged out: the Google lists, plus every list seen in this session.
@@ -183,6 +186,7 @@ export function GoogleTasksInterface({ database, rows, initialRowId, onOpenDetai
           <span aria-hidden="true">⌕</span>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("tasks.search")} aria-label={t("tasks.search")} />
         </label>
+        {onOpenSync && <button type="button" className="small-button" onClick={onOpenSync}>{t("google.syncButton")}</button>}
         <button type="button" className="primary-button" onClick={() => setEditor({ rowId: null, list: lists[0] || "" })}>＋ {t("tasks.newTask")}</button></div>
       </div>
 
@@ -216,6 +220,7 @@ export function GoogleTasksInterface({ database, rows, initialRowId, onOpenDetai
                       <strong>{row.title || t("database.untitledRow")}</strong>
                       <span className="task-detail-line">
                         {due && <time className={taskDueTone(due)} dateTime={due}>{formatTaskDue(due, dueFormatter)}</time>}
+                        {taskReminder(row) && <span className="task-reminder-badge" title={t("editor.reminder")}>🔔 {reminderFormatter.format(new Date(taskReminder(row)))}</span>}
                         {notes && <span className="task-notes-preview">{notes}</span>}
                       </span>
                     </button>
@@ -226,7 +231,7 @@ export function GoogleTasksInterface({ database, rows, initialRowId, onOpenDetai
               {!groupRows.length && <p className="task-group-empty">{dragging ? t("editor.dropHere") : t("editor.emptyList")}</p>}
             </div>
             {list !== "" && !deferredQuery && (
-              <TaskQuickAdd list={list} onAdd={(title) => onSaveRow(null, title, taskValues({ title, list, due: "", notes: "", done: false }))} />
+              <TaskQuickAdd list={list} onAdd={(title) => onSaveRow(null, title, taskValues({ title, list, due: "", notes: "", done: false, reminder: "" }))} />
             )}
           </section>
         ))}
@@ -312,7 +317,7 @@ function CalendarAgenda({ events, dayKey, onOpenRow }: CalendarAgendaProps) {
   </div>;
 }
 
-export function GoogleCalendarInterface({ database, rows, initialRowId, onOpenDetails, onSaveRow, onDeleteRow }: IntegrationViewProps) {
+export function GoogleCalendarInterface({ database, rows, initialRowId, onOpenDetails, onSaveRow, onDeleteRow, onOpenSync }: IntegrationViewProps) {
   const { language, t } = useLanguage();
   const [editor, setEditor] = useState<{ rowId: string | null; day: string } | null>(() => initialRowId ? { rowId: initialRowId, day: calendarTodayKey(new Date()) } : null);
   const [dropDay, setDropDay] = useState<string | null>(null);
@@ -456,6 +461,7 @@ export function GoogleCalendarInterface({ database, rows, initialRowId, onOpenDe
             <button type="button" role="tab" aria-selected={mode === view} className={mode === view ? "active" : ""} key={view} onClick={() => changeMode(view)}>{t("calendarView." + view)}</button>
           ))}
         </div>
+        {onOpenSync && <button type="button" className="small-button" onClick={onOpenSync}>{t("google.syncButton")}</button>}
         <button type="button" className="primary-button" onClick={() => addEvent()}>＋ {t("calendarView.newEvent")}</button></div>
       </div>
 

@@ -7,7 +7,7 @@
   "workers_dev": true,
   "images": { "binding": "IMAGES" },
   "vars": {
-    "GOOGLE_CALENDAR_SYNC_ONLY": "Alex Prive"
+    "GOOGLE_CALENDAR_SYNC_ONLY": "Alex Prive, Verjaardagen"
   },
   "d1_databases": [
     {

@@ -287,6 +287,13 @@ export class WorkspacePersistenceController {
     if (this.state.backendReady && !this.state.conflicts.length) await this.flush();
   }
 
+  /** Pulls a newer revision that another writer saved and merges it with unsaved local edits. */
+  async refresh(): Promise<void> {
+    if (!this.state.backendReady || this.state.conflicts.length) return;
+    const remote = normalizeEnvelope(await this.transport.load());
+    if (remote.revision > this.state.revision) this.replaceItems(remote.items, remote.revision);
+  }
+
   async beginExternalMutation(): Promise<WorkspaceMutationSession | null> {
     if (!this.state.safeToEdit || !this.state.backendReady || this.state.conflicts.length || this.state.recoveryError) return null;
     const owner = `workspace-mutation-${Date.now()}-${Math.random().toString(36).slice(2)}`;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useWritableCalendars } from "./useWritableCalendars";
 import { BlockEditor } from "./BlockEditor";
 import { GoogleCalendarInterface, GoogleTasksInterface } from "./IntegrationDatabaseViews";
 import { useLanguage } from "./i18n";
@@ -374,8 +375,7 @@ const recurrenceOptions = [
 function CalendarEventPage({ database, row, onUpdate, onBack, onSave, onDelete }: { database: Database; row: Row; onUpdate: (database: Database) => void; onBack: () => void; onSave: () => void; onDelete: () => boolean }) {
   const { t } = useLanguage();
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [calendars, setCalendars] = useState<Array<{ id: string; title: string; primary: boolean }>>([]);
-  const [calendarOptionsState, setCalendarOptionsState] = useState<"loading" | "ready" | "error">("loading");
+  const { calendars, state: calendarOptionsState } = useWritableCalendars();
   const valueFor = (propertyId: string) => valueText(getValue(row, propertyId));
   const allDay = Boolean(getValue(row, GOOGLE_CALENDAR_PROPERTY_IDS.allDay));
   const startValue = valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.start);
@@ -387,26 +387,6 @@ function CalendarEventPage({ database, row, onUpdate, onBack, onSave, onDelete }
   const link = safeExternalUrl(valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.link));
   const recurrence = valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.recurrence);
   const knownRecurrence = recurrenceOptions.some((option) => option.value === recurrence);
-
-  useEffect(() => {
-    let active = true;
-    fetch("/api/google-calendar/status", { cache: "no-store" })
-      .then(async (response) => {
-        const body = await response.json() as { calendars?: unknown };
-        if (!response.ok || !Array.isArray(body.calendars)) throw new Error("calendar-options-unavailable");
-        const nextCalendars = body.calendars.filter((entry): entry is { id: string; title: string; primary?: boolean } => (
-          typeof entry === "object" && entry !== null && typeof entry.id === "string" && typeof entry.title === "string"
-        )).map((calendar) => ({ id: calendar.id, title: calendar.title, primary: Boolean(calendar.primary) }));
-        if (active) {
-          setCalendars(nextCalendars);
-          setCalendarOptionsState("ready");
-        }
-      })
-      .catch(() => {
-        if (active) setCalendarOptionsState("error");
-      });
-    return () => { active = false; };
-  }, []);
 
   const currentCalendarId = valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.calendarId);
   const currentCalendarName = valueFor(GOOGLE_CALENDAR_PROPERTY_IDS.calendar);
@@ -715,7 +695,9 @@ function GoogleTaskPage({ database, row, onUpdate, onBack, onSave, onDelete }: {
 
 export function DatabaseView({ database, onUpdate, initialRowId, onTrashRow }: DatabaseViewProps) {
   const { t } = useLanguage();
-  const [openRowId, setOpenRowId] = useState<string | null>(initialRowId || null);
+  // Tasks and appointments open in a compact editor; other databases open the row as a page.
+  const usesEditor = database.id === GOOGLE_TASKS_DATABASE_ID || database.id === GOOGLE_CALENDAR_DATABASE_ID;
+  const [openRowId, setOpenRowId] = useState<string | null>(usesEditor ? null : initialRowId || null);
   const activeView = database.views?.[database.view.mode] || database.view;
   const openRowPage = (rowId: string) => {
     setOpenRowId(rowId);
@@ -760,7 +742,7 @@ export function DatabaseView({ database, onUpdate, initialRowId, onTrashRow }: D
     return rows;
   }, [activeView, database.properties, database.rows]);
 
-  const addRow = (initialValues: Record<string, CellValue> = {}) => {
+  const addRow = (initialValues: Record<string, CellValue> = {}, title = t("database.untitledRow")) => {
     const rowId = uid("row");
     onUpdate({
       ...database,
@@ -768,7 +750,7 @@ export function DatabaseView({ database, onUpdate, initialRowId, onTrashRow }: D
         ...database.rows,
         {
           id: rowId,
-          title: t("database.untitledRow"),
+          title,
           values: {
             ...Object.fromEntries(
               database.properties.map((entry) => [entry.id, entry.type === "checkbox" ? false : entry.type === "multi-select" ? [] : ""]),
@@ -780,6 +762,12 @@ export function DatabaseView({ database, onUpdate, initialRowId, onTrashRow }: D
         },
       ],
     });
+    return rowId;
+  };
+
+  const saveRow = (rowId: string | null, title: string, values: Record<string, CellValue>) => {
+    if (!rowId) return addRow(values, title);
+    onUpdate({ ...database, rows: database.rows.map((row) => row.id === rowId ? { ...row, title, values: { ...row.values, ...values } } : row) });
     return rowId;
   };
 
@@ -830,9 +818,10 @@ export function DatabaseView({ database, onUpdate, initialRowId, onTrashRow }: D
       <GoogleTasksInterface
         database={database}
         rows={visibleRows}
-        onOpenRow={openRowPage}
+        initialRowId={initialRowId}
+        onOpenDetails={openRowPage}
         onUpdateCell={updateCell}
-        onAddRow={addRow}
+        onSaveRow={saveRow}
         onDeleteRow={deleteRow}
       />
     );
@@ -843,9 +832,10 @@ export function DatabaseView({ database, onUpdate, initialRowId, onTrashRow }: D
       <GoogleCalendarInterface
         database={database}
         rows={visibleRows}
-        onOpenRow={openRowPage}
+        initialRowId={initialRowId}
+        onOpenDetails={openRowPage}
         onUpdateCell={updateCell}
-        onAddRow={addRow}
+        onSaveRow={saveRow}
         onDeleteRow={deleteRow}
       />
     );

@@ -1,6 +1,9 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState, type DragEvent } from "react";
+import { canMoveEvent, canMoveTask, eventValues, moveEventValues, taskListNames, taskValues, type EventDraft } from "./editor-model.ts";
+import { EventDialog } from "./EventDialog";
+import { TaskDialog } from "./TaskDialog";
 import {
   GOOGLE_CALENDAR_PROPERTY_IDS,
   GOOGLE_TASK_PROPERTY_IDS,
@@ -26,11 +29,18 @@ import type { CellValue, Database, Row } from "./types";
 type IntegrationViewProps = {
   database: Database;
   rows: Row[];
-  onOpenRow: (rowId: string) => void;
+  /** A task or appointment to open in the editor right away, for example from a notification. */
+  initialRowId?: string | null;
+  /** Opens the full page with every field, the page content and the sync details. */
+  onOpenDetails: (rowId: string) => void;
   onUpdateCell: (rowId: string, propertyId: string, value: CellValue) => void;
-  onAddRow: (initialValues?: Record<string, CellValue>) => string;
-  onDeleteRow: (rowId: string) => void;
+  /** Creates a row (rowId null) or updates its title and values; returns the row id. */
+  onSaveRow: (rowId: string | null, title: string, values: Record<string, CellValue>) => string;
+  onDeleteRow: (rowId: string, confirmation?: string) => boolean;
 };
+
+const TASK_DRAG = "application/x-personal-space-task";
+const EVENT_DRAG = "application/x-personal-space-event";
 
 const dateKey = (date: Date) => {
   const year = date.getFullYear();
@@ -61,18 +71,50 @@ function taskDueTone(value: string) {
   return value < today ? "overdue" : value === today ? "today" : "";
 }
 
-export function GoogleTasksInterface({ database, rows, onOpenRow, onUpdateCell, onAddRow, onDeleteRow }: IntegrationViewProps) {
+function TaskQuickAdd({ list, onAdd }: { list: string; onAdd: (title: string) => void }) {
+  const { t } = useLanguage();
+  const [title, setTitle] = useState("");
+  return (
+    <form className="task-quick-add" onSubmit={(event) => { event.preventDefault(); if (title.trim()) { onAdd(title.trim()); setTitle(""); } }}>
+      <span aria-hidden="true">＋</span>
+      <input value={title} placeholder={t("editor.quickAdd")} aria-label={`${t("editor.quickAdd")}: ${list}`} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setTitle(""); }} />
+    </form>
+  );
+}
+
+export function GoogleTasksInterface({ database, rows, initialRowId, onOpenDetails, onUpdateCell, onSaveRow, onDeleteRow }: IntegrationViewProps) {
   const { language, t } = useLanguage();
   const [statusFilter, setStatusFilter] = useState<"open" | "all" | "done">("open");
   const [query, setQuery] = useState("");
+  const [editor, setEditor] = useState<{ rowId: string | null; list: string } | null>(() => initialRowId ? { rowId: initialRowId, list: "" } : null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropList, setDropList] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(query);
   const dueFormatter = useMemo(() => new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", { day: "numeric", month: "short", year: "numeric" }), [language]);
+  const liveRows = useMemo(() => database.rows.filter((row) => !row.trash), [database.rows]);
+  const rowLists = useMemo(() => taskListNames(liveRows), [liveRows]);
+  // Lists stay visible when their last task is dragged out: the Google lists, plus every list seen in this session.
+  const [googleLists, setGoogleLists] = useState<string[]>([]);
+  const [seenLists, setSeenLists] = useState<string[]>(rowLists);
+  if (rowLists.some((list) => !seenLists.includes(list))) setSeenLists([...new Set([...seenLists, ...rowLists])]);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/google-tasks/status", { cache: "no-store" })
+      .then((response) => response.json() as Promise<{ taskLists?: Array<{ title?: unknown }> }>)
+      .then((status) => {
+        if (active) setGoogleLists((status.taskLists || []).map((list) => typeof list.title === "string" ? list.title.trim() : "").filter(Boolean));
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+  const lists = useMemo(() => [...new Set([...googleLists, ...seenLists])].sort((a, b) => a.localeCompare(b, language)), [googleLists, language, seenLists]);
   const counts = useMemo(() => ({
     all: rows.length,
     done: rows.filter(taskIsDone).length,
     open: rows.filter((row) => !taskIsDone(row)).length,
   }), [rows]);
 
+  // Every list is shown, also when the filter leaves it empty, so a task can always be dragged to it.
   const groupedRows = useMemo(() => {
     const normalizedQuery = deferredQuery.trim().toLowerCase();
     const filtered = rows
@@ -87,19 +129,36 @@ export function GoogleTasksInterface({ database, rows, onOpenRow, onUpdateCell, 
         const bDue = taskDueKey(b) || "9999-12-31";
         return aDue.localeCompare(bDue) || a.title.localeCompare(b.title, language);
       });
-    const groups = new Map<string, Row[]>();
+    const groups = new Map<string, Row[]>(normalizedQuery ? [] : lists.map((list) => [list, []]));
     filtered.forEach((row) => {
-      const list = valueFor(row, GOOGLE_TASK_PROPERTY_IDS.list) || t("tasks.noList");
-      const group = groups.get(list);
-      if (group) group.push(row);
-      else groups.set(list, [row]);
+      const list = valueFor(row, GOOGLE_TASK_PROPERTY_IDS.list);
+      groups.set(list, [...(groups.get(list) || []), row]);
     });
-    return [...groups.entries()];
-  }, [deferredQuery, language, rows, statusFilter, t]);
+    return [...groups.entries()].sort(([a], [b]) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b, language)));
+  }, [deferredQuery, language, lists, rows, statusFilter]);
 
-  const addTask = () => {
-    const id = onAddRow({ [GOOGLE_TASK_PROPERTY_IDS.status]: "Open" });
-    onOpenRow(id);
+  const editing = editor?.rowId ? liveRows.find((row) => row.id === editor.rowId) : undefined;
+  const closeEditor = () => setEditor(null);
+
+  const moveToList = (rowId: string, list: string) => {
+    const row = liveRows.find((entry) => entry.id === rowId);
+    if (row && valueFor(row, GOOGLE_TASK_PROPERTY_IDS.list) !== list && canMoveTask(row, liveRows)) onUpdateCell(rowId, GOOGLE_TASK_PROPERTY_IDS.list, list);
+  };
+
+  const dropHandlers = (list: string) => list === "" ? {} : {
+    onDragOver: (event: DragEvent<HTMLElement>) => {
+      if (!event.dataTransfer.types.includes(TASK_DRAG)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      setDropList(list);
+    },
+    onDragLeave: (event: DragEvent<HTMLElement>) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropList(null); },
+    onDrop: (event: DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      moveToList(event.dataTransfer.getData(TASK_DRAG), list);
+      setDropList(null);
+      setDragging(null);
+    },
   };
 
   return (
@@ -124,20 +183,28 @@ export function GoogleTasksInterface({ database, rows, onOpenRow, onUpdateCell, 
           <span aria-hidden="true">⌕</span>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("tasks.search")} aria-label={t("tasks.search")} />
         </label>
-        <button type="button" className="primary-button" onClick={addTask}>＋ {t("tasks.newTask")}</button></div>
+        <button type="button" className="primary-button" onClick={() => setEditor({ rowId: null, list: lists[0] || "" })}>＋ {t("tasks.newTask")}</button></div>
       </div>
 
       <div className="task-groups">
         {groupedRows.map(([list, groupRows]) => (
-          <section className="task-group" key={list}>
-            <div className="task-group-heading"><span className="task-list-dot" /><h2>{list}</h2><span>{groupRows.length}</span></div>
+          <section className={`task-group ${dropList === list ? "is-drop-target" : ""}`} key={list || "none"} {...dropHandlers(list)}>
+            <div className="task-group-heading"><span className="task-list-dot" /><h2>{list || t("tasks.noList")}</h2><span>{groupRows.length}</span></div>
             <div className="task-list">
               {groupRows.map((row) => {
                 const done = taskIsDone(row);
                 const due = taskDueKey(row);
                 const notes = valueFor(row, GOOGLE_TASK_PROPERTY_IDS.notes);
+                const movable = canMoveTask(row, liveRows);
                 return (
-                  <div className={`task-item ${done ? "is-done" : ""}`} key={row.id}>
+                  <div
+                    className={`task-item ${done ? "is-done" : ""} ${dragging === row.id ? "is-dragging" : ""}`}
+                    key={row.id}
+                    draggable={movable}
+                    title={movable ? undefined : t("editor.cannotMove")}
+                    onDragStart={(event) => { event.dataTransfer.setData(TASK_DRAG, row.id); event.dataTransfer.effectAllowed = "move"; setDragging(row.id); }}
+                    onDragEnd={() => { setDragging(null); setDropList(null); }}
+                  >
                     <button
                       type="button"
                       className="task-check"
@@ -145,23 +212,38 @@ export function GoogleTasksInterface({ database, rows, onOpenRow, onUpdateCell, 
                       aria-pressed={done}
                       onClick={() => onUpdateCell(row.id, GOOGLE_TASK_PROPERTY_IDS.status, done ? "Open" : "Done")}
                     >{done ? "✓" : ""}</button>
-                    <button type="button" className="task-main" onClick={() => onOpenRow(row.id)}>
+                    <button type="button" className="task-main" onClick={() => setEditor({ rowId: row.id, list })}>
                       <strong>{row.title || t("database.untitledRow")}</strong>
                       <span className="task-detail-line">
                         {due && <time className={taskDueTone(due)} dateTime={due}>{formatTaskDue(due, dueFormatter)}</time>}
                         {notes && <span className="task-notes-preview">{notes}</span>}
                       </span>
                     </button>
-                    <button type="button" className="task-open" aria-label={`${t("database.openRow")}: ${row.title}`} onClick={() => onOpenRow(row.id)}>→</button>
-                    <button type="button" className="task-delete" aria-label={`${t("database.deleteRowLabel")}: ${row.title}`} onClick={() => onDeleteRow(row.id)}>×</button>
+                    <button type="button" className="task-delete" aria-label={`${t("database.deleteRowLabel")}: ${row.title}`} onClick={() => onDeleteRow(row.id, t("taskEditor.deleteConfirm"))}>×</button>
                   </div>
                 );
               })}
+              {!groupRows.length && <p className="task-group-empty">{dragging ? t("editor.dropHere") : t("editor.emptyList")}</p>}
             </div>
+            {list !== "" && !deferredQuery && (
+              <TaskQuickAdd list={list} onAdd={(title) => onSaveRow(null, title, taskValues({ title, list, due: "", notes: "", done: false }))} />
+            )}
           </section>
         ))}
       </div>
       {groupedRows.length === 0 && <div className="integration-empty"><span className="empty-icon">✓</span><strong>{t("tasks.emptyTitle")}</strong><p>{query ? t("tasks.emptySearch") : t("tasks.emptyHint")}</p></div>}
+
+      {editor && (editor.rowId === null || editing) && (
+        <TaskDialog
+          row={editing}
+          lists={lists}
+          defaultList={editor.list}
+          onClose={closeEditor}
+          onSave={(draft) => { onSaveRow(editing?.id ?? null, draft.title.trim(), taskValues(draft)); closeEditor(); }}
+          onDelete={editing ? () => { if (onDeleteRow(editing.id, t("taskEditor.deleteConfirm"))) closeEditor(); } : undefined}
+          onOpenDetails={editing ? () => { closeEditor(); onOpenDetails(editing.id); } : undefined}
+        />
+      )}
     </div>
   );
 }
@@ -230,8 +312,10 @@ function CalendarAgenda({ events, dayKey, onOpenRow }: CalendarAgendaProps) {
   </div>;
 }
 
-export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }: IntegrationViewProps) {
+export function GoogleCalendarInterface({ database, rows, initialRowId, onOpenDetails, onSaveRow, onDeleteRow }: IntegrationViewProps) {
   const { language, t } = useLanguage();
+  const [editor, setEditor] = useState<{ rowId: string | null; day: string } | null>(() => initialRowId ? { rowId: initialRowId, day: calendarTodayKey(new Date()) } : null);
+  const [dropDay, setDropDay] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const initialToday = calendarTodayKey(new Date());
   const [selectedDay, setSelectedDay] = useState(initialToday);
@@ -274,14 +358,32 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
   const agendaLabel = agendaDay ? selectedDateFormatter.format(dateFromKey(agendaDay)) : monthLabel;
   const weekdays = useMemo(() => calendarDaysFrom("2024-01-01", 7).map((key) => weekdayFormatter.format(dateFromKey(key))), [weekdayFormatter]);
 
-  const addEvent = () => {
-    const id = onAddRow({
-      [GOOGLE_CALENDAR_PROPERTY_IDS.status]: "Confirmed",
-      [GOOGLE_CALENDAR_PROPERTY_IDS.start]: selectedDay,
-      [GOOGLE_CALENDAR_PROPERTY_IDS.allDay]: true,
-    });
-    onOpenRow(id);
+  const addEvent = (day = selectedDay) => setEditor({ rowId: null, day });
+  const openEvent = (rowId: string) => setEditor({ rowId, day: selectedDay });
+  const editing = editor?.rowId ? rows.find((row) => row.id === editor.rowId) : undefined;
+  const closeEditor = () => setEditor(null);
+  const saveEvent = (draft: EventDraft) => {
+    onSaveRow(editing?.id ?? null, draft.title.trim(), { ...(editing ? {} : { [GOOGLE_CALENDAR_PROPERTY_IDS.status]: "Confirmed" }), ...eventValues(draft) });
+    closeEditor();
   };
+
+  // Appointments can be dragged to another day; they keep their times and length.
+  const dropHandlers = (key: string) => ({
+    onDragOver: (event: DragEvent<HTMLElement>) => {
+      if (!event.dataTransfer.types.includes(EVENT_DRAG)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      setDropDay(key);
+    },
+    onDragLeave: (event: DragEvent<HTMLElement>) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropDay(null); },
+    onDrop: (event: DragEvent<HTMLElement>) => {
+      event.preventDefault();
+      setDropDay(null);
+      const { id, from } = JSON.parse(event.dataTransfer.getData(EVENT_DRAG) || "{}") as { id?: string; from?: string };
+      const row = rows.find((entry) => entry.id === id);
+      if (row && from && from !== key && canMoveEvent(row)) onSaveRow(row.id, row.title, moveEventValues(row, from, key));
+    },
+  });
 
   const movePeriod = (amount: number) => {
     if (mode === "week") {
@@ -313,7 +415,14 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
   };
 
   const renderEvent = (event: CalendarEvent, dayKey: string) => (
-    <button type="button" className={"calendar-event " + (event.startDateKey < dayKey ? "is-continuation" : "")} key={event.row.id} onClick={() => onOpenRow(event.row.id)}>
+    <button
+      type="button"
+      className={"calendar-event " + (event.startDateKey < dayKey ? "is-continuation" : "")}
+      key={event.row.id}
+      draggable={canMoveEvent(event.row)}
+      onDragStart={(dragEvent) => { dragEvent.dataTransfer.setData(EVENT_DRAG, JSON.stringify({ id: event.row.id, from: dayKey })); dragEvent.dataTransfer.effectAllowed = "move"; }}
+      onClick={() => openEvent(event.row.id)}
+    >
       <i style={{ background: calendarColor(valueText(getValue(event.row, GOOGLE_CALENDAR_PROPERTY_IDS.calendar))) }} />
       <span>{formatEventTime(event, dayKey, locale, t("calendarView.allDay"), t("calendarView.continues"))}</span>
       <strong>{event.row.title || t("database.untitledRow")}</strong>
@@ -323,7 +432,9 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
   const renderMonthDay = (key: string) => {
     const dayEvents = eventsByDay.get(key) || [];
     const date = dateFromKey(key);
-    return <div className={"calendar-day " + (key.slice(0, 7) === cursorMonth ? "" : "outside-month") + " " + (key === today ? "is-today" : "")} role="gridcell" key={key}>
+    return <div className={"calendar-day " + (key.slice(0, 7) === cursorMonth ? "" : "outside-month") + " " + (key === today ? "is-today" : "") + " " + (dropDay === key ? "is-drop-target" : "")} role="gridcell" key={key} {...dropHandlers(key)}
+      onDoubleClick={(event) => { if (!(event.target as HTMLElement).closest("button")) addEvent(key); }}>
+      <button type="button" className="calendar-add" aria-label={t("editor.addEventOn", { date: fullDateFormatter.format(date) })} onClick={() => addEvent(key)}>+</button>
       <button type="button" className="calendar-day-number" aria-label={fullDateFormatter.format(date)} aria-pressed={selectedDay === key} aria-current={key === today ? "date" : undefined} onClick={() => selectDay(key)}>{date.getUTCDate()}{key === today && <span>{t("calendarView.todayShort")}</span>}</button>
       <span className="mobile-event-count" aria-hidden="true">{dayEvents.length > 0 ? dayEvents.length : ""}</span>
       <div className="calendar-day-events">{dayEvents.slice(0, 3).map((event) => renderEvent(event, key))}{dayEvents.length > 3 && <button type="button" className="calendar-more" onClick={() => { setAgendaDay(key); setSelectedDay(key); setMode("agenda"); }}>+{dayEvents.length - 3} {t("calendarView.more")}</button>}</div>
@@ -345,7 +456,7 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
             <button type="button" role="tab" aria-selected={mode === view} className={mode === view ? "active" : ""} key={view} onClick={() => changeMode(view)}>{t("calendarView." + view)}</button>
           ))}
         </div>
-        <button type="button" className="primary-button" onClick={addEvent}>＋ {t("calendarView.newEvent")}</button></div>
+        <button type="button" className="primary-button" onClick={() => addEvent()}>＋ {t("calendarView.newEvent")}</button></div>
       </div>
 
       {mode === "month" && <><div className="calendar-grid" role="grid" aria-label={monthLabel}>
@@ -354,13 +465,14 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
       </div>
       <section className="calendar-day-agenda" aria-label={t("calendarView.agenda")}>
         <h2>{selectedDateFormatter.format(dateFromKey(selectedDay))}</h2>
-        <CalendarAgenda events={eventsByDay.get(selectedDay) || []} dayKey={selectedDay} onOpenRow={onOpenRow} />
+        <CalendarAgenda events={eventsByDay.get(selectedDay) || []} dayKey={selectedDay} onOpenRow={openEvent} />
       </section></>}
 
       {mode === "week" && <section className="calendar-week-view" aria-label={weekLabel}>
         {weekDays.map((key) => {
           const dayEvents = eventsByDay.get(key) || [];
-          return <article className={"calendar-week-day " + (key === today ? "is-today" : "")} key={key}>
+          return <article className={"calendar-week-day " + (key === today ? "is-today" : "") + " " + (dropDay === key ? "is-drop-target" : "")} key={key} {...dropHandlers(key)}>
+            <button type="button" className="calendar-add" aria-label={t("editor.addEventOn", { date: fullDateFormatter.format(dateFromKey(key)) })} onClick={() => addEvent(key)}>+</button>
             <button type="button" className="calendar-week-day-heading" aria-pressed={selectedDay === key} onClick={() => selectDay(key)}><strong>{weekdayFormatter.format(dateFromKey(key))}</strong><span>{dateFromKey(key).getUTCDate()}</span></button>
             <div className="calendar-week-all-day">{dayEvents.filter((event) => event.allDay).map((event) => renderEvent(event, key))}</div>
             <div className="calendar-week-timed">{dayEvents.filter((event) => !event.allDay).map((event) => renderEvent(event, key))}</div>
@@ -372,8 +484,19 @@ export function GoogleCalendarInterface({ database, rows, onOpenRow, onAddRow }:
       {mode === "agenda" && <section className="calendar-day-agenda" aria-label={t("calendarView.agenda")}>
         {agendaDay && <button type="button" className="back-link" onClick={() => setAgendaDay(null)}>← {monthLabel}</button>}
         <h2>{agendaDay ? selectedDateFormatter.format(dateFromKey(agendaDay)) : monthLabel}</h2>
-        <CalendarAgenda events={agendaEvents} dayKey={agendaDay || undefined} onOpenRow={onOpenRow} />
+        <CalendarAgenda events={agendaEvents} dayKey={agendaDay || undefined} onOpenRow={openEvent} />
       </section>}
+
+      {editor && (editor.rowId === null || editing) && (
+        <EventDialog
+          row={editing}
+          day={editor.day}
+          onClose={closeEditor}
+          onSave={saveEvent}
+          onDelete={editing ? () => { if (onDeleteRow(editing.id, t("calendarEditor.deleteConfirm"))) closeEditor(); } : undefined}
+          onOpenDetails={editing ? () => { closeEditor(); onOpenDetails(editing.id); } : undefined}
+        />
+      )}
     </div>
   );
 }

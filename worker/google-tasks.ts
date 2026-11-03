@@ -278,6 +278,12 @@ const insertTask = (token: string, taskListId: string, payload: GoogleTaskPayloa
   },
 );
 
+const insertTaskList = (token: string, title: string) => apiJson<GoogleTaskList>(
+  `${GOOGLE_TASKS_URL}/users/@me/lists`,
+  token,
+  { method: "POST", body: JSON.stringify({ title }) },
+);
+
 const patchTask = (token: string, taskListId: string, taskId: string, payload: GoogleTaskPayload) => apiJson<GoogleTask>(
   `${GOOGLE_TASKS_URL}/lists/${encodeURIComponent(taskListId)}/tasks/${encodeURIComponent(taskId)}`,
   token,
@@ -330,6 +336,76 @@ const listsByTitle = (taskLists: GoogleTaskList[]) => {
   return result;
 };
 
+type MoveContext = {
+  database: GoogleTasksDatabase;
+  guard: SyncGuard;
+  token: string;
+  titleLists: Map<string, GoogleTaskList[]>;
+  remoteGroups: Array<{ list: GoogleTaskList; tasks: GoogleTask[] }>;
+  remoteTaskKeys: Set<string>;
+  storedMappings: StoredMapping[];
+  mappingByLocal: Map<string, StoredMapping>;
+  rows: Map<string, Row>;
+};
+
+/**
+ * A task that was given another list locally, for example by dragging it, moves in Google too. Google Tasks cannot
+ * move a task between lists, so it is created in the new list first and the original is removed afterwards: an
+ * interrupted move can leave the original behind (the next sync removes it) but never loses the task.
+ * A task with subtasks stays where it is, because removing the original would remove its subtasks too.
+ */
+// Each move costs two Google requests. Cloudflare's free plan allows 50 subrequests per request, so a sync moves
+// at most this many tasks; the others keep their new list locally and move on the next sync.
+const MAX_MOVES_PER_SYNC = 10;
+
+const moveTasksBetweenLists = async ({ database, guard, token, titleLists, remoteGroups, remoteTaskKeys, storedMappings, mappingByLocal, rows }: MoveContext) => {
+  let moved = 0;
+  for (const row of [...rows.values()]) {
+    if (moved >= MAX_MOVES_PER_SYNC) break;
+    const mapping = mappingByLocal.get(row.id);
+    const wanted = textValue(row, "google-list").trim();
+    const target = wanted ? (titleLists.get(wanted) || [])[0] : undefined;
+    if (!mapping || row.trash || !target || target.id === mapping.task_list_id) continue;
+    const source = remoteGroups.find((group) => group.list.id === mapping.task_list_id);
+    const destination = remoteGroups.find((group) => group.list.id === target.id);
+    const original = source?.tasks.find((task) => task.id === mapping.remote_task_id && !task.deleted);
+    if (!source || !destination || !original) continue;
+    if (source.tasks.some((task) => !task.deleted && task.parent === original.id)) {
+      rows.set(row.id, { ...row, values: { ...row.values, "google-list": source.list.title } });
+      continue;
+    }
+    const payload = googleTaskPayload(row);
+    const created = await createRemoteOnce({
+      database, guard, service: "tasks", localRowId: row.id, containerId: target.id, replacesId: original.id, payload,
+      observedIds: destination.tasks.map((task) => task.id),
+      create: () => insertTask(token, target.id, payload),
+      mapping: (task) => upsertMapping(movedMapping(row, target, task), database),
+    });
+    // Written again because a move resumed after an interruption reuses the earlier result without its mapping.
+    const nextMapping = movedMapping(row, target, created);
+    await upsertMapping(nextMapping, database).run();
+    await guard.check();
+    await deleteTask(token, source.list.id, original.id);
+    source.tasks.splice(source.tasks.indexOf(original), 1);
+    destination.tasks.push(created);
+    remoteTaskKeys.add(remoteKey(target.id, created.id));
+    storedMappings.splice(storedMappings.indexOf(mapping), 1, nextMapping);
+    mappingByLocal.set(row.id, nextMapping);
+    rows.set(row.id, googleTaskToRow(created, target.title, row));
+    moved += 1;
+  }
+  return moved;
+};
+
+const movedMapping = (row: Row, list: GoogleTaskList, task: GoogleTask): StoredMapping => ({
+  local_row_id: row.id,
+  task_list_id: list.id,
+  remote_task_id: task.id,
+  remote_etag: task.etag || "",
+  remote_updated: task.updated || "",
+  local_fingerprint: googleRowFingerprint(googleTaskToRow(task, list.title, row)),
+});
+
 const replaceDatabase = (items: Item[], nextDatabase: Database) => items.map((item) => item.id === nextDatabase.id ? nextDatabase : item);
 
 const syncWorkspace = async (
@@ -376,7 +452,8 @@ const syncWorkspace = async (
     taskDatabase = createGoogleTasksDatabase();
   }
   const rows = new Map(taskDatabase.rows.map((row) => [row.id, row]));
-  for (const receipt of await readCreateReceipts(database, "tasks")) {
+  const receipts = await readCreateReceipts(database, "tasks");
+  for (const receipt of receipts) {
     let resultJson = receipt.result_json;
     if (!resultJson) {
       const group = remoteGroups.find(({ list }) => list.id === receipt.container_id);
@@ -405,7 +482,23 @@ const syncWorkspace = async (
     storedMappings.push(mapping);
     mappingByLocal.set(row.id, mapping);
   }
+  // A list chosen in the app ("New list") for a new or moved task is created in Google first, so the task has
+  // somewhere to go. Lists only referenced by tasks whose Google list was deleted are not brought back.
+  const wantedLists = new Set([...rows.values()]
+    .filter((row) => !row.trash && (!mappingByLocal.has(row.id) || taskLists.some((list) => list.id === mappingByLocal.get(row.id)?.task_list_id)))
+    .map((row) => textValue(row, "google-list").trim())
+    .filter(Boolean));
+  for (const title of wantedLists) {
+    if (taskLists.some((list) => list.title === title)) continue;
+    await guard.check();
+    const list = await insertTaskList(token, title);
+    taskLists.push(list);
+    remoteGroups.push({ list, tasks: [] });
+  }
   const titleLists = listsByTitle(taskLists);
+  const moved = await moveTasksBetweenLists({ database, guard, token, titleLists, remoteGroups, remoteTaskKeys, storedMappings, mappingByLocal, rows });
+  // The original of a task that was copied to another list, left behind by an interrupted sync: removed, never imported again.
+  const replacedIds = new Set(receipts.map((receipt) => receipt.replaces_id).filter(Boolean));
   const defaultList = taskLists[0];
   const rowsByList = new Map<string, Row[]>();
   const listForRow = (row: Row) => {
@@ -440,6 +533,7 @@ const syncWorkspace = async (
     taskListTitle: taskLists.length === 1 ? taskLists[0].title : "All lists",
     taskListCount: taskLists.length,
   };
+  summary.updated += moved;
 
   for (const group of remoteGroups) {
     const { list, tasks } = group;
@@ -497,6 +591,12 @@ const syncWorkspace = async (
       }
       if (!existing) {
         if (integrationMissing) continue;
+        if (replacedIds.has(task.id)) {
+          await guard.check();
+          await deleteTask(token, list.id, task.id);
+          summary.removed += 1;
+          continue;
+        }
         const imported = googleTaskToRow(task, list.title);
         rows.set(imported.id, imported);
         saveMapping(imported, task);

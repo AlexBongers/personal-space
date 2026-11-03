@@ -26,6 +26,12 @@ with nested pages, a reading list, a project tracker, a travel plan and every ed
 - Quick find for pages, databases and rows, persistent light and dark themes, and an English / Dutch interface switch.
 - Optional two-way Google Tasks sync through a dedicated database, with encrypted token storage and all-list synchronization.
 - Optional two-way Google Calendar sync through a dedicated database, covering every writable calendar with encrypted shared OAuth storage.
+- Tasks and appointments are added and edited in a compact editor: nothing is created until you save, deadlines
+  have shortcuts (today, tomorrow, next week), and new appointments start at the next whole hour for one hour.
+  Every task list has a quick-add line. Drag a task to another list (also moved in Google Tasks; a list chosen
+  in the app that Google does not have yet is created there) or an appointment to another day. Tasks with
+  subtasks and repeating appointments stay put, because moving them would affect their subtasks or series.
+  To stay within the free plan's subrequest limit, one sync moves at most ten tasks; the rest follow on the next.
 
 Workspace content is stored in a private Cloudflare D1 database bound to the Worker. Changes
 therefore survive browser-storage clearing and are available anywhere the owner signs in. Browser

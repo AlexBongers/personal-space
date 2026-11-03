@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ChoiceChips, EditorDialog } from "./EditorDialog";
-import { canSaveEvent, durationMinutes, eventDraft, withDuration, withStart, type EventDraft } from "./editor-model.ts";
+import { canSaveEvent, durationMinutes, eventDraft, isReadOnlyEvent, withDuration, withStart, type EventDraft } from "./editor-model.ts";
 import { useLanguage } from "./i18n";
 import type { Row } from "./types";
 import { useWritableCalendars } from "./useWritableCalendars";
@@ -32,8 +32,9 @@ export function EventDialog({ row, day, onSave, onClose, onDelete, onOpenDetails
   const { calendars, state } = useWritableCalendars();
   const change = (patch: Partial<EventDraft>) => setDraft((current) => ({ ...current, ...patch }));
   const minutes = durationMinutes(draft);
-  const valid = canSaveEvent(draft);
-  const endBeforeStart = draft.title.trim() !== "" && !valid && !draft.allDay && draft.startTime !== "" && draft.endTime !== "";
+  const readOnly = row ? isReadOnlyEvent(row) : false;
+  const valid = canSaveEvent(draft) && !readOnly;
+  const endBeforeStart = !readOnly && draft.title.trim() !== "" && !valid && !draft.allDay && draft.startTime !== "" && draft.endTime !== "";
   const selectedCalendar = draft.calendarId || calendars.find((calendar) => calendar.title === draft.calendar)?.id || "";
   const calendarChoices = draft.calendarId && !calendars.some((calendar) => calendar.id === draft.calendarId)
     ? [{ id: draft.calendarId, title: draft.calendar || draft.calendarId, primary: false }, ...calendars]
@@ -46,11 +47,12 @@ export function EventDialog({ row, day, onSave, onClose, onDelete, onOpenDetails
       canSave={valid}
       onSave={() => onSave(draft)}
       onClose={onClose}
-      onDelete={onDelete}
+      onDelete={readOnly ? undefined : onDelete}
       onOpenDetails={onOpenDetails}
     >
+      {readOnly && <p className="editor-notice">{t("editor.readOnlyEvent", { calendar: draft.calendar })}</p>}
       <div className="editor-title-row">
-        <input className="editor-title-input" data-autofocus value={draft.title} placeholder={t("editor.eventTitlePlaceholder")} aria-label={t("calendarEditor.titleLabel")} onChange={(event) => change({ title: event.target.value })} />
+        <input className="editor-title-input" data-autofocus readOnly={readOnly} value={draft.title} placeholder={t("editor.eventTitlePlaceholder")} aria-label={t("calendarEditor.titleLabel")} onChange={(event) => change({ title: event.target.value })} />
       </div>
 
       <div className="editor-when">

@@ -1045,3 +1045,4 @@ td { height: 56px; font-size: .9375rem; }
 .task-reminder-badge { color: var(--blue); font-size: .75rem; }
 .editor-hint { color: var(--faint); font-size: .75rem; }
 .home-calm .home-quick-add, .home-calm .home-quick-form { width: 100%; max-width: none; }
+.editor-notice { margin: 0; padding: 9px 12px; border-radius: var(--control-radius); color: var(--ink); background: color-mix(in srgb, var(--blue) 10%, var(--surface-soft)); font-size: .8125rem; }

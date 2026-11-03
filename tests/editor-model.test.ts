@@ -119,3 +119,8 @@ test("appointments keep their Amsterdam clock time across the switch to winter t
   const draft = { ...eventDraft(undefined, "2026-10-26", NOW), title: "Na de wissel" };
   assert.equal(eventValues(draft)[CAL.start], "2026-10-26T08:00:00.000Z");
 });
+
+test("read-only appointments, such as birthdays, cannot be dragged", () => {
+  const birthday = row("b", "Verjaardag Sanne", { [CAL.allDay]: true, [CAL.start]: "2026-06-12", [CAL.end]: "2026-06-13", [CAL.readOnly]: true });
+  assert.equal(canMoveEvent(birthday), false);
+});

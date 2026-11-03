@@ -294,7 +294,7 @@ Tasks` or `Google Calendar` button and use `Sync now`; the refresh token is encr
 shared by both integrations. Calendar sync covers the last 45 days and the next 12 months to keep
 the personal workspace fast and compact. New local tasks without a list are created in the first
 Google list returned by Google; new local calendar events without a Calendar ID use the first
-writable calendar. Calendar entries without a start date stay local until completed. On the free Cloudflare plan each sync handles a limited number of changes; when the calendar reports pending changes, press Sync now again until they are gone.
+writable calendar. Calendar entries without a start date stay local until completed. The calendar setting (`GOOGLE_CALENDAR_SYNC_ONLY` in `wrangler.json`, or `googleCalendarSyncOnly` in the Mac app's `config.json`) takes one or more names separated by commas, such as `Alex Prive, Verjaardagen`. A read-only calendar such as Google's birthday calendar ("Verjaardagen" or "Birthdays") is only synced when it is named there: its events are imported and shown, never written back, cannot be dragged, and one removed in the app stays removed while Google keeps it. On the free Cloudflare plan each sync handles a limited number of changes; when the calendar reports pending changes, press Sync now again until they are gone.
 The site remains private behind Cloudflare Access because the workspace and Google authorization are single-user data.
 
 ## News and Gmail inbox

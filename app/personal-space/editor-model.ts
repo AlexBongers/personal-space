@@ -214,8 +214,11 @@ export const withDuration = (draft: EventDraft, minutes: number): EventDraft => 
 export const durationMinutes = (draft: EventDraft) =>
   draft.allDay ? 0 : Math.round((new Date(iso(draft.endDate, draft.endTime)).getTime() - new Date(iso(draft.date, draft.startTime)).getTime()) / 60_000);
 
-/** Recurring appointments are not dragged: moving one would move the whole series in Google. */
-export const canMoveEvent = (row: Row) => !text(row, CAL.recurrence);
+/** Events from a read-only calendar such as Birthdays come from Google and cannot be changed here. */
+export const isReadOnlyEvent = (row: Row) => getValue(row, CAL.readOnly) === true;
+
+/** Recurring and read-only appointments are not dragged: moving one would move a whole series, or cannot reach Google. */
+export const canMoveEvent = (row: Row) => !text(row, CAL.recurrence) && !isReadOnlyEvent(row);
 
 /** Moves an appointment from one day to another, keeping its times and length. */
 export const moveEventValues = (row: Row, fromDay: string, toDay: string): Record<string, CellValue> => {

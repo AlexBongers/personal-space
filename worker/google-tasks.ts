@@ -354,9 +354,14 @@ type MoveContext = {
  * interrupted move can leave the original behind (the next sync removes it) but never loses the task.
  * A task with subtasks stays where it is, because removing the original would remove its subtasks too.
  */
+// Each move costs two Google requests. Cloudflare's free plan allows 50 subrequests per request, so a sync moves
+// at most this many tasks; the others keep their new list locally and move on the next sync.
+const MAX_MOVES_PER_SYNC = 10;
+
 const moveTasksBetweenLists = async ({ database, guard, token, titleLists, remoteGroups, remoteTaskKeys, storedMappings, mappingByLocal, rows }: MoveContext) => {
   let moved = 0;
   for (const row of [...rows.values()]) {
+    if (moved >= MAX_MOVES_PER_SYNC) break;
     const mapping = mappingByLocal.get(row.id);
     const wanted = textValue(row, "google-list").trim();
     const target = wanted ? (titleLists.get(wanted) || [])[0] : undefined;

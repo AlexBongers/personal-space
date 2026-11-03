@@ -176,3 +176,22 @@ test("a task can be dragged to a list that does not exist in Google yet", async 
   assert.equal(g.lists.work.size, 0);
   assert.equal(g.lists[archive].size, 1);
 });
+
+test("many moves are spread over several syncs and none is undone meanwhile", async (t) => {
+  const g = await twoLists(t);
+  for (let index = 1; index <= 12; index++) g.lists.work.set(`w${index}`, { id: `w${index}`, title: `Taak ${index}`, status: "needsAction", etag: "e0", updated: "2026-06-01T10:00:00Z" });
+  await g.sync();
+  const items = g.withList("Taak 1", "Privé");
+  for (let index = 2; index <= 12; index++) {
+    const database = items[0] as Database;
+    database.rows = database.rows.map((row) => row.title === `Taak ${index}` ? { ...row, values: { ...row.values, [TASK.list]: "Privé" } } : row);
+  }
+  assert.equal((await g.sync(items)).status, 200);
+  assert.equal(g.lists.home.size, 10);
+  assert.equal(g.lists.work.size, 2);
+  assert.ok(g.tasks().every((row) => row.values[TASK.list] === "Privé"));
+  assert.equal((await g.sync()).status, 200);
+  assert.equal(g.lists.home.size, 12);
+  assert.equal(g.lists.work.size, 0);
+  assert.equal(g.tasks().length, 12);
+});

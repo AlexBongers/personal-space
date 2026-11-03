@@ -156,6 +156,9 @@ matching page, calendar event, task or e-mail.
 - Reminders understand Dutch: "over 20 min thee", "om 16:00 boodschappen", "vrijdag 14:30 rapport",
   "overmorgen ophalen", "vanavond vuilnis buiten", "12-7 verjaardag Sanne", "3 maart 2027 10:00 APK".
   A day without a time means 09:00; "vanavond" means 20:00.
+- A reminder time on a task (task editor: in an hour, tonight 20:00, tomorrow 09:00 or any time). Google Tasks
+  only stores dates, so the time stays in the app and the sync keeps it; the notification comes once, also after
+  a restart, and reminders of the last 24 hours are caught up.
 - A daily overview at 07:30 with today's events, due tasks and reminders. When the Mac is opened later,
   it comes at the first moment after that.
 - A notification 10 minutes before each calendar event.

@@ -7,6 +7,8 @@ import type { Item } from "./types";
 
 const SIDEBAR_WIDTH_KEY = "personal-space-sidebar-width";
 const SIDEBAR_NAV_HEIGHT_KEY = "personal-space-sidebar-nav-height";
+/** Tasks and Calendar are reached through the Planning section, so the page tree does not list them again. */
+const PLANNING_IDS = new Set(["google-tasks", "google-calendar"]);
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 420;
 const SIDEBAR_DEFAULT_WIDTH = 272;
@@ -263,6 +265,7 @@ export function Sidebar({
           <button className="nav-item" onClick={() => chooseItem("search")}>
             <span className="nav-glyph"><InterfaceIcon name="search" /></span> {t("nav.quickFind")} <kbd>⌘K</kbd>
           </button>
+          {(items.some((item) => item.id === "google-tasks") || items.some((item) => item.id === "google-calendar")) && <p className="nav-section-label">{t("nav.sectionPlanning")}</p>}
           {items.some((item) => item.id === "google-tasks") && (
             <button className="nav-item" aria-current={selectedId === "google-tasks" ? "page" : undefined} onClick={() => chooseItem("google-tasks")}>
               <span className="nav-glyph"><InterfaceIcon name="tasks" /></span> {t("nav.googleTasks")}
@@ -273,12 +276,10 @@ export function Sidebar({
               <span className="nav-glyph"><InterfaceIcon name="calendar" /></span> {t("nav.googleCalendar")}
             </button>
           )}
-          <button className="nav-item" aria-current={selectedId === "gmail" ? "page" : undefined} onClick={() => chooseItem("gmail")}><span className="nav-glyph"><InterfaceIcon name="mail" /></span>{t("gmail.title")}</button>
+          <p className="nav-section-label">{t("nav.sectionInbox")}</p>
+          <button className="nav-item" aria-current={selectedId === "gmail" ? "page" : undefined} onClick={() => chooseItem("gmail")}><span className="nav-glyph"><InterfaceIcon name="mail" /></span>{t("nav.gmail")}</button>
           <button className="nav-item" aria-current={selectedId === "parro" ? "page" : undefined} onClick={() => chooseItem("parro")}><span className="nav-glyph"><InterfaceIcon name="mail" /></span>{t("nav.parro")}</button>
-          <button className="nav-item" aria-current={selectedId === "news-slashdot" ? "page" : undefined} onClick={() => chooseItem("news-slashdot")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>Slashdot</button>
-          <button className="nav-item" aria-current={selectedId === "news-tweakers" ? "page" : undefined} onClick={() => chooseItem("news-tweakers")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>Tweakers</button>
-          <button className="nav-item" aria-current={selectedId === "news-nos" ? "page" : undefined} onClick={() => chooseItem("news-nos")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>NOS</button>
-          <button className="nav-item" aria-current={selectedId === "news-bunniksnieuws" ? "page" : undefined} onClick={() => chooseItem("news-bunniksnieuws")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>Bunniks Nieuws</button>
+          <button className="nav-item" aria-current={selectedId.startsWith("news-") ? "page" : undefined} onClick={() => chooseItem(selectedId.startsWith("news-") ? selectedId : "news-tweakers")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>{t("nav.news")}</button>
         </div>
         <div
           className="sidebar-section-resize"
@@ -325,7 +326,7 @@ export function Sidebar({
             <span>{t("nav.workspace")}</span>
             <button aria-label={t("nav.newPage")} onClick={() => onCreatePage(null)}>＋</button>
           </div>
-          {workspaceOpen && <div className="tree">{childrenOf(null).map((item) => renderNode(item, 0))}</div>}
+          {workspaceOpen && <div className="tree">{childrenOf(null).filter((item) => !PLANNING_IDS.has(item.id)).map((item) => renderNode(item, 0))}</div>}
         </div>
         <div className="sidebar-footer">
           <button className="new-button" onClick={() => onCreatePage(null)}><InterfaceIcon name="plus" /> {t("nav.newPage")}</button>

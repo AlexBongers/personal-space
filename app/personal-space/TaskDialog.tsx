@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ChoiceChips, EditorDialog } from "./EditorDialog";
-import { canSaveTask, dueShortcuts, taskDraft, type TaskDraft } from "./editor-model.ts";
+import { canSaveTask, dueShortcuts, reminderFromInput, reminderInput, reminderShortcuts, taskDraft, type TaskDraft } from "./editor-model.ts";
 import { useLanguage } from "./i18n";
 import type { Row } from "./types";
 
@@ -25,6 +25,11 @@ export function TaskDialog({ row, lists, defaultList = "", onSave, onClose, onDe
   const [newList, setNewList] = useState(false);
   const change = (patch: Partial<TaskDraft>) => setDraft((current) => ({ ...current, ...patch }));
   const shortcuts = useMemo(() => dueShortcuts(), []);
+  const reminders = useMemo(() => reminderShortcuts(), []);
+  const reminderChoice = draft.reminder ? reminders.find((entry) => entry.value === draft.reminder)?.key ?? "time" : "none";
+  const reminderLabel = draft.reminder && reminderChoice === "time"
+    ? new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", { timeZone: "Europe/Amsterdam", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(draft.reminder))
+    : t("editor.reminder.pick");
   const dueChoice = draft.due ? shortcuts.find((entry) => entry.value === draft.due)?.key ?? "date" : "none";
   const dateLabel = useMemo(() => draft.due && dueChoice === "date"
     ? new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", { weekday: "short", day: "numeric", month: "short" }).format(new Date(`${draft.due}T12:00:00`))
@@ -77,6 +82,21 @@ export function TaskDialog({ row, lists, defaultList = "", onSave, onClose, onDe
           </label>
           <button type="button" className={dueChoice === "none" ? "is-selected" : ""} aria-pressed={dueChoice === "none"} onClick={() => change({ due: "" })}>{t("editor.due.none")}</button>
         </div>
+      </div>
+
+      <div className="editor-field">
+        <span className="editor-label">{t("editor.reminder")}</span>
+        <div className="choice-chips">
+          {reminders.map((entry) => (
+            <button type="button" className={reminderChoice === entry.key ? "is-selected" : ""} aria-pressed={reminderChoice === entry.key} key={entry.key} onClick={() => change({ reminder: entry.value })}>{t(`editor.reminder.${entry.key}`)}</button>
+          ))}
+          <label className={`chip-date ${reminderChoice === "time" ? "is-selected" : ""}`}>
+            <span>{reminderLabel}</span>
+            <input type="datetime-local" value={reminderInput(draft.reminder)} aria-label={t("editor.reminder.pick")} onChange={(event) => change({ reminder: reminderFromInput(event.target.value) })} />
+          </label>
+          <button type="button" className={reminderChoice === "none" ? "is-selected" : ""} aria-pressed={reminderChoice === "none"} onClick={() => change({ reminder: "" })}>{t("editor.due.none")}</button>
+        </div>
+        <span className="editor-hint">{t("editor.reminderHint")}</span>
       </div>
 
       <label className="editor-field">

@@ -40,6 +40,8 @@ type DatabaseViewProps = {
   onUpdate: (database: Database) => void;
   initialRowId?: string | null;
   onTrashRow?: (databaseId: string, rowId: string) => boolean;
+  /** Opens the Google connection and sync dialog for tasks or the calendar. */
+  onOpenGoogleSync?: (service: "tasks" | "calendar") => void;
 };
 
 function ClickTooltip({ label, text }: { label: string; text: string }) {
@@ -693,7 +695,7 @@ function GoogleTaskPage({ database, row, onUpdate, onBack, onSave, onDelete }: {
   );
 }
 
-export function DatabaseView({ database, onUpdate, initialRowId, onTrashRow }: DatabaseViewProps) {
+export function DatabaseView({ database, onUpdate, initialRowId, onTrashRow, onOpenGoogleSync }: DatabaseViewProps) {
   const { t } = useLanguage();
   // Tasks and appointments open in a compact editor; other databases open the row as a page.
   const usesEditor = database.id === GOOGLE_TASKS_DATABASE_ID || database.id === GOOGLE_CALENDAR_DATABASE_ID;
@@ -823,6 +825,7 @@ export function DatabaseView({ database, onUpdate, initialRowId, onTrashRow }: D
         onUpdateCell={updateCell}
         onSaveRow={saveRow}
         onDeleteRow={deleteRow}
+        onOpenSync={onOpenGoogleSync && (() => onOpenGoogleSync("tasks"))}
       />
     );
   }
@@ -837,6 +840,7 @@ export function DatabaseView({ database, onUpdate, initialRowId, onTrashRow }: D
         onUpdateCell={updateCell}
         onSaveRow={saveRow}
         onDeleteRow={deleteRow}
+        onOpenSync={onOpenGoogleSync && (() => onOpenGoogleSync("calendar"))}
       />
     );
   }

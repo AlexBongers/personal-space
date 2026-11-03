@@ -14,7 +14,7 @@ const at = (local: string) => new Date(`${local}:00+02:00`).toISOString();
 
 test("a new task draft is empty and only saveable with a title", () => {
   const draft = taskDraft(undefined, { list: "Werk" });
-  assert.deepEqual(draft, { title: "", list: "Werk", due: "", notes: "", done: false });
+  assert.deepEqual(draft, { title: "", list: "Werk", due: "", notes: "", done: false, reminder: "" });
   assert.equal(canSaveTask(draft), false);
   assert.equal(canSaveTask({ ...draft, title: "  " }), false);
   assert.equal(canSaveTask({ ...draft, title: "Bellen" }), true);
@@ -24,8 +24,8 @@ test("a new task draft is empty and only saveable with a title", () => {
 test("a task draft round-trips through the row values", () => {
   const existing = row("t", "Rapport", { [TASK.status]: "Done", [TASK.list]: "Werk", [TASK.due]: "2026-06-12T00:00:00.000Z", [TASK.notes]: "Hoofdstuk 3" });
   const draft = taskDraft(existing);
-  assert.deepEqual(draft, { title: "Rapport", list: "Werk", due: "2026-06-12", notes: "Hoofdstuk 3", done: true });
-  assert.deepEqual(taskValues({ ...draft, done: false, list: " Privé " }), { [TASK.status]: "Open", [TASK.list]: "Privé", [TASK.due]: "2026-06-12", [TASK.notes]: "Hoofdstuk 3" });
+  assert.deepEqual(draft, { title: "Rapport", list: "Werk", due: "2026-06-12", notes: "Hoofdstuk 3", done: true, reminder: "" });
+  assert.deepEqual(taskValues({ ...draft, done: false, list: " Privé " }), { [TASK.status]: "Open", [TASK.list]: "Privé", [TASK.due]: "2026-06-12", [TASK.notes]: "Hoofdstuk 3", "task-reminder": "" });
 });
 
 test("task lists are listed once, alphabetically", () => {

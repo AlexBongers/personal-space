@@ -21,6 +21,13 @@ import { useLanguage } from "./personal-space/i18n";
 import { useWorkspacePersistence } from "./personal-space/useWorkspacePersistence";
 import { markItemSubtreeTrashed, markRowTrashed, purgeTrashBatch, restoreTrashBatch } from "./personal-space/workspace-trash";
 
+const NEWS_PAGES = [
+  { id: "news-tweakers", source: "tweakers", label: "Tweakers" },
+  { id: "news-nos", source: "nos", label: "NOS" },
+  { id: "news-bunniksnieuws", source: "bunniksnieuws", label: "Bunniks Nieuws" },
+  { id: "news-slashdot", source: "slashdot", label: "Slashdot" },
+] as const;
+
 const GmailInbox = lazy(() => import("./personal-space/GmailInbox").then((module) => ({ default: module.GmailInbox })));
 const ParroInbox = lazy(() => import("./personal-space/ParroInbox").then((module) => ({ default: module.ParroInbox })));
 const SlashdotFeed = lazy(() => import("./personal-space/SlashdotFeed").then((module) => ({ default: module.SlashdotFeed })));
@@ -166,7 +173,7 @@ export default function Home() {
   const visibleItems = useMemo(() => items.filter((item) => !item.trash), [items]);
   const selected = visibleItems.find((item) => item.id === selectedId) || visibleItems[0];
   const utilityPage = selectedId === "gmail" || selectedId === "parro" || selectedId === "news-slashdot" || selectedId === "news-tweakers" || selectedId === "news-nos" || selectedId === "news-bunniksnieuws" ? selectedId : null;
-  const currentTitle = utilityPage === "gmail" ? t("gmail.title") : utilityPage === "parro" ? t("parro.title") : utilityPage === "news-slashdot" ? "Slashdot" : utilityPage === "news-tweakers" ? "Tweakers" : utilityPage === "news-nos" ? "NOS" : utilityPage === "news-bunniksnieuws" ? "Bunniks Nieuws" : selected?.title || t("nav.home");
+  const currentTitle = utilityPage === "gmail" ? t("gmail.title") : utilityPage === "parro" ? t("parro.title") : utilityPage === "news-slashdot" ? "Slashdot" : utilityPage === "news-tweakers" ? "Tweakers" : utilityPage === "news-nos" ? "NOS" : utilityPage === "news-bunniksnieuws" ? "Bunniks Nieuws" : selected?.id === GOOGLE_TASKS_DATABASE_ID ? t("nav.googleTasks") : selected?.id === GOOGLE_CALENDAR_DATABASE_ID ? t("nav.googleCalendar") : selected?.title || t("nav.home");
 
   const updateItem = (next: Item) => {
     setItems((current) => current.map((item) => item.id === next.id ? next : item));
@@ -358,18 +365,11 @@ export default function Home() {
         <header className="topbar">
           <div className="topbar-leading">
             <button className="mobile-menu" aria-label={t("nav.openNavigation")} onClick={() => setSidebarOpen(true)}><InterfaceIcon name="menu" /></button>
-            {!utilityPage && selected?.id === "home" && <span className="compact-greeting">{t("overview.greeting")}</span>}
             {(utilityPage || selected?.id !== "home") && <div className="breadcrumbs"><span>{t("top.workspace")}</span><span>›</span><strong>{currentTitle}</strong></div>}
           </div>
           <div className="topbar-actions">
             <button className="search-trigger" aria-label={t("top.search")} onClick={() => setSearchOpen(true)}>
               <span><InterfaceIcon name="search" /></span><span>{t("top.search")}</span><kbd>⌘ K</kbd>
-            </button>
-            <button className="tasks-trigger" aria-label={t("google.open")} onClick={() => setGoogleTasksOpen(true)}>
-              <span><InterfaceIcon name="tasks" /></span><span>{t("top.googleTasks")}</span>
-            </button>
-            <button className="tasks-trigger calendar-trigger" aria-label={t("calendar.title")} onClick={() => setGoogleCalendarOpen(true)}>
-              <span><InterfaceIcon name="calendar" /></span><span>{t("top.googleCalendar")}</span>
             </button>
             <Suspense fallback={null}>
               <WorkspaceActionsMenu
@@ -381,20 +381,28 @@ export default function Home() {
                 disabled={!hydrated}
                 onOpenTrash={() => setTrashOpen(true)}
                 onImport={(imported) => setItems(imported)}
+                appearance={<>
+                  <div className="menu-setting">
+                    <span>{t("menu.language")}</span>
+                    <div className="language-switch" role="group" aria-label={t("language.label")}>
+                      <button type="button" className={language === "en" ? "active" : ""} aria-label={t("language.switchToEnglish")} aria-pressed={language === "en"} onClick={() => setLanguage("en")}>EN</button>
+                      <button type="button" className={language === "nl" ? "active" : ""} aria-label={t("language.switchToDutch")} aria-pressed={language === "nl"} onClick={() => setLanguage("nl")}>NL</button>
+                    </div>
+                  </div>
+                  <div className="menu-setting">
+                    <span>{t("menu.theme")}</span>
+                    <div className="theme-switch" role="group" aria-label={t("top.theme")}>
+                      <button type="button" className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")} aria-label={t("top.switchToLight")} aria-pressed={theme === "light"}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></svg>
+                      </button>
+                      <button type="button" className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")} aria-label={t("top.switchToDark")} aria-pressed={theme === "dark"}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z" /></svg>
+                      </button>
+                    </div>
+                  </div>
+                </>}
               />
             </Suspense>
-            <div className="language-switch" role="group" aria-label={t("language.label")}>
-              <button type="button" className={language === "en" ? "active" : ""} aria-label={t("language.switchToEnglish")} aria-pressed={language === "en"} onClick={() => setLanguage("en")}>EN</button>
-              <button type="button" className={language === "nl" ? "active" : ""} aria-label={t("language.switchToDutch")} aria-pressed={language === "nl"} onClick={() => setLanguage("nl")}>NL</button>
-            </div>
-            <div className="theme-switch" role="group" aria-label={t("top.theme")}>
-              <button type="button" className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")} aria-label={t("top.switchToLight")} aria-pressed={theme === "light"}>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5" /></svg>
-              </button>
-              <button type="button" className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")} aria-label={t("top.switchToDark")} aria-pressed={theme === "dark"}>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A9 9 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z" /></svg>
-              </button>
-            </div>
             <span className={`sync-indicator sync-${syncState}`} role="status" aria-label={syncLabel} title={syncLabel}>
               <i aria-hidden="true" />
             </span>
@@ -403,13 +411,19 @@ export default function Home() {
         </header>
         <div className="content-scroll">
           <Suspense fallback={<div className="view-loading" aria-hidden="true"><span /><span /><span /></div>}>
-            {utilityPage ? <div className="page-view utility-page">{utilityPage === "gmail" ? <GmailInbox authorizationError={gmailAuthorizationError} /> : utilityPage === "parro" ? <ParroInbox /> : <SlashdotFeed key={utilityPage} source={utilityPage === "news-slashdot" ? "slashdot" : utilityPage === "news-tweakers" ? "tweakers" : utilityPage === "news-nos" ? "nos" : "bunniksnieuws"} />}</div> : isDatabase(selected) ? (
+            {utilityPage ? <div className="page-view utility-page">{utilityPage === "gmail" ? <GmailInbox authorizationError={gmailAuthorizationError} /> : utilityPage === "parro" ? <ParroInbox /> : <>
+              <div className="news-tabs" role="tablist" aria-label={t("nav.news")}>
+                {NEWS_PAGES.map((page) => <button type="button" role="tab" key={page.id} aria-selected={utilityPage === page.id} className={utilityPage === page.id ? "active" : ""} onClick={() => selectItem(page.id)}>{page.label}</button>)}
+              </div>
+              <SlashdotFeed key={utilityPage} source={NEWS_PAGES.find((page) => page.id === utilityPage)?.source ?? "slashdot"} />
+            </>}</div> : isDatabase(selected) ? (
               <DatabaseView
                 key={`${selected.id}-${selectedRowId || "none"}`}
                 database={selected}
                 onUpdate={updateItem}
                 initialRowId={selectedRowId}
                 onTrashRow={trashRow}
+                onOpenGoogleSync={(service) => service === "tasks" ? setGoogleTasksOpen(true) : setGoogleCalendarOpen(true)}
               />
             ) : selected?.id === "home" ? (
               <div className="page-view home-page">

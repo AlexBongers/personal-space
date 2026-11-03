@@ -194,6 +194,7 @@ describe("task and appointment editors", () => {
     tasks.rows = [
       { id: "t1", title: "Mail aan team", blocks: [], values: { [TASK.status]: "Open", [TASK.list]: "Werk" } },
       { id: "t2", title: "Boodschappen", blocks: [], values: { [TASK.status]: "Open", [TASK.list]: "Privé" } },
+      { id: "t3", title: "Medicijnen innemen", blocks: [], values: { [TASK.status]: "Open", [TASK.list]: "Privé", "task-reminder": new Date(Date.now() - 60_000).toISOString() } },
     ];
     const saved = await fetch(`${base}/api/workspace`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: [...current.items, tasks], baseRevision: current.revision, protocolVersion: 2, capabilities: ["trash"] }) });
     assert.equal(saved.status, 200);
@@ -210,12 +211,23 @@ describe("task and appointment editors", () => {
     await page.getByRole("button", { name: /Nieuwe taak/ }).click();
     await page.locator(".editor-title-input").fill("Cadeau kopen");
     await page.getByRole("radio", { name: "Privé" }).click();
-    await page.getByRole("button", { name: "Morgen" }).click();
+    await page.getByRole("button", { name: "Morgen", exact: true }).click();
     await page.keyboard.press("Control+Enter");
     await until(async () => (await rowsOf("google-tasks")).some((row) => row.title === "Cadeau kopen"), "the task was not saved");
     const rows = await rowsOf("google-tasks");
     assert.ok(!rows.some((row) => row.title === "Wordt geannuleerd" || /Naamloze|Untitled/.test(row.title)));
     assert.equal(rows.find((row) => row.title === "Cadeau kopen").values[TASK.list], "Privé");
+  });
+
+  test("a task whose reminder time has come gives a notification once", async () => {
+    // The scheduler looks every 15 seconds.
+    for (let waited = 0; waited < 30_000 && !(await recorded(session.app, "notified")).some((entry) => entry.title === "Herinnering voor taak" && entry.body === "Medicijnen innemen"); waited += 500) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    assert.ok((await recorded(session.app, "notified")).some((entry) => entry.title === "Herinnering voor taak" && entry.body === "Medicijnen innemen"), "no task reminder notification");
+    await new Promise((resolve) => setTimeout(resolve, 16_000));
+    const notified = await recorded(session.app, "notified");
+    assert.equal(notified.filter((entry) => entry.body === "Medicijnen innemen").length, 1);
   });
 
   test("a task dragged to another list moves there", async () => {

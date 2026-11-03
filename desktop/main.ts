@@ -19,6 +19,7 @@ import { appPaths } from "./paths.ts";
 import { createReminderService } from "./reminder-service.ts";
 import { createScheduler } from "./scheduler.ts";
 import { startLocalServer, type LocalServer } from "./server.ts";
+import { createTaskReminderWatch } from "./task-reminders.ts";
 import { createTray } from "./tray.ts";
 import { createWindows, type Windows } from "./windows.ts";
 import { readItems, readRevision } from "./workspace.ts";
@@ -87,6 +88,13 @@ const start = async () => {
   const notifyState = loadNotifyState(paths.notifyState);
   const saveState = () => saveNotifyState(paths.notifyState, notifyState);
   const todaySummary = createDayCache(() => readRevision(database), () => readItems(database));
+  const taskReminderWatch = createTaskReminderWatch(() => readRevision(database), () => readItems(database));
+  const fireTaskReminders = async (now: Date) => {
+    const due = await taskReminderWatch.due(now, notifyState);
+    if (!due.length) return;
+    saveState();
+    for (const reminder of due) notify("Herinnering voor taak", reminder.title || "Taak", () => ui.openItem(GOOGLE_TASKS_DATABASE_ID, reminder.id));
+  };
   const announceEvents = createEventAnnouncer();
 
   let refreshTray = () => {};
@@ -140,7 +148,10 @@ const start = async () => {
     const day = await todaySummary(now);
     const timeLabel = (at: string) => new Date(at).toLocaleString("nl-NL", { dateStyle: "short", timeStyle: "short" });
     tray.update(day.dueCount > 0 ? String(day.dueCount) : "", [
-      { heading: "Herinneringen", lines: reminders.list().slice(0, 3).map((reminder) => ({ label: `${timeLabel(reminder.at)}  ${reminder.text}`, click: cmd.openReminders })) },
+      { heading: "Herinneringen", lines: [
+        ...reminders.list().map((reminder) => ({ at: Date.parse(reminder.at), label: `${timeLabel(reminder.at)}  ${reminder.text}`, click: cmd.openReminders })),
+        ...taskReminderWatch.upcoming().filter((reminder) => reminder.at > now.getTime()).map((reminder) => ({ at: reminder.at, label: `${timeLabel(new Date(reminder.at).toISOString())}  ${reminder.title}`, click: () => ui.openItem(GOOGLE_TASKS_DATABASE_ID, reminder.id) })),
+      ].sort((a, b) => a.at - b.at).slice(0, 4) },
       { heading: "Agenda vandaag", lines: day.events.map((event) => ({ label: event.label, click: () => ui.openItem(GOOGLE_CALENDAR_DATABASE_ID, event.id) })) },
       { heading: "Taken (vandaag en achterstallig)", lines: day.tasks.map((task) => ({ label: task.label, click: () => ui.openItem(GOOGLE_TASKS_DATABASE_ID, task.id) })) },
     ]);
@@ -158,6 +169,7 @@ const start = async () => {
 
   const jobs = createScheduler([
     { name: "herinneringen", everyMs: TICK_MS, run: (now) => cmd.fireReminders(reminders.takeDue(now)) },
+    { name: "taakherinneringen", everyMs: TICK_MS, run: fireTaskReminders },
     { name: "agenda", everyMs: MINUTE, run: updateAgenda },
     { name: "back-up", everyMs: 5 * MINUTE, run: () => cmd.backup() },
     { name: "sync", everyMs: 5 * MINUTE, run: () => sync.run() },

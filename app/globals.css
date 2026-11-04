@@ -1177,3 +1177,22 @@ td { height: 56px; font-size: .9375rem; }
 /* Exactly two full rows of headlines at any width; the rest is on the news page. */
 .home-news .news-list { grid-template-rows: auto auto; grid-auto-rows: 0; row-gap: 0; }
 .home-news .news-list > li { overflow: hidden; }
+.home-day-heading { margin: 8px 8px 2px; color: var(--faint); font-size: .6875rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.home-day-heading:first-child { margin-top: 0; }
+
+/* Top bar: one sync button for tasks and one for the calendar. */
+.google-sync-button { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 12px; border: 1px solid var(--line-soft); border-radius: 10px; color: var(--ink); background: var(--panel); font-size: .8125rem; white-space: nowrap; }
+.google-sync-button:hover { background: color-mix(in srgb, var(--ink) 4%, var(--panel)); }
+.google-sync-icon svg { width: 15px; height: 15px; color: var(--muted); }
+.google-sync-state { color: var(--faint); font-size: .8125rem; }
+.google-sync-button.is-busy .google-sync-state { animation: sync-spin 1s linear infinite; }
+.google-sync-button.is-done .google-sync-state { color: var(--green); }
+.google-sync-button.is-error { border-color: color-mix(in srgb, var(--red) 45%, var(--line-soft)); }
+.google-sync-button.is-error .google-sync-state { color: var(--red); font-weight: 700; }
+@keyframes sync-spin { to { transform: rotate(360deg); } }
+@media (max-width: 820px) { .google-sync-button > span:nth-child(2) { display: none; } }
+
+/* Quick add: the text field gets the room, the type choice stays narrow. */
+.home-calm .home-top .home-quick-add { flex: 1 1 460px; max-width: 760px; }
+.home-calm .home-quick-form input { flex: 1 1 auto; min-width: 160px; }
+.home-calm .home-quick-form select { flex: 0 0 auto; width: auto; padding-right: 22px; }

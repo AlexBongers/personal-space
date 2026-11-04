@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { createGoogleCalendarDatabase, GOOGLE_CALENDAR_DATABASE_ID } from "./model";
 import { useLanguage } from "./i18n";
+import { runGoogleSync } from "./google-sync-run.ts";
 import type { WorkspaceMutationSession } from "./workspace-persistence-controller.ts";
 import type { Item } from "./types";
 
@@ -71,32 +71,15 @@ export function GoogleCalendarDialog({ revision, onReplace, onBeginSync, onOpenD
     setBusy(true);
     setError("");
     setSummary(null);
-    const session = await onBeginSync();
-    if (!session) {
-      setError(t("sync.workspaceBusy"));
-      setBusy(false);
-      return;
-    }
-    try {
-      const nextItems = session.items.some((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID)
-        ? session.items
-        : [...session.items, createGoogleCalendarDatabase()];
-      const response = await fetch("/api/google-calendar/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: nextItems, baseRevision: session.revision, protocolVersion: 2, capabilities: ["trash"] }),
-      });
-      const body = await response.json() as { workspace?: { items: Item[]; revision: number }; sync?: CalendarSummary; error?: string; code?: string };
-      if (!response.ok || !body.workspace || !body.sync) throw new Error(body.code === "sync_busy" ? t("sync.busy") : body.code === "sync_uncertain" ? t("sync.uncertain") : body.error || t("calendar.syncError"));
-      onReplace(body.workspace.items, body.workspace.revision);
-      setSummary(body.sync);
+    const outcome = await runGoogleSync("calendar", onBeginSync);
+    if (outcome.ok) {
+      onReplace(outcome.workspace.items, outcome.workspace.revision);
+      setSummary(outcome.summary as CalendarSummary);
       await loadStatus();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t("calendar.syncError"));
-    } finally {
-      session.release();
-      setBusy(false);
+    } else {
+      setError(outcome.reason === "busy" ? t("sync.busy") : outcome.reason === "uncertain" ? t("sync.uncertain") : outcome.reason === "workspace" ? t("sync.workspaceBusy") : outcome.message || t("calendar.syncError"));
     }
+    setBusy(false);
   };
 
   const disconnect = async () => {

@@ -15,6 +15,7 @@ import {
   GOOGLE_TASK_PROPERTY_IDS,
 } from "./personal-space/model";
 import { Sidebar } from "./personal-space/Sidebar";
+import { GoogleSyncButton } from "./personal-space/GoogleSyncButton";
 import { InterfaceIcon } from "./personal-space/InterfaceIcon";
 import type { Block, Item, SearchResult, Theme } from "./personal-space/types";
 import { useLanguage } from "./personal-space/i18n";
@@ -388,6 +389,8 @@ export default function Home() {
             {(utilityPage || selected?.id !== "home") && <div className="breadcrumbs"><span>{t("top.workspace")}</span><span>›</span><strong>{currentTitle}</strong></div>}
           </div>
           <div className="topbar-actions">
+            <GoogleSyncButton service="tasks" onBeginSync={beginExternalMutation} onReplace={replaceItems} onOpenSetup={() => setGoogleTasksOpen(true)} />
+            <GoogleSyncButton service="calendar" onBeginSync={beginExternalMutation} onReplace={replaceItems} onOpenSetup={() => setGoogleCalendarOpen(true)} />
             <button className="search-trigger" aria-label={t("top.search")} onClick={() => setSearchOpen(true)}>
               <span><InterfaceIcon name="search" /></span><span>{t("top.search")}</span><kbd>⌘ K</kbd>
             </button>
@@ -401,6 +404,10 @@ export default function Home() {
                 disabled={!hydrated}
                 onOpenTrash={() => setTrashOpen(true)}
                 onImport={(imported) => setItems(imported)}
+                extraActions={[
+                  { label: t("menu.googleTasks"), onSelect: () => setGoogleTasksOpen(true) },
+                  { label: t("menu.googleCalendar"), onSelect: () => setGoogleCalendarOpen(true) },
+                ]}
                 appearance={<>
                   <div className="menu-setting">
                     <span>{t("menu.language")}</span>
@@ -443,7 +450,6 @@ export default function Home() {
                 onUpdate={updateItem}
                 initialRowId={selectedRowId}
                 onTrashRow={trashRow}
-                onOpenGoogleSync={(service) => service === "tasks" ? setGoogleTasksOpen(true) : setGoogleCalendarOpen(true)}
               />
             ) : selected?.id === "home" ? (
               <div className="page-view home-page">

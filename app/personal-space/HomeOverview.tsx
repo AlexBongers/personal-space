@@ -286,7 +286,7 @@ function HomeNews({ panel }: { panel: PanelState }) {
       <button type="button" className="text-link-button" aria-expanded={editing} onClick={() => setEditing((current) => !current)}>{t("home.customizeNews")}</button>
     </>}>
       {editing && <div className="home-news-preferences" role="region" aria-label={t("home.customizeNews")}><p>{t("home.customizeNewsHint")}</p>{preferences.order.map((source, index) => <div className="home-news-preference-row" key={source}><span>{NEWS_SOURCES.find((entry) => entry.source === source)?.label}</span><span><button type="button" className="icon-button" aria-label={t("home.moveNewsUp")} disabled={index === 0} onClick={() => move(source, -1)}>↑</button><button type="button" className="icon-button" aria-label={t("home.moveNewsDown")} disabled={index === preferences.order.length - 1} onClick={() => move(source, 1)}>↓</button></span></div>)}</div>}
-      <SlashdotFeed key={active} source={active} compact hideHeading maxStories={8} />
+      <SlashdotFeed key={active} source={active} compact hideHeading maxStories={12} />
     </Panel>
   );
 }
@@ -313,15 +313,17 @@ export function HomeOverview({ items, onOpen, onQuickAdd, quickAddDisabled, quic
         </div>
         <QuickAdd taskAvailable={Boolean(taskDatabase && isDatabase(taskDatabase))} onQuickAdd={onQuickAdd} disabled={quickAddDisabled} status={quickAddStatus} />
       </header>
-      <div className="home-grid">
-        <HomeAgenda items={items} now={now} onOpen={onOpen} panel={panel("today")} />
-        <HomeTasks items={items} now={now} onOpen={onOpen} panel={panel("tasks")} />
+      <HomeNews panel={panel("news")} />
+      <div className="home-main">
+        <div className="home-stack">
+          <HomeAgenda items={items} now={now} onOpen={onOpen} panel={panel("today")} />
+          <HomeTasks items={items} now={now} onOpen={onOpen} panel={panel("tasks")} />
+        </div>
         <Panel title={t("home.inbox")} icon="mail" className="home-inbox" {...panel("inbox")}>
           <ParroInbox compact onOpenParro={() => onOpen("parro")} />
           <GmailInbox compact onOpenInbox={() => onOpen("gmail")} />
         </Panel>
       </div>
-      <HomeNews panel={panel("news")} />
     </section>
   );
 }

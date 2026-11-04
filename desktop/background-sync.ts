@@ -45,7 +45,10 @@ export const createBackgroundSync = ({ fetch, origin, isWindowOpen, onParro, onG
   const syncParro = async () => {
     const current = await request<{ connectionState?: string }>("/api/parro/messages?limit=1");
     if (current?.connectionState !== "connected") return;
-    await request("/api/parro/refresh", { method: "POST" });
+    // A busy answer means another sync is fetching already; anything else that fails is worth a line in the log.
+    const refresh = await fetch("/api/parro/refresh", { method: "POST", headers: { Origin: origin, "Content-Type": "application/json" } });
+    const outcome = await refresh.text();
+    if (!refresh.ok && refresh.status !== 409) onError(`Parro vernieuwen mislukt (${refresh.status}): ${(() => { try { return String(JSON.parse(outcome).error ?? outcome); } catch { return outcome; } })().slice(0, 200)}`);
     const refreshed = await request<{ unread?: number; messages?: InboxMessage[] }>("/api/parro/messages?limit=20");
     onParro(refreshed?.messages ?? [], Number(refreshed?.unread ?? 0));
   };

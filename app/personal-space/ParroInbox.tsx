@@ -32,7 +32,7 @@ export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: 
     requestRef.current = controller;
     setLoading(true);
     try {
-      const query = new URLSearchParams({ limit: compact ? "4" : "20" });
+      const query = new URLSearchParams({ limit: compact ? "3" : "20" });
       const { response, body } = await fetchRemoteJson<ParroMessagesResponse>(`/api/parro/messages?${query}`, { cache: "no-store", signal: controller.signal });
       if (requestRef.current !== controller) return;
       if ((!response.ok && body.state !== "sign_in_required" && body.state !== "unconfigured") || !body.state || body.state === "unavailable") throw new Error("Parro unavailable");
@@ -43,7 +43,10 @@ export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: 
         setSyncError(null);
         const { response: syncResponse, body: result } = await fetchRemoteJson<{ ok?: boolean; state?: string; error?: unknown }>("/api/parro/refresh", { method: "POST", signal: controller.signal }, 95_000);
         if (requestRef.current !== controller) return;
-        if (!syncResponse.ok || !result.ok) {
+        if (syncResponse.status === 409) {
+          // Another sync (the app's background sync or another window) is fetching right now: show its result shortly.
+          window.setTimeout(() => void load(false, false), 8000);
+        } else if (!syncResponse.ok || !result.ok) {
           setSyncError(typeof result.error === "string" && result.error.trim() ? result.error : t("parro.syncFailed"));
           if (syncResponse.status === 401 || result.state === "sign_in_required") {
             setEditingConnection(true);
@@ -111,7 +114,7 @@ export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: 
       <button type="button" className="feed-refresh" aria-label={t("parro.refresh")} title={connected ? t("parro.refreshHint") : t("parro.refreshUnavailable")} disabled={busy || !connected} onClick={() => void load(true)}><span className={loading || syncing ? "spin" : ""}>↻</span></button>
     </div>
     {hasSnapshot && snapshot.date && <div className="parro-meta"><span>{t("parro.updated", { time: syncFormat.format(snapshot.date) })}</span><span>{t("parro.unreadCount", { count: unread })}</span></div>}
-    {hasSnapshot && inbox && (inbox.messages.length > 0 || snapshot.date) && snapshot.stale && <p className="parro-notice parro-sync-warning" role="status">{t(snapshot.date ? "parro.syncDelayed" : "parro.syncUnknown")}</p>}
+    {!compact && hasSnapshot && inbox && (inbox.messages.length > 0 || snapshot.date) && snapshot.stale && <p className="parro-notice parro-sync-warning" role="status">{t(snapshot.date ? "parro.syncDelayed" : "parro.syncUnknown")}</p>}
     {syncing && <p className="parro-sync-help" role="status">{t("parro.syncing")}</p>}
     {syncError && <p className="parro-notice parro-sync-warning" role="alert">{syncError}</p>}
     {!signInRequired && inbox?.connectionState === "unconfigured" && <p className="parro-notice">{t("parro.serverUnconfigured")}</p>}

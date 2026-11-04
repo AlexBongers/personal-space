@@ -71,3 +71,23 @@ test("a background pass that hangs is abandoned and the next pass can run", asyn
   assert.equal(calls, 2);
   assert.equal(errors.filter((message) => message.includes("gestopt")).length, 2);
 });
+
+test("a failed Parro refresh is logged with its reason, a busy one is not", async () => {
+  const run = async (status: number, body: unknown) => {
+    const errors: string[] = [];
+    const sync = createBackgroundSync({
+      origin: "http://localhost:3210",
+      isWindowOpen: () => true,
+      onParro: () => {},
+      onGmail: () => {},
+      onError: (message) => errors.push(message),
+      fetch: async (path) => path.startsWith("/api/parro/refresh")
+        ? new Response(JSON.stringify(body), { status })
+        : new Response(JSON.stringify(path.startsWith("/api/parro") ? { connectionState: "connected", messages: [], unread: 0 } : { state: "unconfigured" })),
+    });
+    await sync.run();
+    return errors;
+  };
+  assert.deepEqual(await run(502, { error: "Parro is niet bereikbaar" }), ["Parro vernieuwen mislukt (502): Parro is niet bereikbaar"]);
+  assert.deepEqual(await run(409, { error: "Parro wordt al gesynchroniseerd." }), []);
+});

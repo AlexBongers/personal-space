@@ -1151,3 +1151,29 @@ td { height: 56px; font-size: .9375rem; }
 .sidebar-footer { display: grid; gap: 0; padding: 6px 10px 10px; }
 .sidebar .new-button, .sidebar .new-button.secondary { justify-content: flex-start; padding: 0 10px; font-size: .8125rem; }
 .home-panel.is-folded .home-panel-heading, .home-news.is-folded .home-panel-heading { margin-bottom: 0; }
+
+/* Home: news across the top, then today and tasks on the left and a wide inbox beside them. */
+.home-main { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+.home-stack { display: grid; gap: 16px; align-content: start; }
+.home-inbox .home-panel-body { grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 14px 32px; }
+.home-inbox .home-panel-body > * + * { padding-top: 0; border-top: 0; }
+.home-news .news-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 2px 28px; columns: auto; }
+.home-news .news-list > li { min-width: 0; }
+.parro-compact .parro-item-body, .gmail-compact .inbox-snippet { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.parro-compact .parro-sync-help { display: none; }
+@container (max-width: 760px) {
+  .home-main { grid-template-columns: 1fr; }
+}
+
+.home-main { grid-template-columns: minmax(280px, 1fr) minmax(0, 1.7fr); }
+.home-news .news-list { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.home-news .news-list > li a, .home-news .news-list > li > * { padding-top: 8px; padding-bottom: 8px; }
+.home-news .story-copy strong, .home-news .story-title { font-size: .875rem; line-height: 1.35; }
+.home-news .news-summary-toggle, .home-news .slashdot-footer { display: none; }
+.parro-compact .parro-entry { padding: 8px 0; }
+.parro-compact .parro-item-copy strong { font-size: .875rem; }
+.parro-compact .parro-item-body { font-size: .8125rem; }
+.parro-compact .parro-item-actions { display: none; }
+/* Exactly two full rows of headlines at any width; the rest is on the news page. */
+.home-news .news-list { grid-template-rows: auto auto; grid-auto-rows: 0; row-gap: 0; }
+.home-news .news-list > li { overflow: hidden; }

@@ -42,6 +42,7 @@ type IntegrationViewProps = {
 };
 
 const TASK_DRAG = "application/x-personal-space-task";
+const FOLDED_LISTS_KEY = "personal-space-folded-task-lists";
 const EVENT_DRAG = "application/x-personal-space-event";
 
 const dateKey = (date: Date) => {
@@ -91,6 +92,19 @@ export function GoogleTasksInterface({ database, rows, initialRowId, onOpenDetai
   const [editor, setEditor] = useState<{ rowId: string | null; list: string } | null>(() => initialRowId ? { rowId: initialRowId, list: "" } : null);
   const [dragging, setDragging] = useState<string | null>(null);
   const [dropList, setDropList] = useState<string | null>(null);
+  // Folded lists show only their heading; remembered on this device.
+  const [foldedLists, setFoldedLists] = useState<string[]>([]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try { setFoldedLists(JSON.parse(window.localStorage.getItem(FOLDED_LISTS_KEY) || "[]")); } catch { /* All open by default. */ }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const toggleList = (list: string) => setFoldedLists((current) => {
+    const next = current.includes(list) ? current.filter((entry) => entry !== list) : [...current, list];
+    try { window.localStorage.setItem(FOLDED_LISTS_KEY, JSON.stringify(next)); } catch { /* Lasts for this session. */ }
+    return next;
+  });
   const deferredQuery = useDeferredValue(query);
   const dueFormatter = useMemo(() => new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", { day: "numeric", month: "short", year: "numeric" }), [language]);
   const reminderFormatter = useMemo(() => new Intl.DateTimeFormat(language === "nl" ? "nl-NL" : "en-US", { timeZone: CALENDAR_TIME_ZONE, weekday: "short", hour: "2-digit", minute: "2-digit" }), [language]);
@@ -192,8 +206,11 @@ export function GoogleTasksInterface({ database, rows, initialRowId, onOpenDetai
 
       <div className="task-groups">
         {groupedRows.map(([list, groupRows]) => (
-          <section className={`task-group ${dropList === list ? "is-drop-target" : ""}`} key={list || "none"} {...dropHandlers(list)}>
-            <div className="task-group-heading"><span className="task-list-dot" /><h2>{list || t("tasks.noList")}</h2><span>{groupRows.length}</span></div>
+          <section className={`task-group ${dropList === list ? "is-drop-target" : ""} ${foldedLists.includes(list) ? "is-folded" : ""}`} key={list || "none"} {...dropHandlers(list)}>
+            <button type="button" className="task-group-heading" aria-expanded={!foldedLists.includes(list)} aria-label={t("tasks.collapseList", { title: list || t("tasks.noList") })} onClick={() => toggleList(list)}>
+              <span className="task-group-chevron" aria-hidden="true">›</span><h2>{list || t("tasks.noList")}</h2><span>{groupRows.length}</span>
+            </button>
+            {!foldedLists.includes(list) && <>
             <div className="task-list">
               {groupRows.map((row) => {
                 const done = taskIsDone(row);
@@ -233,6 +250,7 @@ export function GoogleTasksInterface({ database, rows, initialRowId, onOpenDetai
             {list !== "" && !deferredQuery && (
               <TaskQuickAdd list={list} onAdd={(title) => onSaveRow(null, title, taskValues({ title, list, due: "", notes: "", done: false, reminder: "" }))} />
             )}
+            </>}
           </section>
         ))}
       </div>

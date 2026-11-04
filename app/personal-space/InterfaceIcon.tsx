@@ -1,4 +1,4 @@
-type IconName = "home" | "search" | "tasks" | "calendar" | "news" | "plus" | "database" | "menu" | "mail";
+export type IconName = "home" | "search" | "tasks" | "calendar" | "news" | "plus" | "database" | "menu" | "mail" | "sidebar";
 
 const paths: Record<IconName, string> = {
   mail: "M3 5h18v14H3ZM3 5l9 7 9-7",
@@ -10,6 +10,7 @@ const paths: Record<IconName, string> = {
   plus: "M12 4v16M4 12h16",
   database: "M3 7c0-5 18-5 18 0s-18 5-18 0Zm0 0v10c0 5 18 5 18 0V7M3 12c0 5 18 5 18 0",
   menu: "M4 6h16M4 12h16M4 18h16",
+  sidebar: "M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm4 0v16",
 };
 
 export function InterfaceIcon({ name }: { name: IconName }) {

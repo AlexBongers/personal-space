@@ -114,7 +114,7 @@ npm install
 npm run desktop:build
 ```
 
-This produces `release/mac-arm64/Personal Space.app`; drag it to `/Applications`. Use
+This produces `release/mac-arm64/Personal Space.app`; drag it to `/Applications`. `npm run desktop:install` does all of it at once: it builds the app, quits the running one, replaces it in `/Applications` and opens it. Use
 `npm run desktop:dmg` for a disk image and `npm run desktop:dev` to run it without packaging.
 The app is not notarized, which is fine for a build made on your own Mac. If you copy a build
 from somewhere else, clear the quarantine flag once:

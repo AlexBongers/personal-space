@@ -20,7 +20,8 @@
     "desktop:dev": "npm run desktop:bundle && electron .",
     "desktop:build": "npm run desktop:bundle && electron-builder --mac --arm64 --dir",
     "desktop:dmg": "npm run desktop:bundle && electron-builder --mac --arm64 --dmg",
-    "test:desktop": "npm run desktop:bundle && node --test --test-concurrency=1 e2e/desktop.test.mjs"
+    "test:desktop": "npm run desktop:bundle && node --test --test-concurrency=1 e2e/desktop.test.mjs",
+    "desktop:install": "sh desktop/install-mac.sh"
   },
   "dependencies": {
     "@hono/node-server": "2.1.6",

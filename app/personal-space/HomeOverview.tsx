@@ -24,6 +24,7 @@ import { ParroInbox } from "./ParroInbox";
 import { InterfaceIcon } from "./InterfaceIcon";
 import { activeRows } from "./workspace-trash.ts";
 import { taskReminder } from "./editor-model.ts";
+import { addCalendarDays, calendarTodayKey, parseCalendarEvents, selectParsedCalendarEventsForDay, type CalendarEvent } from "./calendar-model.ts";
 import type { Item } from "./types";
 
 export type HomeQuickAddKind = "task" | "note";
@@ -151,35 +152,42 @@ function usePanels() {
   });
 }
 
+/** Today's and tomorrow's appointments, so the next day is never a surprise. */
 function HomeAgenda({ items, now, onOpen, panel }: { items: Item[]; now: Date; onOpen: (id: string, rowId?: string) => void; panel: PanelState }) {
   const { language, t } = useLanguage();
   const calendarDatabase = items.find((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID && !item.trash);
-  const calendar = useMemo(() => selectHomeCalendar(isDatabase(calendarDatabase) ? activeRows(calendarDatabase) : [], now), [now, calendarDatabase]);
-  const timeOf = (event: typeof calendar.today[number]) => {
+  const rows = useMemo(() => isDatabase(calendarDatabase) ? activeRows(calendarDatabase) : [], [calendarDatabase]);
+  const calendar = useMemo(() => selectHomeCalendar(rows, now), [now, rows]);
+  const tomorrow = useMemo(() => selectParsedCalendarEventsForDay(parseCalendarEvents(rows), addCalendarDays(calendarTodayKey(now), 1)), [now, rows]);
+  const timeOf = (event: CalendarEvent) => {
     if (event.allDay) return t("home.allDay");
     if (!event.start) return "";
     return !event.end || event.unknownEnd ? formatTime(event.start, language) : `${formatTime(event.start, language)}–${formatTime(event.end, language)}`;
   };
+  const list = (events: CalendarEvent[], empty: string, withTags: boolean) => events.length ? (
+    <ol className="home-rows">
+      {events.slice(0, MAX_ROWS).map((event) => {
+        const tag = !withTags ? "" : calendar.current?.row.id === event.row.id ? t("home.now") : calendar.next?.row.id === event.row.id ? t("home.next") : "";
+        const location = calendarRowText(event.row, GOOGLE_CALENDAR_PROPERTY_IDS.location);
+        return (
+          <li key={event.row.id}>
+            <button type="button" className="home-row" onClick={() => onOpen(GOOGLE_CALENDAR_DATABASE_ID, event.row.id)}>
+              <span className="home-row-time">{timeOf(event)}</span>
+              <span className="home-row-copy"><strong>{event.row.title || t("calendarView.defaultCalendar")}</strong>{location && <small>{location}</small>}</span>
+              {tag && <span className={`home-row-tag ${tag === t("home.now") ? "is-now" : ""}`}>{tag}</span>}
+            </button>
+          </li>
+        );
+      })}
+      {events.length > MAX_ROWS && <li className="home-more">{t("home.moreAppointments", { count: events.length - MAX_ROWS })}</li>}
+    </ol>
+  ) : <p className="home-empty">{empty}</p>;
   return (
-    <Panel title={t("home.today")} icon="calendar" {...panel} action={<button type="button" className="text-link-button" onClick={() => onOpen(GOOGLE_CALENDAR_DATABASE_ID)}>{t("home.openCalendar")} →</button>}>
-      {calendar.today.length ? (
-        <ol className="home-rows">
-          {calendar.today.slice(0, MAX_ROWS).map((event) => {
-            const tag = calendar.current?.row.id === event.row.id ? t("home.now") : calendar.next?.row.id === event.row.id ? t("home.next") : "";
-            const location = calendarRowText(event.row, GOOGLE_CALENDAR_PROPERTY_IDS.location);
-            return (
-              <li key={event.row.id}>
-                <button type="button" className="home-row" onClick={() => onOpen(GOOGLE_CALENDAR_DATABASE_ID, event.row.id)}>
-                  <span className="home-row-time">{timeOf(event)}</span>
-                  <span className="home-row-copy"><strong>{event.row.title || t("calendarView.defaultCalendar")}</strong>{location && <small>{location}</small>}</span>
-                  {tag && <span className={`home-row-tag ${tag === t("home.now") ? "is-now" : ""}`}>{tag}</span>}
-                </button>
-              </li>
-            );
-          })}
-        </ol>
-      ) : <p className="home-empty">{t("home.nothingToday")}</p>}
-      {calendar.today.length > MAX_ROWS && <p className="home-more">{t("home.moreAppointments", { count: calendar.today.length - MAX_ROWS })}</p>}
+    <Panel title={t("home.agenda")} icon="calendar" {...panel} action={<button type="button" className="text-link-button" onClick={() => onOpen(GOOGLE_CALENDAR_DATABASE_ID)}>{t("home.openCalendar")} →</button>}>
+      <h3 className="home-day-heading">{t("home.today")}</h3>
+      {list(calendar.today, t("home.nothingToday"), true)}
+      <h3 className="home-day-heading">{t("home.tomorrow")}</h3>
+      {list(tomorrow, t("home.nothingTomorrow"), false)}
     </Panel>
   );
 }

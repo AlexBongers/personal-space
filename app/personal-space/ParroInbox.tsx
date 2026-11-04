@@ -26,6 +26,8 @@ export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: 
   const refreshSignalRef = useRef(refreshSignal);
   const { ref: panelRef, active } = useNearViewport<HTMLElement>();
 
+  // The newest load, for the retry after a busy sync.
+  const loadRef = useRef<(forceSync?: boolean, allowAutomaticSync?: boolean) => Promise<void>>(async () => {});
   const load = useCallback(async (forceSync = false, allowAutomaticSync = true) => {
     requestRef.current?.abort();
     const controller = new AbortController();
@@ -45,7 +47,7 @@ export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: 
         if (requestRef.current !== controller) return;
         if (syncResponse.status === 409) {
           // Another sync (the app's background sync or another window) is fetching right now: show its result shortly.
-          window.setTimeout(() => void load(false, false), 8000);
+          window.setTimeout(() => void loadRef.current(false, false), 8000);
         } else if (!syncResponse.ok || !result.ok) {
           setSyncError(typeof result.error === "string" && result.error.trim() ? result.error : t("parro.syncFailed"));
           if (syncResponse.status === 401 || result.state === "sign_in_required") {
@@ -66,6 +68,7 @@ export function ParroInbox({ compact = false, onOpenParro, refreshSignal = 0 }: 
       if (requestRef.current === controller) { requestRef.current = null; setLoading(false); setSyncing(false); }
     }
   }, [compact, t]);
+  useEffect(() => { loadRef.current = load; }, [load]);
 
   useEffect(() => {
     if (!active) return undefined;

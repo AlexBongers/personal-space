@@ -22,6 +22,8 @@ type WorkspaceActionsMenuProps = {
   onImport: (items: Item[]) => void;
   /** Language and theme controls, shown at the top of the menu. */
   appearance?: ReactNode;
+  /** Extra menu items, such as the Google connection dialogs. */
+  extraActions?: Array<{ label: string; onSelect: () => void }>;
 };
 
 const withConflictVersions = (
@@ -53,6 +55,7 @@ export function WorkspaceActionsMenu({
   onOpenTrash,
   onImport,
   appearance,
+  extraActions = [],
 }: WorkspaceActionsMenuProps) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
@@ -147,6 +150,7 @@ export function WorkspaceActionsMenu({
       {open && (
         <div className="workspace-actions-menu" role="menu">
           {appearance && <div className="workspace-actions-appearance">{appearance}</div>}
+          {extraActions.map((action) => <button type="button" role="menuitem" key={action.label} onClick={() => { action.onSelect(); setOpen(false); }}>{action.label}</button>)}
           {onOpenTrash && <button type="button" role="menuitem" onClick={() => { onOpenTrash(); setOpen(false); }}>{t("workspaceActions.trash")}</button>}
           <button type="button" role="menuitem" onClick={exportWorkspace}>{t("workspaceActions.export")}</button>
           <button type="button" role="menuitem" onClick={chooseImportFile}>{t("workspaceActions.import")}</button>

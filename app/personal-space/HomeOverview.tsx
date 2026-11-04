@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   calendarRowText,
   HOME_TIME_ZONE,
@@ -110,8 +110,48 @@ const formatDueDate = (value: string, language: "en" | "nl") => {
 const hourIn = (date: Date) => Number(new Intl.DateTimeFormat("en-GB", { timeZone: HOME_TIME_ZONE, hour: "2-digit", hourCycle: "h23" }).format(date));
 
 const MAX_ROWS = 6;
+const PANELS_KEY = "personal-space-home-panels";
+type PanelId = "today" | "tasks" | "inbox" | "news";
+type PanelState = { open: boolean; onToggle: () => void };
 
-function HomeAgenda({ items, now, onOpen }: { items: Item[]; now: Date; onOpen: (id: string, rowId?: string) => void }) {
+/** A Home block that folds open and closed from its heading. */
+function Panel({ title, icon, open, onToggle, action, className = "", children }: { title: string; icon: Parameters<typeof InterfaceIcon>[0]["name"]; action?: ReactNode; className?: string; children: ReactNode } & PanelState) {
+  const { t } = useLanguage();
+  return (
+    <section className={`home-card home-panel ${open ? "is-open" : "is-folded"} ${className}`}>
+      <div className="home-panel-heading">
+        <button type="button" className="home-panel-toggle" aria-expanded={open} aria-label={t(open ? "home.collapse" : "home.expand", { title })} onClick={onToggle}>
+          <span className="home-panel-chevron" aria-hidden="true">›</span>
+          <InterfaceIcon name={icon} />
+          <h2>{title}</h2>
+        </button>
+        {open && action}
+      </div>
+      {open && <div className="home-panel-body">{children}</div>}
+    </section>
+  );
+}
+
+/** Which Home blocks are folded, remembered on this device. */
+function usePanels() {
+  const [folded, setFolded] = useState<Partial<Record<PanelId, boolean>>>({});
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try { setFolded(JSON.parse(window.localStorage.getItem(PANELS_KEY) || "{}")); } catch { /* All open by default. */ }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  return (id: PanelId): PanelState => ({
+    open: !folded[id],
+    onToggle: () => setFolded((current) => {
+      const next = { ...current, [id]: !current[id] };
+      try { window.localStorage.setItem(PANELS_KEY, JSON.stringify(next)); } catch { /* Lasts for this session. */ }
+      return next;
+    }),
+  });
+}
+
+function HomeAgenda({ items, now, onOpen, panel }: { items: Item[]; now: Date; onOpen: (id: string, rowId?: string) => void; panel: PanelState }) {
   const { language, t } = useLanguage();
   const calendarDatabase = items.find((item) => item.id === GOOGLE_CALENDAR_DATABASE_ID && !item.trash);
   const calendar = useMemo(() => selectHomeCalendar(isDatabase(calendarDatabase) ? activeRows(calendarDatabase) : [], now), [now, calendarDatabase]);
@@ -121,11 +161,7 @@ function HomeAgenda({ items, now, onOpen }: { items: Item[]; now: Date; onOpen: 
     return !event.end || event.unknownEnd ? formatTime(event.start, language) : `${formatTime(event.start, language)}–${formatTime(event.end, language)}`;
   };
   return (
-    <section className="home-card home-panel" aria-labelledby="home-agenda-heading">
-      <div className="home-panel-heading">
-        <h2 id="home-agenda-heading"><InterfaceIcon name="calendar" />{t("home.today")}</h2>
-        <button type="button" className="text-link-button" onClick={() => onOpen(GOOGLE_CALENDAR_DATABASE_ID)}>{t("home.openCalendar")} →</button>
-      </div>
+    <Panel title={t("home.today")} icon="calendar" {...panel} action={<button type="button" className="text-link-button" onClick={() => onOpen(GOOGLE_CALENDAR_DATABASE_ID)}>{t("home.openCalendar")} →</button>}>
       {calendar.today.length ? (
         <ol className="home-rows">
           {calendar.today.slice(0, MAX_ROWS).map((event) => {
@@ -144,22 +180,18 @@ function HomeAgenda({ items, now, onOpen }: { items: Item[]; now: Date; onOpen: 
         </ol>
       ) : <p className="home-empty">{t("home.nothingToday")}</p>}
       {calendar.today.length > MAX_ROWS && <p className="home-more">{t("home.moreAppointments", { count: calendar.today.length - MAX_ROWS })}</p>}
-    </section>
+    </Panel>
   );
 }
 
 /** Overdue tasks first, then today's, in one list; overdue ones are marked instead of living in a separate block. */
-function HomeTasks({ items, now, onOpen }: { items: Item[]; now: Date; onOpen: (id: string, rowId?: string) => void }) {
+function HomeTasks({ items, now, onOpen, panel }: { items: Item[]; now: Date; onOpen: (id: string, rowId?: string) => void; panel: PanelState }) {
   const { language, t } = useLanguage();
   const taskDatabase = items.find((item) => item.id === GOOGLE_TASKS_DATABASE_ID && !item.trash);
   const tasks = useMemo(() => selectHomeTasks(isDatabase(taskDatabase) ? activeRows(taskDatabase) : [], now), [now, taskDatabase]);
   const rows = [...tasks.overdue, ...tasks.today];
   return (
-    <section className="home-card home-panel" aria-labelledby="home-tasks-heading">
-      <div className="home-panel-heading">
-        <h2 id="home-tasks-heading"><InterfaceIcon name="tasks" />{t("home.tasks")}</h2>
-        <button type="button" className="text-link-button" onClick={() => onOpen(GOOGLE_TASKS_DATABASE_ID)}>{t("home.openTasks")} →</button>
-      </div>
+    <Panel title={t("home.tasks")} icon="tasks" {...panel} action={<button type="button" className="text-link-button" onClick={() => onOpen(GOOGLE_TASKS_DATABASE_ID)}>{t("home.openTasks")} →</button>}>
       {rows.length ? (
         <ol className="home-rows">
           {rows.slice(0, MAX_ROWS).map((row) => {
@@ -184,7 +216,7 @@ function HomeTasks({ items, now, onOpen }: { items: Item[]; now: Date; onOpen: (
         </ol>
       ) : <p className="home-empty">{t("home.noTasks")}</p>}
       {rows.length > MAX_ROWS && <p className="home-more">{t("home.moreTasks", { count: rows.length - MAX_ROWS })}</p>}
-    </section>
+    </Panel>
   );
 }
 
@@ -224,7 +256,7 @@ function QuickAdd({ taskAvailable, onQuickAdd, disabled, status }: { taskAvailab
 }
 
 /** One news block: a tab per source, in the order chosen under "Customise", and the latest headlines of the chosen one. */
-function HomeNews() {
+function HomeNews({ panel }: { panel: PanelState }) {
   const { t } = useLanguage();
   const [preferences, setPreferences] = useState<NewsPreferences>(defaultNewsPreferences);
   const [editing, setEditing] = useState(false);
@@ -243,21 +275,19 @@ function HomeNews() {
   };
   const active = preferences.active && preferences.order.includes(preferences.active) ? preferences.active : preferences.order[0];
   return (
-    <section className="home-card home-news" aria-labelledby="home-news-heading">
-      <div className="home-panel-heading">
-        <h2 id="home-news-heading"><InterfaceIcon name="news" />{t("overview.newsSection")}</h2>
-        <div className="home-news-tabs" role="tablist" aria-label={t("overview.newsSection")}>
-          {preferences.order.map((source) => (
-            <button type="button" role="tab" key={source} aria-selected={source === active} className={source === active ? "active" : ""} onClick={() => updatePreferences({ ...preferences, active: source })}>
-              {NEWS_SOURCES.find((entry) => entry.source === source)?.label}
-            </button>
-          ))}
-        </div>
-        <button type="button" className="text-link-button" aria-expanded={editing} onClick={() => setEditing((current) => !current)}>{t("home.customizeNews")}</button>
+    <Panel title={t("overview.newsSection")} icon="news" className="home-news" {...panel} action={<>
+      <div className="home-news-tabs" role="tablist" aria-label={t("overview.newsSection")}>
+        {preferences.order.map((source) => (
+          <button type="button" role="tab" key={source} aria-selected={source === active} className={source === active ? "active" : ""} onClick={() => updatePreferences({ ...preferences, active: source })}>
+            {NEWS_SOURCES.find((entry) => entry.source === source)?.label}
+          </button>
+        ))}
       </div>
+      <button type="button" className="text-link-button" aria-expanded={editing} onClick={() => setEditing((current) => !current)}>{t("home.customizeNews")}</button>
+    </>}>
       {editing && <div className="home-news-preferences" role="region" aria-label={t("home.customizeNews")}><p>{t("home.customizeNewsHint")}</p>{preferences.order.map((source, index) => <div className="home-news-preference-row" key={source}><span>{NEWS_SOURCES.find((entry) => entry.source === source)?.label}</span><span><button type="button" className="icon-button" aria-label={t("home.moveNewsUp")} disabled={index === 0} onClick={() => move(source, -1)}>↑</button><button type="button" className="icon-button" aria-label={t("home.moveNewsDown")} disabled={index === preferences.order.length - 1} onClick={() => move(source, 1)}>↓</button></span></div>)}</div>}
-      <SlashdotFeed key={active} source={active} compact hideHeading maxStories={5} />
-    </section>
+      <SlashdotFeed key={active} source={active} compact hideHeading maxStories={8} />
+    </Panel>
   );
 }
 
@@ -271,27 +301,27 @@ export function HomeOverview({ items, onOpen, onQuickAdd, quickAddDisabled, quic
     document.addEventListener("visibilitychange", refresh);
     return () => { window.clearInterval(interval); document.removeEventListener("visibilitychange", refresh); };
   }, []);
+  const panel = usePanels();
   const hour = hourIn(now);
   const greeting = t(hour < 12 ? "home.hello.morning" : hour < 18 ? "home.hello.afternoon" : "home.hello.evening");
   return (
     <section className="home-overview home-calm" aria-label={t("overview.aria")}>
-      <header className="home-hello">
-        <h1>{greeting}</h1>
-        <p>{formatDate(now, language)}</p>
+      <header className="home-top">
+        <div className="home-hello">
+          <h1>{greeting}</h1>
+          <p>{formatDate(now, language)}</p>
+        </div>
+        <QuickAdd taskAvailable={Boolean(taskDatabase && isDatabase(taskDatabase))} onQuickAdd={onQuickAdd} disabled={quickAddDisabled} status={quickAddStatus} />
       </header>
-      <div className="home-columns">
-        <HomeAgenda items={items} now={now} onOpen={onOpen} />
-        <HomeTasks items={items} now={now} onOpen={onOpen} />
-      </div>
-      <QuickAdd taskAvailable={Boolean(taskDatabase && isDatabase(taskDatabase))} onQuickAdd={onQuickAdd} disabled={quickAddDisabled} status={quickAddStatus} />
-      <section className="home-inbox" aria-labelledby="home-inbox-heading">
-        <h2 id="home-inbox-heading" className="home-block-heading">{t("home.inbox")}</h2>
-        <div className="home-inbox-grid">
+      <div className="home-grid">
+        <HomeAgenda items={items} now={now} onOpen={onOpen} panel={panel("today")} />
+        <HomeTasks items={items} now={now} onOpen={onOpen} panel={panel("tasks")} />
+        <Panel title={t("home.inbox")} icon="mail" className="home-inbox" {...panel("inbox")}>
           <ParroInbox compact onOpenParro={() => onOpen("parro")} />
           <GmailInbox compact onOpenInbox={() => onOpen("gmail")} />
-        </div>
-      </section>
-      <HomeNews />
+        </Panel>
+      </div>
+      <HomeNews panel={panel("news")} />
     </section>
   );
 }

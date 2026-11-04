@@ -21,6 +21,8 @@ import { useLanguage } from "./personal-space/i18n";
 import { useWorkspacePersistence } from "./personal-space/useWorkspacePersistence";
 import { markItemSubtreeTrashed, markRowTrashed, purgeTrashBatch, restoreTrashBatch } from "./personal-space/workspace-trash";
 
+const SIDEBAR_HIDDEN_KEY = "personal-space-sidebar-hidden";
+
 const NEWS_PAGES = [
   { id: "news-tweakers", source: "tweakers", label: "Tweakers" },
   { id: "news-nos", source: "nos", label: "NOS" },
@@ -76,6 +78,18 @@ export default function Home() {
   const [themeReady, setThemeReady] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // On wide screens the sidebar can be put away for a calm, full-width view; the choice is remembered.
+  const [sidebarHidden, setSidebarHidden] = useState(false);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try { setSidebarHidden(window.localStorage.getItem(SIDEBAR_HIDDEN_KEY) === "true"); } catch { /* Shown by default. */ }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const toggleSidebarHidden = () => setSidebarHidden((current) => {
+    try { window.localStorage.setItem(SIDEBAR_HIDDEN_KEY, String(!current)); } catch { /* Lasts for this session. */ }
+    return !current;
+  });
   const [query, setQuery] = useState("");
   const [googleTasksOpen, setGoogleTasksOpen] = useState(false);
   const [googleCalendarOpen, setGoogleCalendarOpen] = useState(false);
@@ -153,6 +167,10 @@ export default function Home() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setSearchOpen(true);
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key === "\\") {
+        event.preventDefault();
+        toggleSidebarHidden();
       }
       if (event.key === "Escape") {
         setSearchOpen(false);
@@ -347,7 +365,7 @@ export default function Home() {
   };
 
   return (
-    <main className={`app-shell theme-${theme}`}>
+    <main className={`app-shell theme-${theme} ${sidebarHidden ? "sidebar-hidden" : ""}`}>
       <Sidebar
         items={visibleItems}
         selectedId={selectedId}
@@ -360,11 +378,13 @@ export default function Home() {
         onCreateDatabase={createDatabase}
         onRename={renameItem}
         onDelete={deleteItem}
+        onHide={toggleSidebarHidden}
       />
       <section className="main-area">
         <header className="topbar">
           <div className="topbar-leading">
             <button className="mobile-menu" aria-label={t("nav.openNavigation")} onClick={() => setSidebarOpen(true)}><InterfaceIcon name="menu" /></button>
+            {sidebarHidden && <button type="button" className="sidebar-show" aria-label={t("nav.showSidebar")} title={`${t("nav.showSidebar")} (⌘\\)`} onClick={toggleSidebarHidden}><InterfaceIcon name="sidebar" /></button>}
             {(utilityPage || selected?.id !== "home") && <div className="breadcrumbs"><span>{t("top.workspace")}</span><span>›</span><strong>{currentTitle}</strong></div>}
           </div>
           <div className="topbar-actions">

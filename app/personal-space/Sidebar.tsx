@@ -1,23 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLanguage } from "./i18n";
-import { InterfaceIcon } from "./InterfaceIcon";
+import { InterfaceIcon, type IconName } from "./InterfaceIcon";
 import type { Item } from "./types";
 
 const SIDEBAR_WIDTH_KEY = "personal-space-sidebar-width";
-const SIDEBAR_NAV_HEIGHT_KEY = "personal-space-sidebar-nav-height";
+const SIDEBAR_GROUPS_KEY = "personal-space-sidebar-groups";
 /** Tasks and Calendar are reached through the Planning section, so the page tree does not list them again. */
 const PLANNING_IDS = new Set(["google-tasks", "google-calendar"]);
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 420;
-const SIDEBAR_DEFAULT_WIDTH = 272;
-const SIDEBAR_NAV_MIN_HEIGHT = 180;
-const SIDEBAR_NAV_MAX_HEIGHT = 620;
-const SIDEBAR_NAV_DEFAULT_HEIGHT = 472;
+const SIDEBAR_DEFAULT_WIDTH = 260;
 
 const clampSidebarWidth = (width: number) => Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width));
-const clampSidebarNavHeight = (height: number) => Math.min(SIDEBAR_NAV_MAX_HEIGHT, Math.max(SIDEBAR_NAV_MIN_HEIGHT, height));
 
 type SidebarProps = {
   items: Item[];
@@ -31,7 +27,26 @@ type SidebarProps = {
   onCreateDatabase: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
+  /** Hides the sidebar on wide screens; the top bar has a button to bring it back. */
+  onHide?: () => void;
 };
+
+type GroupId = "planning" | "inbox" | "pages";
+
+/** A sidebar group that folds open and closed; the choice is remembered on this device. */
+function NavGroup({ id, label, open, onToggle, action, children }: { id: GroupId; label: string; open: boolean; onToggle: (id: GroupId) => void; action?: ReactNode; children: ReactNode }) {
+  return (
+    <div className={`nav-group ${open ? "is-open" : ""}`}>
+      <div className="nav-group-heading">
+        <button type="button" className="nav-group-toggle" aria-expanded={open} onClick={() => onToggle(id)}>
+          <span className="nav-group-chevron" aria-hidden="true">›</span>{label}
+        </button>
+        {action}
+      </div>
+      {open && <div className="nav-group-items">{children}</div>}
+    </div>
+  );
+}
 
 export function Sidebar({
   items,
@@ -45,19 +60,16 @@ export function Sidebar({
   onCreateDatabase,
   onRename,
   onDelete,
+  onHide,
 }: SidebarProps) {
   const { t } = useLanguage();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
-  const [workspaceOpen, setWorkspaceOpen] = useState(true);
+  const [groups, setGroups] = useState<Record<GroupId, boolean>>({ planning: true, inbox: true, pages: true });
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
-  const [sidebarNavHeight, setSidebarNavHeight] = useState(SIDEBAR_NAV_DEFAULT_HEIGHT);
   const [isResizing, setIsResizing] = useState(false);
-  const [isResizingNav, setIsResizingNav] = useState(false);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
-  const sidebarNavHeightRef = useRef(SIDEBAR_NAV_DEFAULT_HEIGHT);
   const resizeStartRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const navResizeStartRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const childrenByParent = useMemo(() => {
     const grouped = new Map<string | null, Item[]>();
     items.forEach((item) => {
@@ -79,14 +91,12 @@ export function Sidebar({
           sidebarWidthRef.current = nextWidth;
           setSidebarWidth(nextWidth);
         }
-
-        const storedNavHeightValue = window.localStorage.getItem(SIDEBAR_NAV_HEIGHT_KEY);
-        const storedNavHeight = storedNavHeightValue === null ? Number.NaN : Number(storedNavHeightValue);
-        if (Number.isFinite(storedNavHeight)) {
-          const nextNavHeight = clampSidebarNavHeight(storedNavHeight);
-          sidebarNavHeightRef.current = nextNavHeight;
-          setSidebarNavHeight(nextNavHeight);
-        }
+        const storedGroups = JSON.parse(window.localStorage.getItem(SIDEBAR_GROUPS_KEY) || "{}") as Partial<Record<GroupId, unknown>>;
+        setGroups((current) => ({
+          planning: typeof storedGroups.planning === "boolean" ? storedGroups.planning : current.planning,
+          inbox: typeof storedGroups.inbox === "boolean" ? storedGroups.inbox : current.inbox,
+          pages: typeof storedGroups.pages === "boolean" ? storedGroups.pages : current.pages,
+        }));
       } catch {
         // Keep the defaults when browser preferences are unavailable.
       }
@@ -94,42 +104,30 @@ export function Sidebar({
     return () => window.clearTimeout(timer);
   }, []);
 
+  const toggleGroup = (id: GroupId) => setGroups((current) => {
+    const next = { ...current, [id]: !current[id] };
+    try { window.localStorage.setItem(SIDEBAR_GROUPS_KEY, JSON.stringify(next)); } catch { /* The choice lasts for this session. */ }
+    return next;
+  });
+
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       const start = resizeStartRef.current;
-      if (start) {
-        const nextWidth = clampSidebarWidth(start.startWidth + event.clientX - start.startX);
-        sidebarWidthRef.current = nextWidth;
-        setSidebarWidth(nextWidth);
-      }
-
-      const navStart = navResizeStartRef.current;
-      if (navStart) {
-        const nextNavHeight = clampSidebarNavHeight(navStart.startHeight + event.clientY - navStart.startY);
-        sidebarNavHeightRef.current = nextNavHeight;
-        setSidebarNavHeight(nextNavHeight);
-      }
+      if (!start) return;
+      const nextWidth = clampSidebarWidth(start.startWidth + event.clientX - start.startX);
+      sidebarWidthRef.current = nextWidth;
+      setSidebarWidth(nextWidth);
     };
     const finishResize = () => {
-      const wasResizingWidth = resizeStartRef.current !== null;
-      const wasResizingNav = navResizeStartRef.current !== null;
-      if (!wasResizingWidth && !wasResizingNav) return;
+      if (resizeStartRef.current === null) return;
       resizeStartRef.current = null;
-      navResizeStartRef.current = null;
       setIsResizing(false);
-      setIsResizingNav(false);
       try {
-        if (wasResizingWidth) {
-          window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidthRef.current));
-        }
-        if (wasResizingNav) {
-          window.localStorage.setItem(SIDEBAR_NAV_HEIGHT_KEY, String(sidebarNavHeightRef.current));
-        }
+        window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidthRef.current));
       } catch {
-        // The resized dimensions remain active for this session.
+        // The resized width remains active for this session.
       }
     };
-
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", finishResize);
     window.addEventListener("pointercancel", finishResize);
@@ -148,17 +146,6 @@ export function Sidebar({
       window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clampedWidth));
     } catch {
       // The resized width remains active for this session.
-    }
-  };
-
-  const resizeNavWithKeyboard = (nextHeight: number) => {
-    const clampedHeight = clampSidebarNavHeight(nextHeight);
-    sidebarNavHeightRef.current = clampedHeight;
-    setSidebarNavHeight(clampedHeight);
-    try {
-      window.localStorage.setItem(SIDEBAR_NAV_HEIGHT_KEY, String(clampedHeight));
-    } catch {
-      // The resized navigation height remains active for this session.
     }
   };
 
@@ -244,6 +231,14 @@ export function Sidebar({
     );
   };
 
+  const navButton = (id: string, icon: IconName, label: string, shortcut?: string, current = selectedId === id) => (
+    <button className="nav-item" aria-current={current ? "page" : undefined} onClick={() => chooseItem(id)}>
+      <span className="nav-glyph"><InterfaceIcon name={icon} /></span>{label}{shortcut && <kbd>{shortcut}</kbd>}
+    </button>
+  );
+  const hasTasks = items.some((item) => item.id === "google-tasks");
+  const hasCalendar = items.some((item) => item.id === "google-calendar");
+
   return (
     <>
       <button
@@ -253,80 +248,36 @@ export function Sidebar({
         onClick={onDismiss}
       />
       <aside
-        className={`sidebar ${mobileOpen ? "mobile-open" : ""} ${isResizing ? "sidebar-resizing" : ""} ${isResizingNav ? "sidebar-nav-resizing" : ""}`}
-        style={{ "--sidebar-width": `${sidebarWidth}px`, "--sidebar-nav-height": `${sidebarNavHeight}px` } as React.CSSProperties}
+        className={`sidebar ${mobileOpen ? "mobile-open" : ""} ${isResizing ? "sidebar-resizing" : ""}`}
+        style={{ "--sidebar-width": `${sidebarWidth}px` } as React.CSSProperties}
         aria-label={t("nav.workspaceNavigation")}
       >
-        <button className="sidebar-close" aria-label={t("nav.closeNavigation")} onClick={onDismiss}>×</button>
-        <div className="sidebar-nav">
-          <button className="nav-item" aria-current={selectedId === "home" ? "page" : undefined} onClick={() => chooseItem("home")}>
-            <span className="nav-glyph"><InterfaceIcon name="home" /></span> {t("nav.home")} <kbd>H</kbd>
-          </button>
-          <button className="nav-item" onClick={() => chooseItem("search")}>
-            <span className="nav-glyph"><InterfaceIcon name="search" /></span> {t("nav.quickFind")} <kbd>⌘K</kbd>
-          </button>
-          {(items.some((item) => item.id === "google-tasks") || items.some((item) => item.id === "google-calendar")) && <p className="nav-section-label">{t("nav.sectionPlanning")}</p>}
-          {items.some((item) => item.id === "google-tasks") && (
-            <button className="nav-item" aria-current={selectedId === "google-tasks" ? "page" : undefined} onClick={() => chooseItem("google-tasks")}>
-              <span className="nav-glyph"><InterfaceIcon name="tasks" /></span> {t("nav.googleTasks")}
-            </button>
-          )}
-          {items.some((item) => item.id === "google-calendar") && (
-            <button className="nav-item" aria-current={selectedId === "google-calendar" ? "page" : undefined} onClick={() => chooseItem("google-calendar")}>
-              <span className="nav-glyph"><InterfaceIcon name="calendar" /></span> {t("nav.googleCalendar")}
-            </button>
-          )}
-          <p className="nav-section-label">{t("nav.sectionInbox")}</p>
-          <button className="nav-item" aria-current={selectedId === "gmail" ? "page" : undefined} onClick={() => chooseItem("gmail")}><span className="nav-glyph"><InterfaceIcon name="mail" /></span>{t("nav.gmail")}</button>
-          <button className="nav-item" aria-current={selectedId === "parro" ? "page" : undefined} onClick={() => chooseItem("parro")}><span className="nav-glyph"><InterfaceIcon name="mail" /></span>{t("nav.parro")}</button>
-          <button className="nav-item" aria-current={selectedId.startsWith("news-") ? "page" : undefined} onClick={() => chooseItem(selectedId.startsWith("news-") ? selectedId : "news-tweakers")}><span className="nav-glyph"><InterfaceIcon name="news" /></span>{t("nav.news")}</button>
+        <div className="sidebar-top">
+          <button className="sidebar-close" aria-label={t("nav.closeNavigation")} onClick={onDismiss}>×</button>
+          {onHide && <button type="button" className="sidebar-hide" aria-label={t("nav.hideSidebar")} title={`${t("nav.hideSidebar")} (⌘\\)`} onClick={onHide}><InterfaceIcon name="sidebar" /></button>}
         </div>
-        <div
-          className="sidebar-section-resize"
-          role="separator"
-          aria-orientation="horizontal"
-          tabIndex={0}
-          aria-label={t("nav.resizeSidebarNav")}
-          aria-valuemin={SIDEBAR_NAV_MIN_HEIGHT}
-          aria-valuemax={SIDEBAR_NAV_MAX_HEIGHT}
-          aria-valuenow={sidebarNavHeight}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            navResizeStartRef.current = { startY: event.clientY, startHeight: sidebarNavHeightRef.current };
-            setIsResizingNav(true);
-            event.currentTarget.setPointerCapture(event.pointerId);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowUp") {
-              event.preventDefault();
-              resizeNavWithKeyboard(sidebarNavHeight - 16);
-            }
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              resizeNavWithKeyboard(sidebarNavHeight + 16);
-            }
-            if (event.key === "Home") {
-              event.preventDefault();
-              resizeNavWithKeyboard(SIDEBAR_NAV_MIN_HEIGHT);
-            }
-            if (event.key === "End") {
-              event.preventDefault();
-              resizeNavWithKeyboard(SIDEBAR_NAV_MAX_HEIGHT);
-            }
-          }}
-        />
-        <div className="sidebar-section">
-          <div className="section-heading">
-            <button
-              className="section-toggle"
-              aria-expanded={workspaceOpen}
-              aria-label={workspaceOpen ? t("nav.collapseWorkspace") : t("nav.expandWorkspace")}
-              onClick={() => setWorkspaceOpen((open) => !open)}
-            >{workspaceOpen ? "⌄" : "›"}</button>
-            <span>{t("nav.workspace")}</span>
-            <button aria-label={t("nav.newPage")} onClick={() => onCreatePage(null)}>＋</button>
+        <div className="sidebar-scroll">
+          <div className="nav-group-items">
+            {navButton("home", "home", t("nav.home"), "H")}
+            <button className="nav-item" onClick={() => chooseItem("search")}>
+              <span className="nav-glyph"><InterfaceIcon name="search" /></span>{t("nav.quickFind")}<kbd>⌘K</kbd>
+            </button>
           </div>
-          {workspaceOpen && <div className="tree">{childrenOf(null).filter((item) => !PLANNING_IDS.has(item.id)).map((item) => renderNode(item, 0))}</div>}
+          {(hasTasks || hasCalendar) && (
+            <NavGroup id="planning" label={t("nav.sectionPlanning")} open={groups.planning} onToggle={toggleGroup}>
+              {hasTasks && navButton("google-tasks", "tasks", t("nav.googleTasks"))}
+              {hasCalendar && navButton("google-calendar", "calendar", t("nav.googleCalendar"))}
+            </NavGroup>
+          )}
+          <NavGroup id="inbox" label={t("nav.sectionInbox")} open={groups.inbox} onToggle={toggleGroup}>
+            {navButton("gmail", "mail", t("nav.gmail"))}
+            {navButton("parro", "mail", t("nav.parro"))}
+            {navButton(selectedId.startsWith("news-") ? selectedId : "news-tweakers", "news", t("nav.news"), undefined, selectedId.startsWith("news-"))}
+          </NavGroup>
+          <NavGroup id="pages" label={t("nav.workspace")} open={groups.pages} onToggle={toggleGroup}
+            action={<button type="button" className="nav-group-add" aria-label={t("nav.newPage")} onClick={() => onCreatePage(null)}>＋</button>}>
+            <div className="tree">{childrenOf(null).filter((item) => !PLANNING_IDS.has(item.id)).map((item) => renderNode(item, 0))}</div>
+          </NavGroup>
         </div>
         <div className="sidebar-footer">
           <button className="new-button" onClick={() => onCreatePage(null)}><InterfaceIcon name="plus" /> {t("nav.newPage")}</button>
@@ -347,22 +298,10 @@ export function Sidebar({
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
           onKeyDown={(event) => {
-            if (event.key === "ArrowLeft") {
-              event.preventDefault();
-              resizeWithKeyboard(sidebarWidth - 16);
-            }
-            if (event.key === "ArrowRight") {
-              event.preventDefault();
-              resizeWithKeyboard(sidebarWidth + 16);
-            }
-            if (event.key === "Home") {
-              event.preventDefault();
-              resizeWithKeyboard(SIDEBAR_MIN_WIDTH);
-            }
-            if (event.key === "End") {
-              event.preventDefault();
-              resizeWithKeyboard(SIDEBAR_MAX_WIDTH);
-            }
+            if (event.key === "ArrowLeft") { event.preventDefault(); resizeWithKeyboard(sidebarWidth - 16); }
+            if (event.key === "ArrowRight") { event.preventDefault(); resizeWithKeyboard(sidebarWidth + 16); }
+            if (event.key === "Home") { event.preventDefault(); resizeWithKeyboard(SIDEBAR_MIN_WIDTH); }
+            if (event.key === "End") { event.preventDefault(); resizeWithKeyboard(SIDEBAR_MAX_WIDTH); }
           }}
         />
       </aside>
